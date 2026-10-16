@@ -102,7 +102,7 @@ public static class ModGuide
 		"Weekly supplies at home ports are 6,000. Outposts start with 1 supply per troop.",
 
 		"<color=#E0B030><b>New merchant ships</b></color>\n" +
-		"23 merchant ships, transports, a hospital ship, an oiler (Patapsco) and a destroyer escort (Manley) were added. ALL of them are made by the TTE team and used with their permission. They are not the work of the mod author.\n\n" +
+		"23 merchant ships, transports, a hospital ship, an oiler (Patapsco) and a destroyer escort (Manley) were added. ALL of them are made by the TTE team and used with credit to them. They are not the work of the mod author.\n\n" +
 		"<color=#E0B030><b>Limited numbers</b></color>\n" +
 		"Each type has a pool of 10-30 ships for each side. A ship that is built or sunk is gone for good. The stock merchants (C3 Cargo, Nippon Maru, Kamogawa Maru) are unlimited, so convoys can still form when the new pools run out.\n\n" +
 		"<color=#E0B030><b>Convoys</b></color>\n" +
@@ -165,7 +165,7 @@ public static class ModGuide
 		"Testers: F9 reveal enemies (map), F4 create a survivor event (map), F3 developer view (battle).",
 
 		"<color=#E0B030><b>Custom ships</b></color>\n" +
-		"All custom merchant ships in the game (merchants, transports, hospital ship, oilers and the destroyer escort) are from the TTE team and are used with their permission. They are not the work of the mod author.\n" +
+		"All custom merchant ships in the game (merchants, transports, hospital ship, oilers and the destroyer escort) are from the TTE team and are used with credit to them. They are not the work of the mod author.\n" +
 		"The TTE mod is about 4 years old and the team is no longer active. Their assets are used with credit, and will be removed at the request of any TTE member.\n\n" +
 		"<color=#E0B030><b>Inspiration</b></color>\n" +
 		"The events and the survivors system were inspired by Kiko. The Hit log is a copy of the idea from the ADBA Mod Team's Hitlog."

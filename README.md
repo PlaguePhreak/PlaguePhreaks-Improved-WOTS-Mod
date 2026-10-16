@@ -16,7 +16,7 @@ CREDITS - CUSTOM SHIPS (TTE)
 -------------------------------------------------
 
 ALL custom merchant ships currently in the game (merchants, transports, the hospital ship, oilers and the destroyer escort / transport)
-come from the TTE mod team. I use them with their permission. They are NOT my own creation: I did not make the models, and
+come from the TTE mod team. They are NOT my own creation: I did not make the models, and
 all credit for them goes to the TTE team.
 I have used the TTE team's assets and credit them for it. The TTE mod is about 4 years old and the team is no longer active.
 If any member of the TTE team wants their assets removed from this mod, I will remove them at their request.
@@ -119,7 +119,7 @@ NEW IN v0.22.5 - IN-GAME BOOK
 - A book button at the top left of the campaign map (the fuel barrel is now under it). Click it to read what's new and the features of the mod, page by page
 
 NEW IN v0.23 - TTE SHIPS (by the TTE team, not by me)
-- 23 merchant ships, transports, a hospital ship, an oiler (Patapsco) and a destroyer escort (Manley) from the TTE mod, used with their permission
+- 23 merchant ships, transports, a hospital ship, an oiler (Patapsco) and a destroyer escort (Manley) from the TTE mod, used with credit to the TTE team
 - Allied: Heywood, President Jackson, Attack Transport, Hospital Ship, Arcturus, Harris, Mount Hood, McCawley, Patapsco, Manley.
   Japanese: Generic Maru, Type 1B, 1C, 1K, 2TL, 3A, Type A Merchant, Ural Maru, Akita Maru, Kasagisan Maru, Taihosan Maru, Hakushika Maru, Aratama Maru
 - The AI uses them in its convoys (a random mix), and you can buy them
