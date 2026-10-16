@@ -58,4 +58,3 @@ bomb_ij_800kg_ap=800kg AP Bomb
 depthbomb_mark17=Aerial Depth Charge
 rocket_hvar=Aerial Rocket
 4in50Mark14=4"/50 Mark 14
-12cm4510thYearType=12cm/45 10th Yr Type

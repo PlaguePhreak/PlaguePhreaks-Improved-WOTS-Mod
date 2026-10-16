@@ -1,1 +1,0 @@
-﻿{"unitName":"Akitsu Maru","weaponDescriptions":[],"namesInClass":["Akitsu Maru","Nigitsu Maru"],"instancesInClass":["akitsu_maru","nigitsu_maru"]}

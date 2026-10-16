@@ -1,1 +1,0 @@
-﻿{"unitName":"Kamikawa Maru","weaponDescriptions":["Type 93 13.2mm Guns"],"namesInClass":["Kamikawa Maru","Kiyokawa Maru","Kimikawa Maru","Kunikawa Maru"],"instancesInClass":["Kamikawa Maru","Kiyokawa Maru","Kimikawa Maru","Kunikawa Maru"]}

@@ -93,6 +93,4 @@
 {"nation":"japan","available":[1,1,1925],"unitID":"kasagisan_maru"}
 {"nation":"japan","available":[1,1,1937],"unitID":"taihosan_maru"}
 {"nation":"japan","available":[1,1,1919],"unitID":"hakushika_maru"}
-{"nation":"japan","available":[15,11,1939],"unitID":"kamikawa_maru"}
-{"nation":"japan","available":[30,1,1942],"unitID":"akitsu_maru"}
 {"nation":"japan","available":[1,1,1938],"unitID":"aratama_maru"}
