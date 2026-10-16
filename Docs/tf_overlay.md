@@ -25,12 +25,13 @@ Later versions can add to it (detection rings, ammo, formation) without redoing 
 ## Install steps (dnSpy)
 ### Step 1 - add the new class
 1. In dnSpy, right-click **Assembly-CSharp** > **Add Class...** (or right-click the `-` namespace > Add Class...).
-2. Paste the whole code below, replacing what is there, then click **Compile**.
+2. Paste the whole code below, replacing what is there (the `using WorldMapStrategyKit;` line at the top is needed), then click **Compile**.
 
 ```csharp
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using WorldMapStrategyKit;
 
 public class ModTFOverlay : MonoBehaviour
 {
