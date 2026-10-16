@@ -4,7 +4,7 @@ Status: planned, code written, not yet compiled or tested. Builds on the v0.22 s
 
 ## What it does
 - Every 20 to 30 days (random) the Admiralty sends a supply convoy to your first home port. A popup announces it.
-- It appears at a random spot on the northern edge of the map (one of the 8 northernmost sea waypoints) and sails to the home port by itself.
+- It appears at a random spot on the northern edge of the map (a random sea waypoint in the top fifth of the map, so anywhere from west to east) and sails to the home port by itself.
 - Ships: 3 transports (one carries troops, one supplies, one engineering), 1 oiler (fuel) and 1 to 3 destroyers.
 - Cargo is random but never below 2,000 supplies, 2,000 troops, 100 fuel and 100 engineering. The top end is whatever each ship can carry (read from the unit files), so if a ship cannot carry the minimum it just carries its maximum. The log line `[CONVOY]` shows the numbers.
 - The convoy belongs to **you** (the game has no neutral side). The enemy AI hunts spotted player fleets and goes for transports and oilers first. For the first 6 game hours the enemy is told where it is (it is added to the enemy's spotted list). After that they must find it themselves.
@@ -13,7 +13,7 @@ Status: planned, code written, not yet compiled or tested. Builds on the v0.22 s
 - Not saved: if you save and reload while the convoy is at sea, it stays on the map as a normal task force (you can unload it by hand) and a new timer starts.
 
 ## Files (text, both campaigns)
-Copy `Override/language/english/campaign/campaign001/event/` and `campaign002/event/` files `convoyspawn.txt`, `convoyarrived.txt`, `convoylost.txt` into the game's override folder.
+Copy `Override/language/english/campaign/campaign001/event/` and `campaign002/event/` files `convoyspawn.txt`, `convoyarrived.txt`, `convoylost.txt`, and the picture `Override/campaign/image/rules_convoy.jpg`, into the game's override folder.
 
 ## Install steps (dnSpy)
 ### Step 1 - add the new class
@@ -134,7 +134,15 @@ public static class ModConvoy
 			}
 		}
 		top.Sort((SeaNavigationWaypoint a, SeaNavigationWaypoint b) => b.positionRadius.y.CompareTo(a.positionRadius.y));
-		SeaNavigationWaypoint spawn = top[UnityEngine.Random.Range(0, Math.Min(8, top.Count))];
+		float highest = top[0].positionRadius.y;
+		float lowest = top[top.Count - 1].positionRadius.y;
+		float cutoff = highest - (highest - lowest) * 0.2f;
+		int count = 0;
+		while (count < top.Count && top[count].positionRadius.y >= cutoff)
+		{
+			count++;
+		}
+		SeaNavigationWaypoint spawn = top[UnityEngine.Random.Range(0, count)];
 
 		string merchant = Pick(UnitSubType.Merchant);
 		string oiler = Pick(UnitSubType.Oiler);
@@ -283,4 +291,4 @@ public static class ModConvoy
 ## Known risks
 - The route is found by the map's water pathfinder, not by the AI waypoints, so it may take a different path than the AI convoys.
 - Port stock limits (`replenish0Max`) are not checked by me; the game's own unload code decides what happens if a port is full.
-- Spawn waypoint can be near the enemy's northern base (Pac2 and Pac3). That is part of the danger.
+- The spawn can be deep in enemy waters. That is part of the danger.
