@@ -1,7 +1,7 @@
 Everything here is a WIP and still in testing.
 This is for game version 1.09a (the newest version of the game).
-Current mod version: v0.22.4 (see the change log for everything that's in it)
-The supply convoy event (v0.22.4) is not tested yet. v0.20.9 failed its test, so work on aircraft is on hold.
+Current mod version: v0.23.2 (see the change log for everything that's in it)
+The supply convoy event (v0.22.4) appears but does not sail to your home port by itself yet (fix planned). The TTE ships (v0.23 to v0.23.2) are not fully tested yet. v0.20.9 failed its test, so work on aircraft is on hold.
 
 If there's something you'd like to use for your own mod, please give credit.
 
@@ -10,6 +10,16 @@ If it is, give them credit instead of me, since they had the idea first.
 
 The events and the survivors system were inspired by Kiko. 
 The Hitlog system is a 'copy' from the ADBA Mod Teams Hitlog system, so thanks to them for the inspiration for mine
+
+-------------------------------------------------
+CREDITS - CUSTOM SHIPS (TTE)
+-------------------------------------------------
+
+ALL custom merchant ships currently in the game (merchants, transports, the hospital ship, oilers and the destroyer escort / transport)
+come from the TTE mod team. They are NOT my own creation: I did not make the models, and
+all credit for them goes to the TTE team.
+I have used the TTE team's assets and credit them for it. The TTE mod is about 4 years old and the team is no longer active.
+If any member of the TTE team wants their assets removed from this mod, I will remove them at their request.
 
 I have no experience in modding or coding, so I'm using an AI (Claude) to help me write the code.
 I test everything myself in game and decide what goes in.
@@ -54,6 +64,8 @@ WHAT'S IN IT (short version)
 - Battle speed up to x10
 - Troops use supplies every day and the AI sends convoys to its low-supply outposts; you get an Admiralty supply convoy every 20-30 days
 - Historical torpedo dud rates, and torpedoes that hit at a glancing angle bounce off
+- 23 extra merchant ships, oilers and transports from the TTE team, in limited numbers (10-30 of each type)
+- A book button on the campaign map that lists the features and the change log
 
 NEW IN v0.18 - CREWS
 - Veterancy only counts from real fights (an enemy has to be there, and something has to be sunk or shot down)
@@ -102,6 +114,18 @@ NEW IN v0.22 - SUPPLY
 - Weekly supplies at home ports went from 4,000 to 6,000, and outposts start with 1 supply per troop (was 2)
 - Admiralty supply convoy (v0.22.4, not tested yet): every 20-30 days a convoy of 3 transports, 1 oiler and destroyers appears on the northern edge
   of the map and sails to your home port. The enemy knows where it is for the first 6 hours. Ships that are sunk take their cargo with them
+
+NEW IN v0.22.5 - IN-GAME BOOK
+- A book button at the top left of the campaign map (the fuel barrel is now under it). Click it to read what's new and the features of the mod, page by page
+
+NEW IN v0.23 - TTE SHIPS (by the TTE team, not by me)
+- 23 merchant ships, transports, a hospital ship, an oiler (Patapsco) and a destroyer escort (Manley) from the TTE mod, used with credit to the TTE team
+- Allied: Heywood, President Jackson, Attack Transport, Hospital Ship, Arcturus, Harris, Mount Hood, McCawley, Patapsco, Manley.
+  Japanese: Generic Maru, Type 1B, 1C, 1K, 2TL, 3A, Type A Merchant, Ural Maru, Akita Maru, Kasagisan Maru, Taihosan Maru, Hakushika Maru, Aratama Maru
+- The AI uses them in its convoys (a random mix), and you can buy them
+- Limited numbers (v0.23.1): each type has a pool of 10-30 ships for each side. A ship that is built or sunk is gone for good. The three stock merchants stay unlimited
+- The Manley sits between the submarines and the destroyers in the ship list (v0.23.2)
+- Install: the ship models (3D files) are not in this repo. See Docs/tte_merchants.md
 
 The full list is in the change log. The rules pages at the start of a campaign explain it all in game.
 
