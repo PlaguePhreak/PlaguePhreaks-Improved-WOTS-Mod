@@ -37,6 +37,8 @@ public class ModTFOverlay : MonoBehaviour
 {
 	public static bool on;
 
+	public static float labelSize = 0.6f;
+
 	private float timer;
 
 	private bool reported;
@@ -125,7 +127,7 @@ public class ModTFOverlay : MonoBehaviour
 			}
 			Vector2 pos = goa.currentMap2DLocation;
 			string text = mmo.mobileName + "\n" + daysLeft.ToString("F1") + " d fuel  " + knots.ToString("F0") + " kn";
-			TextMesh tm = ci.AddMarker2DText(text, new Vector3(pos.x, pos.y - 0.012f, 0f), 6f, colour, false, false);
+			TextMesh tm = ci.AddMarker2DText(text, new Vector3(pos.x, pos.y - 0.012f, 0f), labelSize, colour, false, false);
 			if (tm != null)
 			{
 				objects.Add(tm.gameObject);
@@ -163,7 +165,7 @@ if (base.gameObject.GetComponent<ModTFOverlay>() == null)
 4. Check `output_log.txt` for `[TFOVERLAY] overlay on`. If anything went wrong it says `[TFOVERLAY] failed:` with the reason.
 
 ## Things the test will tell us (could not be checked without running the game)
-- Label size: `6f` in the `AddMarker2DText` call is a guess. Bigger number = bigger text.
+- Label size: `labelSize = 0.6f` at the top of the class is a guess (it was 6, which was far too big and is the likely cause of the white blob in the first test). Bigger number = bigger text.
 - Label height: `pos.y - 0.012f` is a guess for how far below the icon it sits.
 - If the ring looks too big or small, the game's `AddCircle` radius may not be km; tell me what you see and I will fix the maths.
 - The speed shown is the force's set speed, even when it is stopped.
