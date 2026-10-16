@@ -170,6 +170,7 @@ Aircraft work is on hold: v0.20.9 did not work and air combat needs a full rewor
 - **v0.21.2** Torpedo hit angle `[TORPHIT]` (torpedo_hit_angle.md, tested: a Mark 13 bounced off Yorktown at 11 degrees): glancing hits under 15 degrees always bounce off (fading to none at 25 degrees), the torpedo runs on and can hit another ship; Mark 13/14/15 dud more near 90 degrees and less on angled hits; logged as [TORPHIT]
 - **v0.21.3** Hit log tweaks (hitlog_tweaks.md, tested): torpedo bounces appear in the Hit log; torpedo and bomb hit lines no longer appear in the General tab (sounds kept)
 - **v0.21.4** Task force overlay `[TFOVERLAY]` (tf_overlay.md, planned): F11 on the campaign map switches on an overlay: a small label under every one of your task forces (days of fuel left, speed) and, for the selected task force, a ring showing how far it can still sail on its fuel. Later steps can add detection rings, ammo and formation status.
+- **v0.21.5** Rules popups updated (planned, files only): new pages New in v0.21 (modrules8), Battle Interface (modrules9), Damage and Repair (modrules10), Fleets, AI and Air (modrules11), shown between Events and Testers! in both campaigns; modrules6 now points to modrules8
 
 ## Housekeeping before release
 - Remove the Testers! popup page (now modrules7; set modrules6 `nextAction` to `SUMMARY`) and the F9 / F3 / F4 keys (see keybinds.md)
