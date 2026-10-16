@@ -222,7 +222,7 @@ public static class ModSupply
 ```
 
 ## Test
-1. Make a location run low fast: raise `upkeepPerTroopPerDay` is not needed. Instead use time acceleration on a campaign and watch an outpost of yours (about 33 days from the start at 1 supply per troop), or load supplies onto a ship at an outpost with the cargo screen to drain it.
+1. Use time acceleration on a campaign and watch an outpost of yours (about 33 days from the start at 1 supply per troop). To get there faster, load supplies from an outpost onto a ship with the cargo screen to drain it.
 2. When a location reaches 3 days of supply, the message `Low on supplies: ...` should appear once with the alarm sound.
 3. When it hits 0, one more message with `(OUT)`.
 4. Resupply it (unload a convoy there) and let it fall low again: the warning should come back.
