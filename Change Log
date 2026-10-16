@@ -55,12 +55,12 @@ v0.21.1 - Historical torpedo dud rates (tested, data only)
 * Dud rates from real wartime reliability: Mark 14 and Mark 15 0.6, Mark 13 0.5, Mark 18 0.1, Type 91 0.03, Type 93 / 95 / 96 0.05, 6th Year / 8th Year 0.06 (Override/ammunition/torpedo_*.txt). Only active with the game's 'dud torpedoes' option on.
 
 
-v0.21 - Faster ship buying (tested)
+v0.21 - Faster ship buying (i broke this when "ship building" was added, refixed it here)
 -----------------------------------
 * After ordering a ship, the name dropdown moves on to the next ship of that class that can still be bought, so you can keep pressing the buy button (CampaignInterface.AddShipToTaskForce, [BUY]).
 
 
-v0.20.9 - AI super overhaul: aimed gun runs, formations keep combing torpedoes (FAILED test)
+v0.20.9 - AI super overhaul: aimed gun runs, formations keep combing torpedoes (FAILED test) - Currently putting all air changes on hold
 --------------------------------------------------------------------------------------------
 * Fighters aim properly: fighters now fly their own gun run, aiming at where the target will be and pointing the nose up or down at it too (the game only tilts the nose by the height a plane is chasing, so diving fighters never had the target in their sights and never fired). They may dive at up to 45 degrees while lining up a shot, and fire under the game's own rule (within 5 degrees, in gun range). A pass now ends when the fighter has flown past its target, not after a fixed 8 s (which ended Wildcat dives before they reached gun range) (ModDogfight).
 * Formations keep combing torpedoes: ships turn together with a leader that is combing torpedo tracks, and hold their evasive heading for the rest of the hold time when she is done, instead of going straight back to station across the tracks (ModAAEvade).
