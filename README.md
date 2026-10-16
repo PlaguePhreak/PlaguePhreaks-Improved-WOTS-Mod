@@ -1,6 +1,7 @@
 Everything here is a WIP and still in testing.
 This is for game version 1.09a (the newest version of the game).
-Current mod version: v0.20 (see the change log for everything that's in it)
+Current mod version: v0.22.4 (see the change log for everything that's in it)
+The supply convoy event (v0.22.4) is not tested yet. v0.20.9 failed its test, so work on aircraft is on hold.
 
 If there's something you'd like to use for your own mod, please give credit.
 
@@ -50,7 +51,9 @@ WHAT'S IN IT (short version)
   escorts that protect their bombers, CAP that follows its carrier
 - Air rework: every plane type has its own toughness and armour, guns do damage by calibre
 - Darker nights, and burning ships are easier to spot
-- Battle speed up to x10battle
+- Battle speed up to x10
+- Troops use supplies every day and the AI sends convoys to its low-supply outposts; you get an Admiralty supply convoy every 20-30 days
+- Historical torpedo dud rates, and torpedoes that hit at a glancing angle bounce off
 
 NEW IN v0.18 - CREWS
 - Veterancy only counts from real fights (an enemy has to be there, and something has to be sunk or shot down)
@@ -81,6 +84,25 @@ NEW IN v0.20 - AI
 - AI task forces that start far away no longer sail in circles: a ship that isn't closing in steers straight at you
   for a few minutes (but never into land or shallows)
 
+NEW IN v0.21 - TORPEDOES AND CAMPAIGN MAP
+- Faster ship buying: after you order a ship, the name list moves on to the next ship of that class you can still buy
+- Torpedo dud rates are historical (US Mark 13/14/15 fail often, Mark 18 about 10%, Japanese torpedoes 3-6%).
+  Only active when the game's "dud torpedoes" option is on
+- Torpedoes that hit a ship at a glancing angle (under 15 degrees) bounce off and keep running. The early US torpedoes
+  also dud more on a square 90 degree hit and less on angled hits. Bounces show in the Hit log
+- Hit log: torpedo and bomb hit lines no longer clutter the General tab
+- Fuel overlay: click the fuel barrel button at the top left of the campaign map, or press F11. Every task force of yours gets a label
+  (days of fuel left, speed) and the selected one gets a ring showing how far it sails in 1 day
+- Rules popups: new pages Torpedoes, Extra UI Parts and Extra Features at the start of a campaign
+
+NEW IN v0.22 - SUPPLY
+- Troops use supplies: each location with troops spends supplies every day (3% of the troop number). A garrison that runs dry slowly loses troops.
+  The location panel shows how many days of supply are left
+- The AI sends supply convoys to its outposts that are running low. You can sink them
+- Weekly supplies at home ports went from 4,000 to 6,000, and outposts start with 1 supply per troop (was 2)
+- Admiralty supply convoy (v0.22.4, not tested yet): every 20-30 days a convoy of 3 transports, 1 oiler and destroyers appears on the northern edge
+  of the map and sails to your home port. The enemy knows where it is for the first 6 hours. Ships that are sunk take their cargo with them
+
 The full list is in the change log. The rules pages at the start of a campaign explain it all in game.
 
 -------------------------------------------------
@@ -91,13 +113,18 @@ Send me this file:
 ...\War on the Sea\WarOnTheSea_Data\output_log.txt
 
 Send it BEFORE you start the game again. It gets wiped every time the game starts.
-The mod writes notes into it (lines starting with things like [CREW], [RESCUE], [VET], [TORP], [AIRAI], [TFJOIN], [HITLOG], [AIMOVE], [REPAIR])
+The mod writes notes into it (lines starting with things like [CREW], [RESCUE], [VET], [TORP], [AIRAI], [TFJOIN], [HITLOG], [AIMOVE], [REPAIR], [TORPHIT], [TFOVERLAY], [SUPPLY], [CONVOY])
 that help me find what went wrong.
 
 Tester keys:
 F9 - show all enemy task forces (campaign map)
 F4 - create a "ship sunk, survivors adrift" event straight away (campaign map)
 F3 - developer view (battle): enemy ships' distance, speed and what the AI is doing
+
+Other keys:
+F11 - fuel overlay on / off (campaign map). In battle F11 switches the minimap layers on / off
+F2 - switch message log tab (battle)
+Ctrl+A / D / C / B and Ctrl+1-5 - group orders (battle)
 
 -------------------------------------------------
 
