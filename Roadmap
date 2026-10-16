@@ -172,6 +172,10 @@ Aircraft work is on hold: v0.20.9 did not work and air combat needs a full rewor
 - **v0.21.4** Task force overlay `[TFOVERLAY]` (tf_overlay.md, planned): F11 on the campaign map switches on an overlay: a small label under every one of your task forces (days of fuel left, speed) and, for the selected task force, a ring showing how far it can still sail on its fuel. Later steps can add detection rings, ammo and formation status.
 - **v0.21.5** Rules popups updated (files only): new pages Torpedoes (modrules8), Extra UI Parts (modrules9) and Extra Features (modrules10) before Testers!; Events points to modrules8
 
+## v0.22 Resupply and logistics overhaul
+Logistics work goes under v0.22, then v0.22.1, v0.22.2 and so on. It builds on the Logistics overhaul list above.
+- **v0.22** Troop supply upkeep `[SUPPLY]` (supply_upkeep.md, planned): troops at your locations use supplies every day (2% of the troop number); a garrison that runs dry slowly loses troops; the location panel shows the days of supply left. Player side only for now.
+
 ## Housekeeping before release
 - Remove the Testers! popup page (now modrules7; set modrules6 `nextAction` to `SUMMARY`) and the F9 / F3 / F4 keys (see keybinds.md)
 - **Keep all debug logging** (`[TFJOIN]`, `[AIRAI]`, `[TORP]` and any later tags) in the public release, as a decision. It only writes to `output_log.txt`, so players never see it, and it lets players' logs show what went wrong after release. New features keep adding a tagged log line like these.
