@@ -1,6 +1,6 @@
 # v0.21.4 Task force overlay [TFOVERLAY]
 
-Status: planned. Design and install steps written, not compiled or tested yet.
+Status: tested by Aaron, works.
 
 ## What it does
 Press **F11** on the campaign map, or click the **fuel barrel button** at the top left, to switch the overlay on or off (F11 is free on the campaign map, see keybinds.md). Hovering over the button shows "Distance 1 day of fuel gives" in a small box to the right of the button (the button draws its own tip, so the mouse pointer and button never cover it). The button is built by `ModTFOverlay.MakeButton(root, index, icon, text, tooltip, action, out back)`, so future mod buttons use index 1, 2, 3... and stack down the left side (46 pixels apart).
