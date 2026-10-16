@@ -13,7 +13,7 @@ Status: planned, code written, not yet compiled or tested. Builds on the v0.22 s
 - Not saved: if you save and reload while the convoy is at sea, it stays on the map as a normal task force (you can unload it by hand) and a new timer starts.
 
 ## Files (text, both campaigns)
-Copy `Override/language/english/campaign/campaign001/event/` and `campaign002/event/` files `convoyspawn.txt`, `convoyarrived.txt`, `convoylost.txt`, and the picture `Override/campaign/image/rules_convoy.jpg`, into the game's override folder.
+Copy `Override/language/english/campaign/campaign001/event/` and `campaign002/event/` files `convoyspawn.txt`, `convoyarrived.txt`, `convoylost.txt`, and the pictures `Override/campaign/image/rules_convoy.jpg` and `rules_convoylost.jpg`, into the game's override folder.
 
 ## Install steps (dnSpy)
 ### Step 1 - add the new class

@@ -1,1 +1,1 @@
-{"nextAction":"","header":"Convoy Lost","content":"<size=18><b>CONVOY LOST</b></size>\nThe Admiralty supply convoy has been destroyed. Its cargo is lost. The Admiralty will try again.","imagePath":""}
+{"nextAction":"","header":"Convoy Lost","content":"<size=18><b>CONVOY LOST</b></size>\nThe Admiralty supply convoy has been destroyed. Its cargo is lost. The Admiralty will try again.","imagePath":"campaign/image/rules_convoylost.jpg"}
