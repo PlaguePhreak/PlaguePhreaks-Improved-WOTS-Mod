@@ -3,7 +3,7 @@
 Status: planned. Design and install steps written, not compiled or tested yet.
 
 ## What it does
-Press **F11** on the campaign map to switch the overlay on or off (F11 is free on the campaign map, see keybinds.md).
+Press **F11** on the campaign map, or click the **fuel barrel button** at the top left, to switch the overlay on or off (F11 is free on the campaign map, see keybinds.md). Hovering over the button shows "Distance 1 day of fuel gives". The button is built by `ModTFOverlay.MakeButton(root, index, icon, text, tooltip, action, out back)`, so future mod buttons use index 1, 2, 3... and stack down the left side (46 pixels apart).
 - Under each of your task forces a small label: name, days of fuel left, speed in knots. Orange below 5 days, red below 3.
 - Around the **selected** task force, one ring: how far it sails in 1 day (`ringDays`) at its current speed, or less if it has less than a day of fuel left. (Fuel burns per day spent moving, not by speed, so a faster force goes further on the same fuel.)
 - Updates once a second while it is on. Nothing is saved, nothing changes in the game, so it cannot break a campaign.
@@ -31,6 +31,9 @@ Later versions can add to it (detection rings, ammo, formation) without redoing 
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Events;
+using UnityEngine.EventSystems;
+using UnityEngine.UI;
 using WorldMapStrategyKit;
 
 public class ModTFOverlay : MonoBehaviour
@@ -41,11 +44,19 @@ public class ModTFOverlay : MonoBehaviour
 
 	public static float ringDays = 1f;
 
+	public static string tip = "Distance 1 day of fuel gives";
+
 	private float timer;
 
 	private bool reported;
 
+	private bool buttonReported;
+
 	private List<GameObject> objects = new List<GameObject>();
+
+	private GameObject buttonObject;
+
+	private Image buttonBack;
 
 	private void Update()
 	{
@@ -56,15 +67,17 @@ public class ModTFOverlay : MonoBehaviour
 			{
 				return;
 			}
+			if (buttonObject == null)
+			{
+				BuildButton(ci);
+			}
 			if (Input.GetKeyDown(KeyCode.F11))
 			{
-				on = !on;
-				timer = 0f;
-				if (!on)
-				{
-					Clear();
-				}
-				Debug.Log("[TFOVERLAY] overlay " + (on ? "on" : "off"));
+				Toggle();
+			}
+			if (buttonBack != null)
+			{
+				buttonBack.color = on ? new Color(0.5f, 0.3f, 0.08f, 0.95f) : new Color(0.07f, 0.12f, 0.19f, 0.92f);
 			}
 			if (!on)
 			{
@@ -88,6 +101,26 @@ public class ModTFOverlay : MonoBehaviour
 		}
 	}
 
+	private void OnDisable()
+	{
+		Clear();
+		if (buttonObject != null)
+		{
+			UnityEngine.Object.Destroy(buttonObject);
+		}
+	}
+
+	private void Toggle()
+	{
+		on = !on;
+		timer = 0f;
+		if (!on)
+		{
+			Clear();
+		}
+		Debug.Log("[TFOVERLAY] overlay " + (on ? "on" : "off"));
+	}
+
 	private void Clear()
 	{
 		for (int i = 0; i < objects.Count; i++)
@@ -98,6 +131,104 @@ public class ModTFOverlay : MonoBehaviour
 			}
 		}
 		objects.Clear();
+	}
+
+	private void BuildButton(CampaignInterface ci)
+	{
+		if (ci.pauseButtonImage == null || ci.pauseButtonImage.canvas == null)
+		{
+			return;
+		}
+		Transform root = ci.pauseButtonImage.canvas.rootCanvas.transform;
+		Sprite icon = null;
+		try
+		{
+			icon = AssetLoader.instance.ImportSprite("interface/images/map/fuelbarrel.png");
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[TFOVERLAY] could not load fuelbarrel.png: " + ex.Message);
+		}
+		if (!buttonReported)
+		{
+			buttonReported = true;
+			Debug.Log("[TFOVERLAY] button added, icon " + ((icon != null) ? "loaded" : "not found"));
+		}
+		buttonObject = MakeButton(root, 0, icon, "FUEL", tip, new UnityAction(Toggle), out buttonBack);
+	}
+
+	public static GameObject MakeButton(Transform root, int index, Sprite icon, string fallbackText, string tooltip, UnityAction action, out Image back)
+	{
+		GameObject go = new GameObject("ModButton " + index, new Type[1] { typeof(RectTransform) });
+		go.transform.SetParent(root, false);
+		RectTransform rt = go.GetComponent<RectTransform>();
+		rt.anchorMin = new Vector2(0f, 1f);
+		rt.anchorMax = new Vector2(0f, 1f);
+		rt.pivot = new Vector2(0f, 1f);
+		rt.anchoredPosition = new Vector2(10f, -10f - (float)index * 46f);
+		rt.sizeDelta = new Vector2(40f, 40f);
+		Image frame = go.AddComponent<Image>();
+		frame.color = new Color(0.72f, 0.58f, 0.3f, 1f);
+		Button button = go.AddComponent<Button>();
+		button.targetGraphic = frame;
+		button.onClick.AddListener(action);
+		GameObject inner = new GameObject("Back", new Type[1] { typeof(RectTransform) });
+		inner.transform.SetParent(go.transform, false);
+		RectTransform irt = inner.GetComponent<RectTransform>();
+		irt.anchorMin = Vector2.zero;
+		irt.anchorMax = Vector2.one;
+		irt.offsetMin = new Vector2(2f, 2f);
+		irt.offsetMax = new Vector2(-2f, -2f);
+		back = inner.AddComponent<Image>();
+		back.color = new Color(0.07f, 0.12f, 0.19f, 0.92f);
+		back.raycastTarget = false;
+		GameObject face = new GameObject("Icon", new Type[1] { typeof(RectTransform) });
+		face.transform.SetParent(go.transform, false);
+		RectTransform frt = face.GetComponent<RectTransform>();
+		frt.anchorMin = Vector2.zero;
+		frt.anchorMax = Vector2.one;
+		frt.offsetMin = new Vector2(5f, 5f);
+		frt.offsetMax = new Vector2(-5f, -5f);
+		if (icon != null)
+		{
+			Image img = face.AddComponent<Image>();
+			img.sprite = icon;
+			img.preserveAspect = true;
+			img.raycastTarget = false;
+		}
+		else
+		{
+			Text label = face.AddComponent<Text>();
+			label.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+			label.text = fallbackText;
+			label.fontSize = 11;
+			label.alignment = TextAnchor.MiddleCenter;
+			label.color = new Color(1f, 0.67f, 0.24f, 1f);
+			label.raycastTarget = false;
+		}
+		EventTrigger trigger = go.AddComponent<EventTrigger>();
+		EventTrigger.Entry enter = new EventTrigger.Entry();
+		enter.eventID = EventTriggerType.PointerEnter;
+		enter.callback.AddListener(delegate(BaseEventData d)
+		{
+			if (TooltipManager.instance != null)
+			{
+				TooltipManager.instance.isBasicTip = true;
+				TooltipManager.instance.SetToolTip(tooltip);
+			}
+		});
+		trigger.triggers.Add(enter);
+		EventTrigger.Entry exit = new EventTrigger.Entry();
+		exit.eventID = EventTriggerType.PointerExit;
+		exit.callback.AddListener(delegate(BaseEventData d)
+		{
+			if (TooltipManager.instance != null)
+			{
+				TooltipManager.instance.ClearToolTip();
+			}
+		});
+		trigger.triggers.Add(exit);
+		return go;
 	}
 
 	private void Rebuild(CampaignInterface ci)
@@ -148,6 +279,10 @@ public class ModTFOverlay : MonoBehaviour
 	}
 }
 ```
+
+### Step 1b - the barrel icon
+1. Copy [fuelbarrel.png](/mnt/project-files/v0.21.4/fuelbarrel.png) into the game's Override folder at `Override/interface/images/map/fuelbarrel.png` (the same folder as survivors.png). The repo already has it there.
+2. If the file is missing the button still works and shows the word FUEL instead.
 
 ### Step 2 - start it with the campaign
 1. In class **CampaignManager**, right-click method **CheckHourly** > **Edit Method (C#)...**
