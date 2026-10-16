@@ -187,7 +187,7 @@ Logistics work goes under v0.22, then v0.22.1, v0.22.2 and so on. It builds on t
 - **v0.22.6 FIX NEEDED: the Admiralty supply convoy does NOT sail to your home port by itself (found in testing).** It appears on the northern edge but just sits there, so you have to send it yourself. It has to be fixed so it sails to the first home port on its own and unloads at 12 km, as v0.22.4 says. Tag `[CONVOY]` (supply_convoy_event.md). Once fixed, check the "Supply convoy event" page in the in-game book (guide_book.md) still says it right.
 
 ## v0.23 Custom ships (TTE)
-- **v0.23** TTE merchants, oilers and transports (tte_merchants.md, pending test): 23 ships from the TTE team, used with their permission and NOT made by us. Credit line still to come from TTE (README has a placeholder).
+- **v0.23** TTE merchants, oilers and transports (tte_merchants.md, pending test): 23 ships from the TTE team, used with their permission and NOT made by us. Credited in the README; the TTE mod is about 4 years old and the team is inactive, and the assets will be removed if any TTE member asks.
 - **v0.23.1** Limited ship pools (ship_limits.md, pending test): 10-30 of each new type; player side by name lists, AI side by a dnSpy edit of CampaignAI.GetMissionPrefabs.
 - **v0.23.2** Ship list order (pending test): Manley between the subs and destroyers, new merchants after Cimarron.
 - Later: check which ports can build the new ships; Kamikawa Maru and Akitsu Maru (carriers in TTE) were left out.

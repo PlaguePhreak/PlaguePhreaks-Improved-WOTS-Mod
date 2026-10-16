@@ -18,7 +18,8 @@ CREDITS - CUSTOM SHIPS (TTE)
 ALL custom merchant ships currently in the game (merchants, transports, the hospital ship, oilers and the destroyer escort / transport)
 come from the TTE mod team. I use them with their permission. They are NOT my own creation: I did not make the models, and
 all credit for them goes to the TTE team.
-[PLACEHOLDER - TTE credit line to be added here once the team gives me their exact wording.]
+I have used the TTE team's assets and credit them for it. The TTE mod is about 4 years old and the team is no longer active.
+If any member of the TTE team wants their assets removed from this mod, I will remove them at their request.
 
 I have no experience in modding or coding, so I'm using an AI (Claude) to help me write the code.
 I test everything myself in game and decide what goes in.

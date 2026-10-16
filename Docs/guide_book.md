@@ -166,7 +166,7 @@ public static class ModGuide
 
 		"<color=#E0B030><b>Custom ships</b></color>\n" +
 		"All custom merchant ships in the game (merchants, transports, hospital ship, oilers and the destroyer escort) are from the TTE team and are used with their permission. They are not the work of the mod author.\n" +
-		"TTE credit line: [placeholder - to be replaced with the TTE team's wording].\n\n" +
+		"The TTE mod is about 4 years old and the team is no longer active. Their assets are used with credit, and will be removed at the request of any TTE member.\n\n" +
 		"<color=#E0B030><b>Inspiration</b></color>\n" +
 		"The events and the survivors system were inspired by Kiko. The Hit log is a copy of the idea from the ADBA Mod Team's Hitlog."
 	};
