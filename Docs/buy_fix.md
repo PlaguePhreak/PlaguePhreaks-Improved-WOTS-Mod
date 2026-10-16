@@ -35,4 +35,4 @@ if (player)
     }
 }
 ```
-Status: written, not yet compiled or tested.
+Status: compiled and tested, works.

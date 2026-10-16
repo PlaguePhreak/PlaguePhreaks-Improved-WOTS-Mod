@@ -160,7 +160,7 @@ AI work goes under v0.20, then v0.20.1, v0.20.2 and so on.
 
 ## v0.21 Next fixes (aircraft work on hold)
 Aircraft work is on hold: v0.20.9 did not work and air combat needs a full rework once we understand how the game handles aircraft. Fixes from here go under v0.21, then v0.21.1, v0.21.2 and so on.
-- **v0.21** Faster ship buying `[BUY]` (see Campaign layer above)
+- **v0.21** Faster ship buying `[BUY]` (buy_fix.md, tested): after ordering a ship the name dropdown moves on to the next ship of that class that can still be bought
 
 ## Housekeeping before release
 - Remove the Testers! popup page (now modrules7; set modrules6 `nextAction` to `SUMMARY`) and the F9 / F3 / F4 keys (see keybinds.md)
