@@ -1,6 +1,17 @@
 # v0.22.5 Features and change log book [GUIDE]
 
-Status: planned. Code and install steps written, not compiled or tested yet.
+Status: installed and tested (v0.22.5). Text updated for v0.23 to v0.23.2 (new pages Custom ships and Credits): see "Updating the book text" below. The update is not compiled yet.
+
+## Updating the book text (v0.23.2) - short steps
+The book text is inside the DLL, so it needs one dnSpy edit. Only the lists `titles` and `bodies` changed (3 new pages: CUSTOM SHIPS after SUPPLY, CREDITS at the end; page 1 and the supply convoy text changed).
+1. In dnSpy, open Assembly-CSharp and find the class **ModGuide**.
+2. Right-click the class **ModGuide** > **Edit Class (C#)...**
+3. Select all the code, delete it, and paste the whole class from the code block below (Step 1).
+4. Click **Compile**. If it gives errors, send me the exact message.
+5. **File > Save Module**.
+6. Start the game, open a campaign and click the book: you should see 12 pages. Check page 1, page 4 (CUSTOM SHIPS) and the last page (CREDITS).
+
+No other method changes. Nothing else in the DLL needs touching.
 
 ## What it does
 - A **book button** at the top left of the campaign map. The fuel barrel button moves down one slot (the mod's button maker stacks buttons by index: book = 0, fuel = 1).
@@ -53,17 +64,21 @@ public static class ModGuide
 		"WHAT'S NEW",
 		"EVENTS",
 		"SUPPLY",
+		"CUSTOM SHIPS",
 		"REPAIR AND DAMAGE",
 		"CREWS AND VETERANCY",
 		"FUEL AND SHIPS",
 		"SMARTER AI",
 		"AIR",
 		"TORPEDOES",
-		"BATTLE UI AND KEYS"
+		"BATTLE UI AND KEYS",
+		"CREDITS"
 	};
 
 	private static string[] bodies = new string[]
 	{
+		"<color=#E0B030><b>Version 0.23 to 0.23.2</b></color>\n" +
+		"23 new merchant ships, oilers and transports from the TTE team (not made by the mod author), in limited numbers: 10-30 of each type for each side. The Manley now sits between the submarines and the destroyers in the ship list.\n\n" +
 		"<color=#E0B030><b>Version 0.22.5</b></color>\n" +
 		"This book. It lists what the mod has added and what the keys are. Use Next and Previous to turn the pages and scroll down inside a page.\n\n" +
 		"<color=#E0B030><b>Version 0.22.4</b></color>\n" +
@@ -77,7 +92,7 @@ public static class ModGuide
 		"<color=#E0B030><b>Survivors event</b></color>\n" +
 		"Every few days a ship is reported sunk somewhere on the campaign map. Sail a task force to the lifebuoy marker within 24 hours to save the survivors. Your own men refill your crews without losing experience. Enemy survivors become prisoners (command points).\n\n" +
 		"<color=#E0B030><b>Supply convoy event</b></color>\n" +
-		"Every 20-30 days the Admiralty sends a convoy of 3 transports, 1 oiler and some destroyers. It appears on the northern edge of the map and sails to your home port by itself. The enemy knows where it is for the first 6 hours. Ships that are sunk take their cargo with them, so you only get what survives. Do not lose it.",
+		"Every 20-30 days the Admiralty sends a convoy of 3 transports, 1 oiler and some destroyers. It appears on the northern edge of the map. For now it does not sail by itself (a fix is planned), so send it to your home port yourself. The enemy knows where it is for the first 6 hours. Ships that are sunk take their cargo with them, so you only get what survives. Do not lose it.",
 
 		"<color=#E0B030><b>Troop supplies</b></color>\n" +
 		"Every day each location with troops spends 3% of its troop number in supplies. A garrison that runs dry slowly loses troops. The location panel shows how many days of supply are left.\n\n" +
@@ -85,6 +100,15 @@ public static class ModGuide
 		"The AI sends convoys to its outposts that are running low. You can sink them.\n\n" +
 		"<color=#E0B030><b>Numbers</b></color>\n" +
 		"Weekly supplies at home ports are 6,000. Outposts start with 1 supply per troop.",
+
+		"<color=#E0B030><b>New merchant ships</b></color>\n" +
+		"23 merchant ships, transports, a hospital ship, an oiler (Patapsco) and a destroyer escort (Manley) were added. ALL of them are made by the TTE team and used with their permission. They are not the work of the mod author.\n\n" +
+		"<color=#E0B030><b>Limited numbers</b></color>\n" +
+		"Each type has a pool of 10-30 ships for each side. A ship that is built or sunk is gone for good. The stock merchants (C3 Cargo, Nippon Maru, Kamogawa Maru) are unlimited, so convoys can still form when the new pools run out.\n\n" +
+		"<color=#E0B030><b>Convoys</b></color>\n" +
+		"The AI builds its convoys from a random mix of the merchants and oilers, new ones included. A hospital ship can turn up in a convoy.\n\n" +
+		"<color=#E0B030><b>Ship list</b></color>\n" +
+		"The Manley sits between the submarines and the destroyers.",
 
 		"<color=#E0B030><b>Lasting damage</b></color>\n" +
 		"Knocked-out equipment stays broken until you get to a port.\n\n" +
@@ -138,7 +162,13 @@ public static class ModGuide
 		"Torpedo tracks, smoke, lookout and radar rings, enemy last-seen markers. Buttons above the map toolbar, or F11 for all.\n\n" +
 		"<color=#E0B030><b>Keys</b></color>\n" +
 		"F11 campaign map: fuel overlay. F11 battle: minimap layers. F2 battle: message log tab.\n" +
-		"Testers: F9 reveal enemies (map), F4 create a survivor event (map), F3 developer view (battle)."
+		"Testers: F9 reveal enemies (map), F4 create a survivor event (map), F3 developer view (battle).",
+
+		"<color=#E0B030><b>Custom ships</b></color>\n" +
+		"All custom merchant ships in the game (merchants, transports, hospital ship, oilers and the destroyer escort) are from the TTE team and are used with their permission. They are not the work of the mod author.\n" +
+		"TTE credit line: [placeholder - to be replaced with the TTE team's wording].\n\n" +
+		"<color=#E0B030><b>Inspiration</b></color>\n" +
+		"The events and the survivors system were inspired by Kiko. The Hit log is a copy of the idea from the ADBA Mod Team's Hitlog."
 	};
 
 	public static void Build(Transform root)

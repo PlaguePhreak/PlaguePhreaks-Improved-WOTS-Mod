@@ -1,6 +1,6 @@
 # TTE merchant ships, oilers and transports
 
-23 ships from the TTE mod (WOTS 1.08g7), added with permission from the TTE team. Credit: TTE team (add their exact credit line here when you have it).
+23 ships from the TTE mod (WOTS 1.08g7), added with permission from the TTE team. ALL custom merchant ships in the mod are by the TTE team, used with their permission, and are not our own work. Credit: TTE team (placeholder: add their exact credit line here, in the README and on the last book page when you have it).
 Ship names come from TTE. A version with the ONI 209 index names (like "15-KMFM") is in `Extras/ONI_209_names`.
 
 ## Ships added

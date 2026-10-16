@@ -7,7 +7,34 @@ Changes are made in Assembly-CSharp.dll (dnSpy) and in the game's text files (Ov
 The mod is in alpha, so every version is 0.x. Version numbers group the work in the order it was built, and each follow-on part of a feature area gets a point number (v0.17.1, v0.17.2 and so on). Earlier test builds called v0.10 to v0.19 "v1.0" to "v1.9" (for example v1.8.4 is now v0.18.4).
 
 
-v0.22.4 - Admiralty supply convoy event (pending test)
+v0.23.2 - Ship list order (pending test)
+----------------------------------------
+* In the shipyard and Museum lists the Manley (the only destroyer escort) now sits between the submarines and the destroyers (after Tench, before Farragut). The new US merchants and oilers sit right after the stock Cimarron, and the hospital ship after the Kent. The game lists ships in the order of unit/sea/allUnitsList.txt, so this is the only file that changed.
+
+
+v0.23.1 - Limited number of the new TTE ships (pending test)
+------------------------------------------------------------
+* Each new TTE ship type now has a fixed pool of 10-30 ships (random per type, fixed in the files), for both the player and the AI. A ship that is built or sunk is gone from the pool for good. The stock merchants (c3_cargo, nippon_maru, kamogawa_maru) stay unlimited, so convoys can still form when the new pools run out.
+* Player side: text files only. Every class lists namesInClass / instancesInClass in language/english/unit/sea/<id>.txt, and one name is one ship you can own. The Manley keeps its existing 15 names.
+* AI side: the game never counted AI merchants and oilers, so CampaignAI.GetMissionPrefabs was edited in dnSpy (pickLimited). Steps and pool sizes are in Docs/ship_limits.md.
+
+
+v0.23 - TTE merchant ships, oilers and transports (pending test)
+----------------------------------------------------------------
+* 23 new ships taken from the TTE mod (WOTS 1.08g7): ALL custom merchant ships in the game are made by the TTE team and are used with their permission. They are not my own creation. Ship names are TTE's. A version with the ONI 209 index names is in Extras/ONI_209_names.
+* Allied: Heywood, President Jackson, Attack Transport, Hospital Ship (Australia), Arcturus, Harris, Mount Hood, McCawley, Patapsco (oiler) and Manley (destroyer escort / transport). Japanese: Generic Maru, Type 1B, 1C, 1K, 2TL, 3A, Type A Merchant, Ural Maru, Akita Maru, Kasagisan Maru, Taihosan Maru, Hakushika Maru and Aratama Maru.
+* The AI picks a random Merchant or Oiler for its convoys, so the new ships join the random mix by themselves. The hospital ship counts as a merchant, so it can turn up in a convoy.
+* Files: allUnitsList.txt, mountData.txt (one new gun, 4in50Mark14), weapons.txt, seaUnits.txt for both campaigns, and 23 ship name files. The 3D models (about 17 MB each) are not in the repo; Extras/copy_tte_ships.bat copies them from the TTE folder. Install steps are in Docs/tte_merchants.md.
+* Supply and fuel costs in the campaign are estimates matched to similar stock ships. Kamikawa Maru and Akitsu Maru were left out on purpose (they are carriers in TTE).
+
+
+v0.22.5 - Features and change log book (tested)
+-----------------------------------------------
+* A book button at the top left of the campaign map (the fuel barrel moved down one slot). Hover: "Features and change log". Click: a popup with a scroll bar and Previous / Close / Next buttons. Page 1 is What's new, then one page per area of the mod (events, supply, repair, crews, fuel, AI, air, torpedoes, battle UI and keys). Nothing is saved (ModGuide, [GUIDE] log line, guidebook.png).
+* The text lives in the DLL (ModGuide), not in an Override file. Docs/guide_book.md has the full class and the steps to update it.
+
+
+v0.22.4 - Admiralty supply convoy event (found in testing: does NOT sail by itself yet, fix planned as v0.22.6)
 ------------------------------------------------------
 * Supply convoy: every 20-30 days (random) the Admiralty sends a convoy of 3 transports, 1 oiler and 1-3 destroyers. It appears at a random spot on the northern edge of the map (one of the 40 northernmost sea waypoints) and sails to your first home port by itself. (ModConvoy, [CONVOY] log lines)
 * Cargo is random but never below 2,000 troops, 2,000 supplies, 100 engineering and 100 fuel, capped by what each ship can carry. At 12 km from the port the cargo is unloaded; ships that were sunk take their cargo down, so you only get what survives.

@@ -49,6 +49,8 @@ Direction: the mod aims to be **realistic / historical**. New ideas should follo
 38. Task force overlay and fuel barrel button, v0.21.4 (tf_overlay.md) (tested)
 39. Rules popups updated, v0.21.5: Torpedoes, Extra UI Parts and Extra Features pages
 40. Troop supply upkeep and AI supply convoys, v0.22 (supply_upkeep.md) (tested)
+41. Features and change log book, v0.22.5 (guide_book.md) (tested)
+42. TTE merchant ships, oilers and transports with limited pools, v0.23 to v0.23.2 (tte_merchants.md, ship_limits.md) (pending test)
 - Note: Zero vs Wildcat swings a lot between battles. If Zeros keep winning long dogfights, give the Zero 20 mm its own short ammo supply (about 8 s) instead of sharing the 30 s gun timer.
 
 ## AI overhaul
@@ -182,7 +184,13 @@ Aircraft work is on hold: v0.20.9 did not work and air combat needs a full rewor
 Logistics work goes under v0.22, then v0.22.1, v0.22.2 and so on. It builds on the Logistics overhaul list above.
 - **v0.22** Troop supply upkeep `[SUPPLY]` (supply_upkeep.md, tested): troops at your locations use supplies every day (2% of the troop number); a garrison that runs dry slowly loses troops; the location panel shows the days of supply left. The AI side too: it sends convoys to its low-supply outposts first. Weekly supplies 4,000 -> 6,000, outposts start with 1 supply per troop.
 - **v0.22.4** Admiralty supply convoy event `[CONVOY]` (supply_convoy_event.md, pending test): every 20-30 days (random) a convoy of 3 transports, 1 oiler and 1-3 destroyers appears at a random spot on the northern edge of the map (one of the 40 northernmost waypoints) and sails to your home port. Cargo is random but never below 2,000 troops, 2,000 supplies, 100 engineering and 100 fuel (capped by what each ship can carry). The enemy is told where it is for the first 6 hours and will hunt it; sunk ships take their cargo down, and what survives is unloaded into the port. Popups with pictures for the spawn, arrival and loss (both campaigns). The convoy is a player-side task force because the game has no neutral side. First drafted as v0.22.1.
-- **v0.22.5 FIX NEEDED: the Admiralty supply convoy does NOT sail to your home port by itself (found in testing).** It appears on the northern edge but just sits there, so you have to send it yourself. It has to be fixed so it sails to the first home port on its own and unloads at 12 km, as v0.22.4 says. Tag `[CONVOY]` (supply_convoy_event.md). Once fixed, check the "Supply convoy event" page in the in-game book (guide_book.md) still says it right.
+- **v0.22.6 FIX NEEDED: the Admiralty supply convoy does NOT sail to your home port by itself (found in testing).** It appears on the northern edge but just sits there, so you have to send it yourself. It has to be fixed so it sails to the first home port on its own and unloads at 12 km, as v0.22.4 says. Tag `[CONVOY]` (supply_convoy_event.md). Once fixed, check the "Supply convoy event" page in the in-game book (guide_book.md) still says it right.
+
+## v0.23 Custom ships (TTE)
+- **v0.23** TTE merchants, oilers and transports (tte_merchants.md, pending test): 23 ships from the TTE team, used with their permission and NOT made by us. Credit line still to come from TTE (README has a placeholder).
+- **v0.23.1** Limited ship pools (ship_limits.md, pending test): 10-30 of each new type; player side by name lists, AI side by a dnSpy edit of CampaignAI.GetMissionPrefabs.
+- **v0.23.2** Ship list order (pending test): Manley between the subs and destroyers, new merchants after Cimarron.
+- Later: check which ports can build the new ships; Kamikawa Maru and Akitsu Maru (carriers in TTE) were left out.
 
 ## Housekeeping before release
 - Remove the Testers! popup page (now modrules7; set modrules6 `nextAction` to `SUMMARY`) and the F9 / F3 / F4 keys (see keybinds.md)
