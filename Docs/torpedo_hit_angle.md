@@ -58,7 +58,7 @@ if ((ammoType == AmmoType.Torpedo || ammoType == AmmoType.Aerial_Torpedo) && dud
         bounceRight.Normalize();
         float bounceLateral = Vector3.Dot(bounceFwd, bounceRight);
         float bounceAngle = Mathf.Asin(Mathf.Clamp01(Mathf.Abs(bounceLateral))) * 57.29578f;
-        if (bounceAngle < 22f && UnityEngine.Random.value < 1f - bounceAngle / 22f)
+        if (bounceAngle < 25f && (bounceAngle < 15f || UnityEngine.Random.value < (25f - bounceAngle) / 10f))
         {
             Vector3 bounceNew = bounceFwd - 2f * bounceLateral * bounceRight;
             base.transform.position += bounceRight * ((bounceLateral > 0f) ? -3f : 3f);
@@ -71,5 +71,5 @@ if ((ammoType == AmmoType.Torpedo || ammoType == AmmoType.Aerial_Torpedo) && dud
     }
 }
 ```
-Chance to bounce: 100% for a hit along the hull, 50% at 11 degrees, 0% at 22 degrees. A bounced torpedo keeps running on its mirrored heading and can hit another ship.
+Chance to bounce: 100% under 15 degrees, then fading to 0% at 25 degrees (changed from a fade starting at 0 degrees, where a 7 degree hit still exploded about a third of the time). A bounced torpedo keeps running on its mirrored heading and can hit another ship.
 Status: written, not yet compiled or tested.
