@@ -1,4 +1,4 @@
-# v0.22.1 Admiralty supply convoy event [CONVOY]
+# v0.22.4 Admiralty supply convoy event [CONVOY]
 
 Status: planned, code written, not yet compiled or tested. Builds on the v0.22 supply work (`supply_upkeep.md`).
 
