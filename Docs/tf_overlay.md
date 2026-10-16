@@ -3,7 +3,7 @@
 Status: planned. Design and install steps written, not compiled or tested yet.
 
 ## What it does
-Press **F11** on the campaign map, or click the **fuel barrel button** at the top left, to switch the overlay on or off (F11 is free on the campaign map, see keybinds.md). Hovering over the button shows "Distance 1 day of fuel gives". The button is built by `ModTFOverlay.MakeButton(root, index, icon, text, tooltip, action, out back)`, so future mod buttons use index 1, 2, 3... and stack down the left side (46 pixels apart).
+Press **F11** on the campaign map, or click the **fuel barrel button** at the top left, to switch the overlay on or off (F11 is free on the campaign map, see keybinds.md). Hovering over the button shows "Distance 1 day of fuel gives" in a small box to the right of the button (the button draws its own tip, so the mouse pointer and button never cover it). The button is built by `ModTFOverlay.MakeButton(root, index, icon, text, tooltip, action, out back)`, so future mod buttons use index 1, 2, 3... and stack down the left side (46 pixels apart).
 - Under each of your task forces a small label: name, days of fuel left, speed in knots. Orange below 5 days, red below 3.
 - Around the **selected** task force, one ring: how far it sails in 1 day (`ringDays`) at its current speed, or less if it has less than a day of fuel left. (Fuel burns per day spent moving, not by speed, so a faster force goes further on the same fuel.)
 - Updates once a second while it is on. Nothing is saved, nothing changes in the game, so it cannot break a campaign.
@@ -206,26 +206,56 @@ public class ModTFOverlay : MonoBehaviour
 			label.color = new Color(1f, 0.67f, 0.24f, 1f);
 			label.raycastTarget = false;
 		}
+		GameObject tipBox = new GameObject("Tip", new Type[1] { typeof(RectTransform) });
+		tipBox.transform.SetParent(go.transform, false);
+		RectTransform trt = tipBox.GetComponent<RectTransform>();
+		trt.anchorMin = new Vector2(1f, 0.5f);
+		trt.anchorMax = new Vector2(1f, 0.5f);
+		trt.pivot = new Vector2(0f, 0.5f);
+		trt.anchoredPosition = new Vector2(6f, 0f);
+		trt.sizeDelta = new Vector2(240f, 28f);
+		Image tipBack = tipBox.AddComponent<Image>();
+		tipBack.color = new Color(0.05f, 0.08f, 0.13f, 0.95f);
+		tipBack.raycastTarget = false;
+		GameObject tipTextObject = new GameObject("Text", new Type[1] { typeof(RectTransform) });
+		tipTextObject.transform.SetParent(tipBox.transform, false);
+		RectTransform ttrt = tipTextObject.GetComponent<RectTransform>();
+		ttrt.anchorMin = Vector2.zero;
+		ttrt.anchorMax = Vector2.one;
+		ttrt.offsetMin = new Vector2(8f, 0f);
+		ttrt.offsetMax = new Vector2(-8f, 0f);
+		Text tipText = tipTextObject.AddComponent<Text>();
+		Font tipFont = null;
+		int tipSize = 15;
+		if (TooltipManager.instance != null && TooltipManager.instance.toolTipText != null)
+		{
+			tipFont = TooltipManager.instance.toolTipText.font;
+			tipSize = TooltipManager.instance.toolTipText.fontSize;
+		}
+		if (tipFont == null)
+		{
+			tipFont = Resources.GetBuiltinResource<Font>("Arial.ttf");
+		}
+		tipText.font = tipFont;
+		tipText.fontSize = tipSize;
+		tipText.text = tooltip;
+		tipText.alignment = TextAnchor.MiddleLeft;
+		tipText.color = Color.white;
+		tipText.raycastTarget = false;
+		tipBox.SetActive(false);
 		EventTrigger trigger = go.AddComponent<EventTrigger>();
 		EventTrigger.Entry enter = new EventTrigger.Entry();
 		enter.eventID = EventTriggerType.PointerEnter;
 		enter.callback.AddListener(delegate(BaseEventData d)
 		{
-			if (TooltipManager.instance != null)
-			{
-				TooltipManager.instance.isBasicTip = true;
-				TooltipManager.instance.SetToolTip(tooltip);
-			}
+			tipBox.SetActive(true);
 		});
 		trigger.triggers.Add(enter);
 		EventTrigger.Entry exit = new EventTrigger.Entry();
 		exit.eventID = EventTriggerType.PointerExit;
 		exit.callback.AddListener(delegate(BaseEventData d)
 		{
-			if (TooltipManager.instance != null)
-			{
-				TooltipManager.instance.ClearToolTip();
-			}
+			tipBox.SetActive(false);
 		});
 		trigger.triggers.Add(exit);
 		return go;
