@@ -174,7 +174,7 @@ Aircraft work is on hold: v0.20.9 did not work and air combat needs a full rewor
 
 ## v0.22 Resupply and logistics overhaul
 Logistics work goes under v0.22, then v0.22.1, v0.22.2 and so on. It builds on the Logistics overhaul list above.
-- **v0.22** Troop supply upkeep `[SUPPLY]` (supply_upkeep.md, planned): troops at your locations use supplies every day (2% of the troop number); a garrison that runs dry slowly loses troops; the location panel shows the days of supply left. The AI side too: it sends convoys to its low-supply outposts first. Weekly supplies 4,000 -> 6,000, outposts start with 1 supply per troop.
+- **v0.22** Troop supply upkeep `[SUPPLY]` (supply_upkeep.md, tested): troops at your locations use supplies every day (2% of the troop number); a garrison that runs dry slowly loses troops; the location panel shows the days of supply left. The AI side too: it sends convoys to its low-supply outposts first. Weekly supplies 4,000 -> 6,000, outposts start with 1 supply per troop.
 
 ## Housekeeping before release
 - Remove the Testers! popup page (now modrules7; set modrules6 `nextAction` to `SUMMARY`) and the F9 / F3 / F4 keys (see keybinds.md)

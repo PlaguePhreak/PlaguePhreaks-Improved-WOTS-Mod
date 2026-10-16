@@ -1,6 +1,6 @@
 # v0.22 Troop supply upkeep [SUPPLY]
 
-Status: planned, code written, not yet compiled or tested. Covers both sides: the player and the AI.
+Status: tested by Aaron, works as intended. Covers both sides: the player and the AI.
 
 ## What it does
 - Every campaign day, each location with troops (yours and the AI's) spends supplies to feed them: `ceil(troops x upkeepPerTroopPerDay)`. Default 0.03, so 1,000 troops use 30 supplies a day (the base game only spends supplies in ground fights, at 0.05 per troop a day).
