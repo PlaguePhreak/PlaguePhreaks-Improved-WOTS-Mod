@@ -1,30 +1,37 @@
 # v0.21 Faster ship buying [BUY]
 
-Method: CampaignInterface.AddShipToTaskForce. After the line
-`UnitReference.instance.SetNamesInClassList(UnitReference.instance.namesInClassDropdown.value);`
-(near the end, after the ship is added to the new task force) add:
+Finding: after buying a ship that is already in the pool (state -1), `UnitReference.SetNamesInClassList`
+already jumps the dropdown to the first ship still available, so no change is needed there.
+The gap is ORDERING a ship that has to be built (state 1): `AddShipToTaskForce` returns right after the order
+and the dropdown stays on the same ship.
+
+Fix: in CampaignInterface.AddShipToTaskForce, inside `if (num2 == 1)`, after the
+`if (orderAvailable != null && orderAvailable.Count == 3) { ... }` block and just before the `return;` that follows it, add:
 
 ```csharp
-if (player && UnitReference.instance.namesInClassDropdown.options.Count > 1)
+if (player)
 {
-    MapLocation buyPort = this.currentMapObject.GetComponent<MapLocation>();
     int buyCount = UnitReference.instance.namesInClassDropdown.options.Count;
-    int buyStart = UnitReference.instance.namesInClassDropdown.value;
     for (int buyStep = 1; buyStep < buyCount; buyStep++)
     {
-        int buyIndex = (buyStart + buyStep) % buyCount;
-        if (CampaignManager.instance.IsPlayerShipInstanceAvailable(UnitReference.instance.currentPrefab, buyIndex) != -1)
+        int buyIndex = (value + buyStep) % buyCount;
+        int buyState = CampaignManager.instance.IsPlayerShipInstanceAvailable(currentPrefab, buyIndex);
+        bool buyOk = false;
+        if (buyState == -1)
         {
-            continue;
+            string buyHome = MobileMapObject.GetHomePort(currentPrefab, buyIndex);
+            buyOk = buyHome == string.Empty || component == null || buyHome == component.locationName;
         }
-        string buyHome = MobileMapObject.GetHomePort(UnitReference.instance.currentPrefab, buyIndex);
-        if (buyHome != string.Empty && buyPort != null && buyHome != buyPort.locationName)
+        else if (buyState == 1 && CampaignManager.instance.GetIndexInDoubleList(currentPrefab, buyIndex, campaignData.orderShipClasses, campaignData.orderShipInstances) == -1)
         {
-            continue;
+            buyOk = component == null || component.portLevel >= num;
         }
-        UnitReference.instance.namesInClassDropdown.value = buyIndex;
-        Debug.Log("[BUY] next ship in class: " + buyIndex);
-        break;
+        if (buyOk)
+        {
+            UnitReference.instance.namesInClassDropdown.value = buyIndex;
+            Debug.Log("[BUY] next ship in class: " + buyIndex);
+            break;
+        }
     }
 }
 ```
