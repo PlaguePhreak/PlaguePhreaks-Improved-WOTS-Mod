@@ -2,12 +2,12 @@
 
 Method: Ammunition.ExplodeAmmunition. Find these two lines near the top:
 ```csharp
-float value = Random.value;
+float value = UnityEngine.Random.value;
 bool flag = value < dudRate;
 ```
 Replace them with:
 ```csharp
-float value = Random.value;
+float value = UnityEngine.Random.value;
 float hitChance = dudRate;
 if (u != null && directHit && dudRate > 0f && (ammoType == AmmoType.Torpedo || ammoType == AmmoType.Aerial_Torpedo))
 {
@@ -32,7 +32,7 @@ if (u != null && directHit && dudRate > 0f && (ammoType == AmmoType.Torpedo || a
             hitChance *= 0.6f;
         }
     }
-    Debug.Log("[TORPHIT] " + base.name + " angle " + hitAngle.ToString("F0") + " dud chance " + hitChance.ToString("F2"));
+    UnityEngine.Debug.Log("[TORPHIT] " + base.name + " angle " + hitAngle.ToString("F0") + " dud chance " + hitChance.ToString("F2"));
 }
 bool flag = value < hitChance;
 ```
@@ -58,14 +58,14 @@ if ((ammoType == AmmoType.Torpedo || ammoType == AmmoType.Aerial_Torpedo) && dud
         bounceRight.Normalize();
         float bounceLateral = Vector3.Dot(bounceFwd, bounceRight);
         float bounceAngle = Mathf.Asin(Mathf.Clamp01(Mathf.Abs(bounceLateral))) * 57.29578f;
-        if (bounceAngle < 22f && Random.value < 1f - bounceAngle / 22f)
+        if (bounceAngle < 22f && UnityEngine.Random.value < 1f - bounceAngle / 22f)
         {
             Vector3 bounceNew = bounceFwd - 2f * bounceLateral * bounceRight;
             base.transform.position += bounceRight * ((bounceLateral > 0f) ? -3f : 3f);
             base.transform.rotation = Quaternion.LookRotation(bounceNew);
             bounceMove.gyroDone = true;
             ((Behaviour)bounceMove).enabled = true;
-            Debug.Log("[TORPHIT] " + base.name + " bounced off " + component3.name + " at " + bounceAngle.ToString("F0") + " degrees");
+            UnityEngine.Debug.Log("[TORPHIT] " + base.name + " bounced off " + component3.name + " at " + bounceAngle.ToString("F0") + " degrees");
             return;
         }
     }
