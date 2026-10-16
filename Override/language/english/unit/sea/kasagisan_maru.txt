@@ -1,0 +1,1 @@
+{"unitName":"Kosei Maru","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"]}

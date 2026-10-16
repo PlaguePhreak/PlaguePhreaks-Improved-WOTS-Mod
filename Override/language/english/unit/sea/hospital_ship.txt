@@ -1,0 +1,1 @@
+{"unitName":"Centaur","weaponDescriptions":["20mm Oerlikon Guns"]}

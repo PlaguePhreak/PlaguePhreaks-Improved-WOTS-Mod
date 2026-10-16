@@ -1,0 +1,1 @@
+﻿{"unitName":"37A-MFKM","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"]}

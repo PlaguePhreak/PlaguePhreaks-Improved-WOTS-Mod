@@ -1,0 +1,1 @@
+﻿{"unitName":"15-KMFM","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"]}
