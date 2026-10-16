@@ -163,7 +163,7 @@ Aircraft work is on hold: v0.20.9 did not work and air combat needs a full rewor
 - **v0.21** Faster ship buying `[BUY]` (buy_fix.md, tested): after ordering a ship the name dropdown moves on to the next ship of that class that can still be bought
 - **v0.21.1** Historical torpedo dud rates (data only): Mark 14 0.6, Mark 15 0.6, Mark 13 0.5, Mark 18 0.1, Type 91 0.03, Type 93 / 95 / 96 0.05, 6th Year / 8th Year 0.06 (Override/ammunition/torpedo_*.txt) - tested (only active with the game's 'dud torpedoes' option on)
 - **v0.21.2** Torpedo hit angle `[TORPHIT]` (torpedo_hit_angle.md, tested: a Mark 13 bounced off Yorktown at 11 degrees): glancing hits under 15 degrees always bounce off (fading to none at 25 degrees), the torpedo runs on and can hit another ship; Mark 13/14/15 dud more near 90 degrees and less on angled hits; logged as [TORPHIT]
-- **v0.21.3** Hit log tweaks (hitlog_tweaks.md, pending test): torpedo bounces appear in the Hit log; torpedo and bomb hit lines no longer appear in the General tab (sounds kept)
+- **v0.21.3** Hit log tweaks (hitlog_tweaks.md, tested): torpedo bounces appear in the Hit log; torpedo and bomb hit lines no longer appear in the General tab (sounds kept)
 
 ## Housekeeping before release
 - Remove the Testers! popup page (now modrules7; set modrules6 `nextAction` to `SUMMARY`) and the F9 / F3 / F4 keys (see keybinds.md)

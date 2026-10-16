@@ -24,4 +24,4 @@ if (messageRef == "TorpedoHit" || messageRef == "BombHit")
 }
 ```
 Hit sounds keep playing. Dud messages (TorpedoHitDud / BombHitDud) still show in General because the hit log does not cover duds.
-Status: written, not yet compiled or tested.
+Status: compiled and tested, works.
