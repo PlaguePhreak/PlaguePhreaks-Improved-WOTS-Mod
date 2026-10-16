@@ -178,3 +178,5 @@ SurvivorsRescued=<0>
 SurvivorsRescued=audio/ui/AlarmBlip
 SurvivorsLost=<0>
 SurvivorsLost=audio/ui/AlarmLow
+SupplyLow=<0>
+SupplyLow=audio/ui/AlarmHigh
