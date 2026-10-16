@@ -38,7 +38,7 @@ bool flag = value < hitChance;
 ```
 Notes: only active when the game's "dud torpedoes" option is on (dudRate is 0 otherwise).
 Mark 13/14/15 get +25% dud near 90 degrees and 40% fewer duds on angled hits (under 45 degrees).
-Status: written, not yet compiled or tested.
+Status: compiled and tested (Mark 13 bounced off Yorktown at 11 degrees).
 
 
 ## Part 2 - glancing hits bounce off (replaces the glancing dud chance above)
@@ -72,4 +72,4 @@ if ((ammoType == AmmoType.Torpedo || ammoType == AmmoType.Aerial_Torpedo) && dud
 }
 ```
 Chance to bounce: 100% under 15 degrees, then fading to 0% at 25 degrees (changed from a fade starting at 0 degrees, where a 7 degree hit still exploded about a third of the time). A bounced torpedo keeps running on its mirrored heading and can hit another ship.
-Status: written, not yet compiled or tested.
+Status: compiled and tested (Mark 13 bounced off Yorktown at 11 degrees).
