@@ -5,7 +5,7 @@ Status: planned. Design and install steps written, not compiled or tested yet.
 ## What it does
 Press **F11** on the campaign map to switch the overlay on or off (F11 is free on the campaign map, see keybinds.md).
 - Under each of your task forces a small label: name, days of fuel left, speed in knots. Orange below 5 days, red below 3.
-- Around the **selected** task force, one ring: how far it can still sail on its remaining fuel at its current speed.
+- Around the **selected** task force, one ring: how far it sails in 1 day (`ringDays`) at its current speed, or less if it has less than a day of fuel left. (Fuel burns per day spent moving, not by speed, so a faster force goes further on the same fuel.)
 - Updates once a second while it is on. Nothing is saved, nothing changes in the game, so it cannot break a campaign.
 
 Later versions can add to it (detection rings, ammo, formation) without redoing the base.
@@ -13,7 +13,7 @@ Later versions can add to it (detection rings, ammo, formation) without redoing 
 ## What the game code showed (so the design uses real data)
 - Your task forces are `CampaignManager.instance.playerMobile` (a list of `GameObjectAnimator`). Each has `.mobileMapObject` (type 0 = ships).
 - Fuel is `MobileMapObject.fuelUsedDays` against a fixed 10 days (`CampaignManager`, the fuel block near the LOW fuel warning). Days left = 10 - fuelUsedDays. The game's own text already shows this for the selected force only.
-- `MobileMapObject.speed` is metres per second; the map ring radius is in km, so km = days left x 86,400 x speed / 1,000.
+- `MobileMapObject.speed` is metres per second. The map ring (`AddCircle`) does NOT use real km on this map: the game turns metres into map units with `campaignData.mapWidthMetres`, and `AddCircle` turns km into map units with the whole-Earth width (40,030 km). So the code converts metres to map units first, then multiplies by 40,030. Test 1 showed the ring was ~450 km instead of the expected size, which is what led to this.
 - The map can draw labels (`CampaignInterface.AddMarker2DText`) and rings (`CampaignInterface.map.AddCircle`, the game uses it for its own selection circle).
 - The mod already adds its own map component the same way (`ModCampaignRescue`, added from `CampaignManager.CheckHourly`), so this follows a proven pattern.
 
@@ -38,6 +38,8 @@ public class ModTFOverlay : MonoBehaviour
 	public static bool on;
 
 	public static float labelSize = 0.01f;
+
+	public static float ringDays = 1f;
 
 	private float timer;
 
@@ -134,7 +136,8 @@ public class ModTFOverlay : MonoBehaviour
 			}
 			if (goa == ci.currentMapObject)
 			{
-				float km = daysLeft * 86400f * mmo.speed / 1000f;
+				float metres = Mathf.Min(ringDays, daysLeft) * 86400f * mmo.speed;
+				float km = metres / CampaignManager.instance.campaignData.mapWidthMetres * 40030f;
 				GameObject ring = ci.map.AddCircle(pos, km, 0.97f, 1f, new Color(1f, 0.6f, 0.1f, 0.7f));
 				if (ring != null)
 				{
@@ -167,5 +170,5 @@ if (base.gameObject.GetComponent<ModTFOverlay>() == null)
 ## Things the test will tell us (could not be checked without running the game)
 - Label size: `labelSize = 0.01f` at the top of the class is a guess (it was 6, which was far too big and is the likely cause of the white blob in the first test). Bigger number = bigger text.
 - Label height: `pos.y - 0.012f` is a guess for how far below the icon it sits.
-- If the ring looks too big or small, the game's `AddCircle` radius may not be km; tell me what you see and I will fix the maths.
+- Ring size: test with the `\` ruler. A force at 21 kn should show a ring about 930 km from the icon (24 hours at 39 km/h). `ringDays = 1f` can be changed (2f = two days).
 - The speed shown is the force's set speed, even when it is stopped.
