@@ -327,7 +327,7 @@ if (base.gameObject.GetComponent<ModTFOverlay>() == null)
 4. The earlier lines you added in **CheckHourly** can stay (they do nothing once the component exists). Why this step: `CheckHourly` only runs after game time has moved, and the campaign starts paused, so the button used to appear late. `StartCampaign` runs as the campaign loads.
 
 ### Step 3 - test
-1. Load a campaign, let one hour pass (the component starts on the first hourly check).
+1. Load a campaign. The barrel button should be there straight away, while the game is still paused.
 2. Press **F11**. Each of your task forces should get a label under it. Select one: an orange ring should appear.
 3. Press F11 again: everything disappears.
 4. Check `output_log.txt` for `[TFOVERLAY] overlay on`. If anything went wrong it says `[TFOVERLAY] failed:` with the reason.
