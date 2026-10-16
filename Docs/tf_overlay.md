@@ -315,16 +315,16 @@ public class ModTFOverlay : MonoBehaviour
 2. If the file is missing the button still works and shows the word FUEL instead.
 
 ### Step 2 - start it with the campaign
-1. In class **CampaignManager**, right-click method **CheckHourly** > **Edit Method (C#)...**
-2. Find the lines that add `ModCampaignRescue` (an `if` that checks `GetComponent<ModCampaignRescue>() == null` and then `AddComponent<ModCampaignRescue>()`).
-3. Directly after that whole `if { ... }` block, paste:
+1. In class **CampaignManager**, right-click method **StartCampaign** > **Edit Method (C#)...**
+2. Directly after the line `base.gameObject.SetActive(true);` (the first line in the method), paste:
 ```csharp
 if (base.gameObject.GetComponent<ModTFOverlay>() == null)
 {
 	base.gameObject.AddComponent<ModTFOverlay>();
 }
 ```
-4. Click **Compile**, then File > Save Module.
+3. Click **Compile**, then File > Save Module.
+4. The earlier lines you added in **CheckHourly** can stay (they do nothing once the component exists). Why this step: `CheckHourly` only runs after game time has moved, and the campaign starts paused, so the button used to appear late. `StartCampaign` runs as the campaign loads.
 
 ### Step 3 - test
 1. Load a campaign, let one hour pass (the component starts on the first hourly check).
