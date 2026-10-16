@@ -1,6 +1,6 @@
 # v0.22.1 Low supply warning [SUPPLY]
 
-Status: planned, code written, not yet compiled or tested. Builds on v0.22 (supply_upkeep.md).
+Status: tested by Aaron, works. Builds on v0.22 (supply_upkeep.md).
 
 ## What it does
 - When one of YOUR locations has 3 days of supply left or fewer, a message appears with the alarm sound: `Low on supplies: Port Moresby (2 d), Milne Bay (OUT)`.
