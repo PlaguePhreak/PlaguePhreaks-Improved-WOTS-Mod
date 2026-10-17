@@ -1,0 +1,17 @@
+﻿campaign001=Counterattack on the Australian Front=7,8,1942=Control the Allies to expel all enemy troops from the southern Solomon Islands, build an airfield on Guadalcanal and prevent any further Japanese expansion to the south.=forceSettings=2,2,2,2,2,2,2,2,2,2
+campaign002=Defending Japanese Interests in the Southwestern Pacific=7,8,1942=As Imperial Japan, complete construction of an airfield on Guadalcanal and ensure the Allies gain no foothold in the southern Solomon Islands.=forceSettings=2,2,2,2,2,2,2,2,2,2
+//
+//forceSettings=2,2,2,2,2,2,2,2,2,2
+//Use this to force a campaign setting to FALSE (0) or TRUE (1) or USER CHOICE (2)
+//
+//10 Values must be listed and correspond to following settings
+//0-Enemy Uses Submarines
+//1-Enemy Uses Aircraft Carriers
+//2-Refund Command Points Post Rest & Repair
+//3-New Carrier Aircraft Require Release
+//4-Use Port Resources To Resupply Ship Ammo
+//5-Use Port Resources To Resupply Ship Aircraft
+//6-Use Port Resources To Replenish Airfields
+//7-Limit Airfield Aircraft Replenished
+//8-Allow Merchants/Oilers to Resupply At Sea
+//9-Enable Strategic Bombing
