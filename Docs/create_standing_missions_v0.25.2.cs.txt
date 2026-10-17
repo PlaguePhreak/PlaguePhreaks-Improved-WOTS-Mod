@@ -1,0 +1,248 @@
+public void CreateStandingMissions()
+{
+    try
+    {
+        CampaignData cd = CampaignManager.instance.campaignData;
+        List<string[]> groupClasses = new List<string[]>();
+        List<string[]> groupInstances = new List<string[]>();
+        List<string> groupStart = new List<string>();
+        List<string> groupEnd = new List<string>();
+        List<int> groupFormation = new List<int>();
+        List<string> groupName = new List<string>();
+        string[] ddClassPool = null;
+        string[] ddInstPool = null;
+        string[] ddStart = null;
+        string[] ddEnd = null;
+        string[] subClassPool = null;
+        string[] subInstPool = null;
+        string[] subStart = null;
+        string[] subEnd = null;
+        if (cd.campaignID == "campaign001")
+        {
+            groupClasses.Add(new string[] { "yorktown", "north_carolina", "portland", "neworleans45", "atlanta", "porter", "benham", "benham", "gridley", "gleaves" });
+            groupInstances.Add(new string[] { "enterprise", "north carolina", "portland", "minneapolis", "atlanta", "balch", "benham", "ellet", "maury", "grayson" });
+            groupStart.Add("Coral4");
+            groupEnd.Add("Coral4");
+            groupFormation.Add(12);
+            groupName.Add("Enterprise Carrier Force");
+            groupClasses.Add(new string[] { "northcarolina43", "southdakota43", "portland42", "neworleans45", "neworleans45", "fletcher42", "fletcher42", "fletcher42" });
+            groupInstances.Add(new string[] { "washington", "south dakota", "indianapolis", "vincennes", "new orleans", "fletcher", "radford", "jenkins" });
+            groupStart.Add("Coral2");
+            groupEnd.Add("Coral2");
+            groupFormation.Add(17);
+            groupName.Add("Washington Surface Action Group");
+            groupClasses.Add(new string[] { "new_orleans", "brooklyn", "gleaves", "gleaves", "mahan" });
+            groupInstances.Add(new string[] { "san francisco", "helena", "buchanan", "aaron ward", "cushing" });
+            groupStart.Add("Sol4");
+            groupEnd.Add("Sol4");
+            groupFormation.Add(9);
+            groupName.Add("San Francisco Cruiser Force");
+            groupClasses.Add(new string[] { "neworleans45", "atlanta42", "benson42", "benson42", "benson42" });
+            groupInstances.Add(new string[] { "astoria", "juneau", "mayo", "niblack", "madison" });
+            groupStart.Add("Coral3");
+            groupEnd.Add("Coral3");
+            groupFormation.Add(10);
+            groupName.Add("Astoria Cruiser Force");
+            groupClasses.Add(new string[] { "county42", "county42", "perth42", "arunta", "arunta", "n_class44" });
+            groupInstances.Add(new string[] { "australia", "canberra", "hobart", "arunta", "warramunga", "napier" });
+            groupStart.Add("Coral6");
+            groupEnd.Add("Coral6");
+            groupFormation.Add(11);
+            groupName.Add("Australia Surface Force");
+            ddClassPool = new string[] { "farragut", "farragut", "farragut", "farragut", "farragut", "mahan", "mahan", "mahan", "sims", "sims", "sims", "benham" };
+            ddInstPool = new string[] { "farragut", "dewey", "hull", "monaghan", "dale", "mahan", "lamson", "flusser", "hughes", "anderson", "mustin", "lang" };
+            ddStart = new string[] { "Coral1", "Coral5", "Coral7", "Coral0" };
+            subClassPool = new string[] { "gato", "gato", "gato", "gato43" };
+            subInstPool = new string[] { "gato", "greenling", "grouper", "drum" };
+            subStart = new string[] { "Sol3", "Sol6", "Slot8", "Sol2" };
+        }
+        else if (cd.campaignID == "campaign002")
+        {
+            groupClasses.Add(new string[] { "shokaku42", "shokaku42", "kongo", "tone", "tone", "kagero", "kagero", "kagero", "kagero", "kagero", "yubari" });
+            groupInstances.Add(new string[] { "shokaku", "zuikaku", "hiei", "tone", "chikuma", "akigumo", "hatsukaze", "yukikaze", "amatsukaze", "maikaze", "yubari" });
+            groupStart.Add("Bism2");
+            groupEnd.Add("Bism2");
+            groupFormation.Add(15);
+            groupName.Add("Shokaku Carrier Force");
+            groupClasses.Add(new string[] { "kongo44", "fuso44", "myoko44", "myoko44", "myoko44", "shiratsuyu42", "shiratsuyu42", "akizuki44" });
+            groupInstances.Add(new string[] { "kongo", "fuso", "myoko", "nachi", "haguro", "shigure", "samidare", "akizuki" });
+            groupStart.Add("SPac3");
+            groupEnd.Add("SPac3");
+            groupFormation.Add(17);
+            groupName.Add("Kongo Surface Action Group");
+            groupClasses.Add(new string[] { "takao", "tenryu", "shiratsuyu", "shiratsuyu", "shiratsuyu" });
+            groupInstances.Add(new string[] { "chokai", "tenryu", "yudachi", "murasame", "harusame" });
+            groupStart.Add("SPac6");
+            groupEnd.Add("SPac6");
+            groupFormation.Add(9);
+            groupName.Add("Chokai Cruiser Force");
+            groupClasses.Add(new string[] { "mogami44", "mogami44", "kitakami", "ayanami42", "ayanami42", "ayanami42" });
+            groupInstances.Add(new string[] { "suzuya", "kumano", "kitakami", "amagiri", "asagiri", "yugiri" });
+            groupStart.Add("Bism3");
+            groupEnd.Add("Bism3");
+            groupFormation.Add(13);
+            groupName.Add("Suzuya Cruiser Force");
+            ddClassPool = new string[] { "fubuki", "fubuki", "fubuki", "fubuki", "fubuki", "fubuki", "akatsuki", "akatsuki", "akatsuki", "asashio", "asashio", "asashio" };
+            ddInstPool = new string[] { "fubuki", "shirayuki", "hatsuyuki", "murakumo", "uranami", "shikinami", "akatsuki", "ikazuchi", "inazuma", "asashio", "michishio", "arashio" };
+            ddStart = new string[] { "Sol1", "SPac4", "Bism0", "Bism6" };
+            subClassPool = new string[] { "type_b1", "type_b1", "type_b1", "type_c" };
+            subInstPool = new string[] { "i-15", "i-17", "i-19", "i-16" };
+            subStart = new string[] { "SPac8", "Sol5", "SPac2", "SPac5" };
+        }
+        ddEnd = ddStart;
+        subEnd = subStart;
+        if (ddClassPool != null)
+        {
+            int[] order = new int[ddClassPool.Length];
+            for (int o = 0; o < order.Length; o++)
+            {
+                order[o] = o;
+            }
+            for (int o = order.Length - 1; o > 0; o--)
+            {
+                int swapWith = UnityEngine.Random.Range(0, o + 1);
+                int keep = order[o];
+                order[o] = order[swapWith];
+                order[swapWith] = keep;
+            }
+            int nextDD = 0;
+            for (int p = 0; p < ddStart.Length; p++)
+            {
+                int count = UnityEngine.Random.Range(2, 4);
+                if (nextDD + count > order.Length)
+                {
+                    count = order.Length - nextDD;
+                }
+                if (count <= 0)
+                {
+                    break;
+                }
+                string[] patrolClasses = new string[count];
+                string[] patrolInstances = new string[count];
+                for (int q = 0; q < count; q++)
+                {
+                    patrolClasses[q] = ddClassPool[order[nextDD + q]];
+                    patrolInstances[q] = ddInstPool[order[nextDD + q]];
+                }
+                nextDD += count;
+                groupClasses.Add(patrolClasses);
+                groupInstances.Add(patrolInstances);
+                groupStart.Add(ddStart[p]);
+                groupEnd.Add(ddEnd[p]);
+                groupFormation.Add(0);
+                groupName.Add(string.Empty);
+            }
+            int subCount = UnityEngine.Random.Range(3, 5);
+            for (int s = 0; s < subCount && s < subClassPool.Length; s++)
+            {
+                groupClasses.Add(new string[] { subClassPool[s] });
+                groupInstances.Add(new string[] { subInstPool[s] });
+                groupStart.Add(subStart[s]);
+                groupEnd.Add(subEnd[s]);
+                groupFormation.Add(0);
+                groupName.Add(string.Empty);
+            }
+        }
+        MobileMapObject newTF = CampaignInterface.instance.newTaskForce;
+        for (int g = 0; g < groupClasses.Count; g++)
+        {
+            if (!CampaignManager.instance.seaNavigationIndexes.ContainsKey(groupStart[g]) || !CampaignManager.instance.seaNavigationIndexes.ContainsKey(groupEnd[g]))
+            {
+                UnityEngine.Debug.LogError("[STARTFLEET] missing waypoint " + groupStart[g] + " or " + groupEnd[g]);
+                continue;
+            }
+            Vector3 startPos = CampaignManager.instance.seaNavigationPoints[CampaignManager.instance.seaNavigationIndexes[groupStart[g]]].positionRadius;
+            Vector3 endPos = CampaignManager.instance.seaNavigationPoints[CampaignManager.instance.seaNavigationIndexes[groupEnd[g]]].positionRadius;
+            Vector2 startV = new Vector2(startPos.x, startPos.y);
+            Vector2 endV = new Vector2(endPos.x, endPos.y);
+            CampaignInterface.instance.ClearNewGroupData(newTF);
+            string shipLog = string.Empty;
+            for (int k = 0; k < groupClasses[g].Length; k++)
+            {
+                string shipClass = groupClasses[g][k];
+                if (!EngagementManager.instance.unitDataDictionary.ContainsKey(shipClass))
+                {
+                    UnityEngine.Debug.LogError("[STARTFLEET] unknown class " + shipClass);
+                    continue;
+                }
+                UnitData shipData = EngagementManager.instance.unitDataDictionary[shipClass];
+                int shipInstance = shipData.instancesInClass.IndexOf(groupInstances[g][k]);
+                if (shipInstance == -1)
+                {
+                    UnityEngine.Debug.LogError("[STARTFLEET] unknown ship " + groupInstances[g][k] + " in class " + shipClass);
+                    continue;
+                }
+                if (CampaignManager.instance.GetIndexInDoubleList(shipClass, shipInstance, cd.playerOwnedShipClasses, cd.playerOwnedShipInstances) != -1)
+                {
+                    continue;
+                }
+                int unavailableIndex = CampaignManager.instance.GetIndexInDoubleList(shipClass, shipInstance, cd.unavailableShipClasses, cd.unavailableShipInstances);
+                if (unavailableIndex != -1)
+                {
+                    bool namesInSync = cd.unavailableShipInstanceNames.Count == cd.unavailableShipClasses.Count;
+                    cd.unavailableShipClasses.RemoveAt(unavailableIndex);
+                    cd.unavailableShipInstances.RemoveAt(unavailableIndex);
+                    if (namesInSync)
+                    {
+                        cd.unavailableShipInstanceNames.RemoveAt(unavailableIndex);
+                    }
+                }
+                newTF.unitPrefabs.Add(shipClass);
+                newTF.unitInstances.Add(shipInstance);
+                newTF.cellVariables.Add(string.Empty);
+                newTF.ammunitionRemaining.Add(string.Empty);
+                newTF.aircraftCooldown.Add(string.Empty);
+                newTF.cargo.Add("0|0|0|0");
+                newTF.bombardments.Add(0);
+                newTF.paint.Add(0);
+                newTF.speedModifier.Add(1f);
+                if (shipData.aircraftTotal.Count > 0)
+                {
+                    newTF.currentAircraft.Add(CampaignManager.instance.SetIntListToString(shipData.aircraftTotal));
+                }
+                else
+                {
+                    newTF.currentAircraft.Add(string.Empty);
+                }
+                if (shipData.namesInClass.Count > 0)
+                {
+                    newTF.unitDisplayNames.Add(shipData.namesInClass[shipInstance]);
+                }
+                else
+                {
+                    newTF.unitDisplayNames.Add(shipData.unitName);
+                }
+                CampaignManager.instance.ModifyShipInLists(true, shipClass, shipInstance, 0, cd.playerOwnedShipClasses, cd.playerOwnedShipInstances, cd.playerOwnedRepairDays);
+                shipLog = shipLog + " " + groupInstances[g][k];
+            }
+            if (newTF.unitPrefabs.Count > 0)
+            {
+                newTF.currentFaction = 0;
+                newTF.type = 0;
+                newTF.formation = groupFormation[g];
+                newTF.formationSpacing = 0;
+                newTF.mobileName = groupName[g];
+                newTF.customName = groupName[g] != string.Empty;
+                newTF.speed = CampaignManager.instance.GetMobileMapObjectSpeed(newTF);
+                GameObjectAnimator newMobile = CampaignInterface.instance.CreateNewMobileObject(CampaignObjectType.Sea, newTF, startV, false, null, string.Empty);
+                if (groupStart[g] != groupEnd[g])
+                {
+                    CampaignInterface.instance.MoveMobileToDestination(newMobile, endV, true, false);
+                }
+                UnityEngine.Debug.Log("[STARTFLEET] " + groupStart[g] + " -> " + groupEnd[g] + ":" + shipLog);
+            }
+            CampaignInterface.instance.ClearNewGroupData(newTF);
+        }
+    }
+    catch (System.Exception ex)
+    {
+        UnityEngine.Debug.LogError("Starting fleet failed: " + ex.ToString());
+    }
+    for (int i = 0; i < this.seaMissions.Count; i++)
+    {
+        if (this.seaMissions[i].missionType == MissionType.Patrol && this.seaMissions[i].noCost)
+        {
+            this.CreateAIMobileSea(this.seaMissions[i].missionIndex, string.Empty, true);
+        }
+    }
+}
