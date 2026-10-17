@@ -1,18 +1,26 @@
-﻿<b>DEFENDING JAPAN'S SOUTHWEST PACIFIC INTERESTS</b>
+﻿
+<b><size=18>OPERATION SN: GUADALCANAL</size></b>
 
-August 7th 1942
-A small landing force of our troops has already occupied <color=#E0B030>GUADALCANAL</color> and the <color=#E0B030>FLORIDA ISLANDS</color>. <color=#E0B030>RABAUL</color> is the hub of our advance, and the American counteroffensive is coming.
-Hold what we have taken, push back the American offensive and take more locations as needed. Once the foothold in the south is secure, long range bombers will be free to attack Allied supply lines between America and Australia.
+<b>August 7th 1942</b>
+A small landing force of our troops has already occupied <color=#caa809>GUADALCANAL</color>. The Allied counteroffensive is expected soon, and the Empire must hold its southern perimeter while pushing the enemy back.
 
-Your orders are to take <color=#E0B030>COOKTOWN</color> and <color=#E0B030>NEW HEBRIDES</color> and break the Allied hold on the South Pacific.
+Your orders are to take <color=#caa809>COOKTOWN</color> to build a foothold on Australia, take <color=#caa809>NEW HEBRIDES</color> to cut the Allied supply line, and keep <color=#caa809>RABAUL</color>, our home port, safe.
 
 
 You must:
 
-1) Capture <color=#E0B030>COOKTOWN</color>, to build a foothold on Australia
+1) Take control of the enemy home ports:
+   - <color=#caa809>COOKTOWN</color>
+   - <color=#caa809>NEW HEBRIDES</color>
 
-2) Capture <color=#E0B030>NEW HEBRIDES</color>
+2) Build a rank 5 airfield on <color=#caa809>GUADALCANAL</color>
 
-3) Maintain control of <color=#E0B030>RABAUL</color>, our home port
+3) Secondary objectives:
+   - Take <color=#caa809>RENNELL ISLAND</color> to use as a forward operating base to strike at <color=#caa809>NEW HEBRIDES</color>
 
-The campaign is lost if the Allies take <color=#E0B030>RABAUL</color> while holding <color=#E0B030>COOKTOWN</color> and <color=#E0B030>NEW HEBRIDES</color>.
+4) Maintain control of:
+   - <color=#caa809>RABAUL</color>
+   - <color=#caa809>LAE</color>
+   - <color=#caa809>GUADALCANAL</color>
+
+All of these must be held at the same time to win the campaign.

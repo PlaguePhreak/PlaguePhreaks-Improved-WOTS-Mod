@@ -1,18 +1,25 @@
-﻿<b>COUNTERATTACK ON THE AUSTRALIAN FRONT</b>
+﻿
+<b><size=18>OPERATION WATCHTOWER</size></b>
 
-August 7th 1942
-The Japanese advance has been halted at the gates of Australia, but their forces still hold New Guinea and the Solomon Islands. Their main base, <color=#E0B030>RABAUL</color>, feeds every attack against our supply lines between America and Australia.
-The Marines are landing on <color=#E0B030>GUADALCANAL</color> and the <color=#E0B030>FLORIDA ISLANDS</color> today. The time to strike back is now.
+<b>August 7th 1942</b>
+Japanese forces have landed on <color=#caa809>GUADALCANAL</color> and begun construction of an airfield. Once finished, long range bombers will be free to attack the supply lines between America and Australia.
 
-Your orders are to expel the Japanese from the South Pacific and crush all resistance, by taking their home port.
+Using <color=#caa809>NEW HEBRIDES</color> and <color=#caa809>COOKTOWN</color> as home ports, your orders are to expel Japan from the South Pacific, crush all resistance and take her home port at <color=#caa809>RABAUL</color>.
 
 
 You must:
 
-1) Capture <color=#E0B030>RABAUL</color>, the Japanese home port
+1) Take control of the enemy home port:
+   - <color=#caa809>RABAUL</color>
 
-2) Maintain control of:
-   - <color=#E0B030>COOKTOWN</color>
-   - <color=#E0B030>NEW HEBRIDES</color>
+2) Take control of <color=#caa809>GUADALCANAL</color> and build a rank 5 airfield there
 
-The campaign is lost if the Japanese hold <color=#E0B030>RABAUL</color>, <color=#E0B030>COOKTOWN</color> and <color=#E0B030>NEW HEBRIDES</color> at the same time.
+3) Secondary objectives:
+   - Take <color=#caa809>LAE</color> to use as a forward operating base to strike at <color=#caa809>RABAUL</color>
+
+4) Maintain control of:
+   - <color=#caa809>NEW HEBRIDES</color>
+   - <color=#caa809>COOKTOWN</color>
+   - <color=#caa809>RENNELL ISLAND</color>
+
+All of these must be held at the same time to win the campaign.

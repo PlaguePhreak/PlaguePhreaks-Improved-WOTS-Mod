@@ -1,5 +1,5 @@
-﻿campaign001=Counterattack on the Australian Front=7,8,1942=As the Allies, counterattack Japanese aggression in the Pacific. Expel all enemy troops from the southern Solomon Islands, build an airfield on Guadalcanal and stop any further Japanese expansion to the south and towards Australia.=forceSettings=2,2,2,2,2,2,2,2,2,2
-campaign002=Defending Japan's Southwest Pacific Interests=7,8,1942=As Imperial Japan, keep your foothold on your current objectives and push back the American offensive, taking more locations as needed. Complete the airfield on Guadalcanal and ensure the Allies gain no foothold in the southern Solomon Islands.=forceSettings=2,2,2,2,2,2,2,2,2,2
+﻿campaign001=Counterattack on the Australian Front=7,8,1942=Control the Allies to counterattack Japanese aggression: expel Japan from the South Pacific, take her home port at Rabaul and build an airfield on Guadalcanal while protecting Australia.=forceSettings=2,2,2,2,2,2,2,2,2,2
+campaign002=Defending Japan's Southwest Pacific Interests=7,8,1942=As Imperial Japan, hold your current objectives and push back the American offensive. Take Cooktown and the New Hebrides to build a foothold on Australia and complete the airfield on Guadalcanal.=forceSettings=2,2,2,2,2,2,2,2,2,2
 //
 //forceSettings=2,2,2,2,2,2,2,2,2,2
 //Use this to force a campaign setting to FALSE (0) or TRUE (1) or USER CHOICE (2)
