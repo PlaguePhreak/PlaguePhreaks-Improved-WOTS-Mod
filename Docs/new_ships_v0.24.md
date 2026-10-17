@@ -10,7 +10,7 @@ Credit is in the in-game book (CUSTOM SHIPS, CUSTOM AIRCRAFT and CREDITS pages) 
 ## What was added
 - **v0.24.1 New ships**: 84 RamZ ships (Japan, USA, Australia) and 20 TTE ships = 104 ships. "Australia" covers Perth, County, Leander, N Class, T/U/V Class, Battle and Colossus classes (British designs that served in the RAN), set to the Australian nation.
 - **v0.24.2 New aircraft**: 115 aircraft: 90 from RamZ, Corsair Mk II, Firebrand Mk 4 and Walrus Mk I (which the new Australian ships carry), and 22 from the TTE team.
-- Both campaigns get the new units. Campaign 001 (player USA/Australia, AI Japan) and campaign 002 (player Japan). The player side can buy any new ship that was in service by the start date straight away; ships from after 7 Aug 1942 unlock at their historical date ("orderAvailable"). The AI side gets them at the historical date.
+- Both campaigns get the new units. Campaign 001 (player USA/Australia, AI Japan) and campaign 002 (player Japan). On the player side every new ship has an `orderAvailable` date: ships already in service at the start (7 Aug 1942) have it set to 1 Jan 1942, so you have to ORDER them (50% deposit and a build wait) and cannot just buy them. Ships from after the start unlock for ordering at their historical date. The AI side gets them at the historical date.
 - New ships are in the shipyard list next to ships of the same nation and type.
 
 ## Files changed in the Override folder
