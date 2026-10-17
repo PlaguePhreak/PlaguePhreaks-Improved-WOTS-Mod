@@ -7,3 +7,13 @@ Circular
 Battle Line + Screen
 Cruising Disposition
 Convoy Box
+Escorted Wedge
+Escorted Box
+Escorted Diamond
+Escorted Ring
+Escorted Echelon
+Escorted Double Column
+Kido Butai (2 Carriers)
+Kido Butai (4 Carriers)
+Surface Action Line
+Supply Event
