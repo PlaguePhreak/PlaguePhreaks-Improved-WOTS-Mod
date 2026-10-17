@@ -66,38 +66,44 @@ The files needed to build these are now in the project folder (`game_files/`). N
 Every one of the 32 locations now has its own aircraft lists in `mapLandLocations.txt` (`aircraft0`, `aircraft0Numbers`, `aircraft1`, `aircraft1Numbers`). The game picks the list by who holds the base right now (faction 0 or 1, which is the Allies in campaign001 and Japan in campaign002), so a captured base switches to the captor's planes. If a location has no list, the side's default list in `setup.txt` is used.
 
 Rules used:
-- Up to 4 types per base (the strike screen has 4 slots, `maxAircraftTypesToLaunch`).
-- `aircraftXNumbers` holds 5 rows (air base level 1 to 5) of one number per type. The first type is there from level 1, the second from level 2, the third from level 3, the fourth from level 4. Each type is capped at 8, and floatplanes and flying boats at 4.
-- Only 1942-43 types, since a base list does not change with the date. Japan uses its own types (Navy at Rabaul, Kavieng, Lae; Army Ki-43, Ki-45, Ki-49 at Madang and Wewak). US bases use US types, and RAAF types (Kittyhawk, Beaufort, Walrus) mix in at Port Moresby, Milne Bay and the Queensland bases.
+- Up to 6 types per base. `setup.txt` now has `"maxAircraftTypesToLaunch":6` (the strike screen had 4 slots) and the daily replenish lists have 6 entries. Check that 6 icons fit on the strike screen.
+- Air base level 1 gives 1 type, level 5 gives all of them (a 6-type base unlocks 1, 2, 3, 4, 5, 6 types over levels 1 to 5, with two types arriving at level 3).
+- Aircraft per type rise with the base level, from at least 4 up to a cap: fighters 24, single-engine bombers 20 (P-38 too), medium and twin-engine types 16, heavy bombers (B-17, B-24) 12, floatplanes 12, flying boats 8. Example: Rabaul (Japan) at level 5 has 24 + 24 + 20 + 20 + 16 + 8 aircraft.
+- Only 1942-43 types, since a base list does not change with the date. Japan uses its own types, US bases US types, and RAAF types mix in at Port Moresby, Milne Bay and the Queensland bases.
 
 | Location | Allied list | Japanese list |
 |---|---|---|
-| Rabaul | F6F-3, B-24, SBD-3, TBF-1C | A6M2, G4M Betty, D3A Val, H6K Mavis |
-| Kavieng | F6F-3, B-24, TBF-1C, P-38G | A6M2, G3M Nell, E13A Jake, Pete |
-| Borpop | F6F-3, TBF-1C, B-24 | A6M2, B5N Kate, G3M Nell |
-| Buka | F4U-1A, SBD-3, TBF-1C | A6M2, A6M3, D3A Val |
-| Bougainville | F4U-1A, SBD-3, TBF-1C, B-25J | Pete, Jake, A6M2 |
-| Shortland Is. | PBY, Kingfisher, OS2U | Pete, Jake, A6M2-N Rufe, H6K Mavis (seaplane base) |
-| Santa Isabel | PBY, Kingfisher | Pete, Jake, Rufe, E13A (Rekata Bay seaplane base) |
-| Florida Is. (Tulagi) | PBY, Kingfisher, OS2U | Pete, Jake, H6K |
-| Guadalcanal | F4F-4, SBD-3, P-400, TBF-1C | A6M2, D3A Val, G4M Betty |
-| Malaita, Rennell | PBY, Kingfisher | Pete, Jake |
-| Santa Cruz | PBY, OS2U, F4F-3 | Pete, Jake, Rufe |
-| Russell Is. | F4F-4, SBD-3, P-39D | A6M3, D3A2 |
-| New Georgia, Kolombangara, Vella Lavella | F4U-1A / F6F-3, SBD-3, TBF-1C, P-38G | A6M3, D3A2, G4M, B5N |
-| New Hebrides | F4F-4, SBD-3, B-17F, PBY | A6M2, G4M |
-| Port Moresby | P-39D, Kittyhawk, B-26B, B-17F | A6M2, G4M, D3A |
-| Milne Bay | Kittyhawk, P-400, Beaufort, Walrus | A6M3, D3A2 |
-| Cooktown | P-39D, Kittyhawk, B-26B, PBY | A6M2, G4M, H6K |
-| Cape Gloucester, Cape Hoskins | P-47D, P-38G, B-25J, A-20 | A6M3, D3A2, B5N / G4M, Ki-43 |
-| Lae | Kittyhawk, P-38G, B-25J, A-20 | A6M2, A6M3, G4M Betty, D3A Val |
-| Buna | P-40F, P-39D, B-25J, A-20 | A6M2, D3A Val |
-| Gasmata | Kittyhawk, A-20 | A6M2, D3A Val, Pete |
-| Cairns | PBY, Kingfisher, Kittyhawk, B-26B | H6K, E13A, Pete |
-| Horn Island | Kittyhawk, P-39D, B-26B, PBY | A6M2, G4M |
-| Finschhafen | P-38G, P-47D, A-20, B-25J | A6M3, D3A2, Pete, Jake |
-| Kiriwina | Kittyhawk, P-38G, B-25J, A-20 | A6M3, D3A2 |
-| Madang, Wewak | P-47D, P-38G, B-25J, A-20 | Ki-43, Ki-45, Ki-49, E13A |
-| Manus | F6F-3, TBF-1C, SBD-3, PBY | Pete, Jake, Rufe |
+| Borpop | F6F-3, TBF-1C, B-24 | A6M2 Zero, B5N Kate, G3M Nell |
+| Bougainville | F4U-1A, SBD-3, TBF-1C, B-25J | Pete, Jake, A6M2 Zero |
+| Buka | F4U-1A, SBD-3, TBF-1C | A6M2 Zero, A6M3 Zero, D3A1 Val, B5N Kate |
+| Cooktown | P-39D, Kittyhawk, B-26B, A-20, PBY | A6M2 Zero, D3A1 Val, G4M Betty, H6K Mavis |
+| Cape Gloucester | P-47D, P-38G, B-25J, A-20, B-24 | A6M3 Zero, Ki-43, D3A2 Val, B5N Kate, G4M Betty |
+| Cape Hoskins | P-47D, P-38G, B-25J, A-20, B-24 | A6M2 Zero, A6M3 Zero, D3A2 Val, B5N Kate, G4M Betty |
+| Florida Is. (Tulagi) | PBY, Kingfisher, OS2U | Pete, Jake, H6K Mavis |
+| Guadalcanal | F4F-4, P-400, SBD-3, TBF-1C, B-17F, PBY | A6M2 Zero, A6M3 Zero, D3A1 Val, G4M Betty, B5N Kate |
+| Kavieng | F6F-3, P-38G, TBF-1C, B-24, PBY | A6M2 Zero, G3M Nell, G4M Betty, E13A Jake, Pete |
+| Kolombangara | F6F-3, SBD-3, TBF-1C | A6M3 Zero, D3A2 Val, B5N Kate |
+| Malaita | PBY, Kingfisher | Pete, Jake |
+| Milne Bay | Kittyhawk, P-400, P-39D, Beaufort, Walrus | A6M3 Zero, D3A2 Val, B5N Kate |
+| New Georgia | F4U-1A, P-38G, SBD-3, TBF-1C | A6M3 Zero, D3A2 Val, G4M Betty, B5N Kate |
+| New Hebrides | F4F-4, SBD-3, TBF-1C, B-17F, PBY, Kingfisher | A6M2 Zero, G4M Betty, H6K Mavis |
+| Port Moresby | P-39D, Kittyhawk, P-400, B-26B, B-25J, B-17F | A6M2 Zero, A6M3 Zero, D3A1 Val, G4M Betty, B5N Kate |
+| Rabaul | F6F-3, P-38G, SBD-3, TBF-1C, B-25J, B-24 | A6M2 Zero, A6M3 Zero, D3A1 Val, B5N Kate, G4M Betty, H6K Mavis |
+| Rennell | PBY, Kingfisher | Pete, Jake |
+| Russell Is. | F4F-4, SBD-3, P-39D | A6M3 Zero, D3A2 Val |
+| Santa Cruz | PBY, OS2U, F4F-3 | Pete, Jake, A6M2-N Rufe |
+| Santa Isabel | PBY, Kingfisher | Pete, Jake, A6M2-N Rufe, E13A Jake |
+| Shortland Is. | PBY, Kingfisher, OS2U | Pete, Jake, A6M2-N Rufe, H6K Mavis |
+| Vella Lavella | F6F-3, SBD-3, TBF-1C | A6M3 Zero, D3A2 Val, B5N Kate |
+| Lae | Kittyhawk, P-38G, P-47D, B-25J, A-20 | A6M2 Zero, A6M3 Zero, D3A1 Val, G4M Betty, B5N Kate |
+| Buna | P-40F, P-39D, B-25J, A-20 | A6M2 Zero, D3A1 Val |
+| Gasmata | Kittyhawk, A-20 | A6M2 Zero, D3A1 Val, Pete |
+| Cairns | PBY, Kingfisher, Kittyhawk, B-26B | H6K Mavis, E13A Jake, Pete |
+| Horn Island | Kittyhawk, P-39D, B-26B, PBY | A6M2 Zero, G4M Betty |
+| Finschhafen | P-38G, P-47D, A-20, B-25J | A6M3 Zero, D3A2 Val, Pete, Jake |
+| Kiriwina | Kittyhawk, P-38G, B-25J, A-20 | A6M3 Zero, D3A2 Val |
+| Madang | P-47D, P-38G, B-25J, A-20 | Ki-43, Ki-45, Ki-49, E13A Jake |
+| Wewak | P-47D, P-38G, B-25J, A-20 | Ki-43, Ki-45, Ki-49, E13A Jake |
+| Manus Island | F6F-3, TBF-1C, SBD-3, PBY | Pete, Jake, A6M2-N Rufe |
 
 Caveats: a few of these are historical judgement calls (for example Cairns and Horn Island aircraft, and the Army types at Madang and Wewak). Tell me which to change.
