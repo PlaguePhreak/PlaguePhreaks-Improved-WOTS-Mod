@@ -1,0 +1,1 @@
+﻿{"unitName":"Ki-43-II Hayabusa","weaponDescriptions":["Guns/Payloads|2x 12.7mm Ho-103","|","|bomb_ij_60kg"],"payloadDisplayNames":["2x60kg Bombs","None"],"payloadIndexes":["0","1"],"endurance":[0.95,1]}

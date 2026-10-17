@@ -7,10 +7,11 @@ Changes are made in Assembly-CSharp.dll (dnSpy) and in the game's text files (Ov
 The mod is in alpha, so every version is 0.x. Version numbers group the work in the order it was built, and each follow-on part of a feature area gets a point number (v0.17.1, v0.17.2 and so on). Earlier test builds called v0.10 to v0.19 "v1.0" to "v1.9" (for example v1.8.4 is now v0.18.4).
 
 
-v0.24.2 - New aircraft from RamZ's catalogue (pending test)
+v0.24.2 - New aircraft from RamZ's catalogue and TTE (pending test)
 -----------------------------------------------------------
+* 22 more aircraft from the TTE mod, used with credit to the TTE team (P-39D, P-38E, J2F, PBY, PBM, A-20G, B-24D, B-25J, Kittyhawk, Beaufighter, Beaufort, Sunderland, A5M4, A6M2-N, Ki-43, Ki-45, Ki-49, J1N1, E14Y, H6K, H8K2, G3M2). 115 new aircraft in total.
 * 93 new aircraft (Japan, USA, Australia) from RamZ's public Unit Catalog: fighters, dive and torpedo bombers, floatplanes, patrol aircraft and bombers. They are RamZ's work and used with credit to him. Three British types (Corsair Mk II, Firebrand Mk 4, Walrus Mk I) are included because the new Australian ships carry them.
-* Files: unit/air/allUnitsList.txt, airUnits.txt for both campaigns, 93 aircraft name files. Models and RamZ's materials/ammunition.txt come from Extras/copy_v0.24_files.bat (your old ammunition.txt is saved as ammunition_original.txt).
+* Files: unit/air/allUnitsList.txt, airUnits.txt for both campaigns, 115 aircraft name files. Models and RamZ's materials/ammunition.txt come from Extras/copy_v0.24_files.bat (your old ammunition.txt is saved as ammunition_original.txt).
 * Aircraft resource costs and dates are my estimates. Install ships and aircraft together (carriers carry the new aircraft). Steps: Docs/new_ships_v0.24.md.
 
 

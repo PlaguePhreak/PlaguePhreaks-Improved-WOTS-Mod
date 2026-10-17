@@ -4,23 +4,23 @@ Status: files built, NOT tested (I can't run the game). Pending test.
 
 ## Credit
 - **RamZ**: 84 warships and 93 aircraft come from his public Unit Catalog (he has said it is for public use). They are his work, not ours. He is also credited for the TTE merchant ships, which are believed to be his work.
-- **TTE team**: 20 more warships (list below), used with credit to them.
+- **TTE team**: 20 more warships and 22 aircraft (lists below), used with credit to them.
 Credit is in the in-game book (CUSTOM SHIPS, CUSTOM AIRCRAFT and CREDITS pages) and in the README.
 
 ## What was added
 - **v0.24.1 New ships**: 84 RamZ ships (Japan, USA, Australia) and 20 TTE ships = 104 ships. "Australia" covers Perth, County, Leander, N Class, T/U/V Class, Battle and Colossus classes (British designs that served in the RAN), set to the Australian nation.
-- **v0.24.2 New aircraft**: 93 aircraft (90 RamZ, plus Corsair Mk II, Firebrand Mk 4 and Walrus Mk I, which the new Australian ships carry).
+- **v0.24.2 New aircraft**: 115 aircraft: 90 from RamZ, Corsair Mk II, Firebrand Mk 4 and Walrus Mk I (which the new Australian ships carry), and 22 from the TTE team.
 - Both campaigns get the new units. Campaign 001 (player USA/Australia, AI Japan) and campaign 002 (player Japan). The player side can buy any new ship that was in service by the start date straight away; ships from after 7 Aug 1942 unlock at their historical date ("orderAvailable"). The AI side gets them at the historical date.
 - New ships are in the shipyard list next to ships of the same nation and type.
 
 ## Files changed in the Override folder
 - `unit\sea\allUnitsList.txt` (200 ships), `unit\sea\mountData.txt` (+56 mounts), `campaign\campaign001\seaUnits.txt` and `campaign002\seaUnits.txt` (+104 each), `language\english\dictionary\weapons.txt` (+134), `language\english\unit\sea\<ship>.txt` (104 new, each with a pool of ship names)
-- `unit\air\allUnitsList.txt` (113 aircraft), `campaign\campaign001\airUnits.txt` and `campaign002\airUnits.txt` (+93 each), `language\english\unit\air\<aircraft>.txt` (93 new)
+- `unit\air\allUnitsList.txt` (135 aircraft), `campaign\campaign001\airUnits.txt` and `campaign002\airUnits.txt` (+115 each), `language\english\unit\air\<aircraft>.txt` (115 new)
 - Built from your current game files, so your other changes in these files are kept.
 
 ## Install (numbered steps)
 1. Open `Extras\copy_v0.24_files.bat` in Notepad and check the three paths at the top (RamZ folder, TTE folder, game folder). Change them if yours differ.
-2. Double-click `copy_v0.24_files.bat`. It copies the 104 ship folders and 93 aircraft folders (3D models, a few GB) and RamZ's `materials\ammunition.txt`. It first saves your old one as `ammunition_original.txt` in the same folder.
+2. Double-click `copy_v0.24_files.bat`. It copies the 104 ship folders and 115 aircraft folders (3D models, a few GB) and RamZ's `materials\ammunition.txt`. It first saves your old one as `ammunition_original.txt` in the same folder.
 3. Copy this repo's `Override` folder over the game's `override` folder and choose "Replace" when asked.
 4. Do the book edit in `Docs\guide_book.md` (dnSpy, the ModGuide class) so the book shows the new pages.
 5. Start the game, open the Museum and check that the new ships and aircraft load and float or fly.
@@ -289,3 +289,33 @@ Install ships and aircraft together: the new carriers carry the RamZ aircraft, s
 | Ki-94-II | Japan | ki94ii |
 | N1K2-Ja Shiden-Kai | Japan | n1k2ja |
 | R2Y2 Keiun | Japan | r2y2 |
+
+## TTE aircraft (22)
+
+| Aircraft | Nation | Unit ID |
+|---|---|---|
+| P-39D Airacobra | USA | p400 |
+| P-38E Lightning | USA | p38e |
+| J2F-5 Duck | USA | j2f |
+| PBY-5a Catalina | USA | pby |
+| PBM-3 Mariner | USA | pbm |
+| A-20G Havoc | USA | a20 |
+| B-24D Liberator | USA | b24 |
+| B-25J Mitchell | USA | b25j |
+| Kittyhawk MkIA | Australia | p40 |
+| Beaufighter Mk21 | Australia | beaufighter |
+| Beaufort MkI | Australia | beaufort |
+| Sunderland MkIII | Australia | sunderland |
+| A5M4 Claude | Japan | a5m4 |
+| A6M2-N Rufe | Japan | a6m2n |
+| Ki-43-II Hayabusa | Japan | ki43 |
+| Ki-45 Toryu | Japan | ki45 |
+| Ki-49-IIb Donryu | Japan | ki49 |
+| J1N1 Gekko | Japan | j1n1 |
+| E14Y Glen | Japan | e14y |
+| H6K4 Mavis | Japan | h6k |
+| H8K2 Emily | Japan | emily |
+| G3M2 Nell | Japan | g3m |
+
+## If a TTE aircraft has no bombs
+The TTE aircraft use bomb and torpedo files (for example `bomb_us_1600lb_ap`, `bomb_ij_800kg`). The script copies TTE's extra ammunition files only when the game lacks them. If a loadout is empty in the game, tell me the aircraft name.

@@ -79,7 +79,7 @@ public static class ModGuide
 	private static string[] bodies = new string[]
 	{
 		"<color=#E0B030><b>Version 0.24 to 0.24.2</b></color>\n" +
-		"84 new warships and 93 new aircraft from RamZ's Unit Catalog (Japan, USA and Australia), and 20 more warships from the TTE team. See the pages CUSTOM SHIPS and CUSTOM AIRCRAFT. Costs and dates are estimates.\n\n" +
+		"84 new warships and 93 new aircraft from RamZ's Unit Catalog (Japan, USA and Australia), and 20 more warships and 22 aircraft from the TTE team. See the pages CUSTOM SHIPS and CUSTOM AIRCRAFT. Costs and dates are estimates.\n\n" +
 		"<color=#E0B030><b>Version 0.23 to 0.23.2</b></color>\n" +
 		"23 new merchant ships, oilers and transports from the TTE team (not made by the mod author), in limited numbers: 10-30 of each type for each side. The Manley now sits between the submarines and the destroyers in the ship list.\n\n" +
 		"<color=#E0B030><b>Version 0.22.5</b></color>\n" +
@@ -167,7 +167,13 @@ public static class ModGuide
 		"Beaufighter Mk VIc, Corsair F Mk II, Firebrand TF Mk IV, Walrus Mk I.\n" +
 		"\n" +
 		"<color=#E0B030><b>Japan</b></color>\n" +
-		"A6M2 Mod 21, A6M3 Mod 22a, A6M3 Mod 32, A6M5 Mod 52a, A6M5 Mod 52c, A6M6 Mod 53c, A7M1 Sam, A7M2 Sam, A8K1, B5N2 Kate, B6N2a Jill, B7A2 Grace, D3A1 Val, D3A2 Val, D4Y1-C Judy, D4Y2 Judy, D4Y3a Judy, D4Y5 Judy, E13A1 Jake, G8N1 Rita, J5N2 Tenrai, J6K1 Jinpu, J7W1 Shinden, Ki-100, Ki-67 Otsu, Ki-83, Ki-84 Frank, Ki-87, Ki-94-II, N1K1 Rex, N1K1-Ja George, N1K2-Ja Shiden-Kai, P1Y1 Ginga, R2Y2 Keiun.",
+		"A6M2 Mod 21, A6M3 Mod 22a, A6M3 Mod 32, A6M5 Mod 52a, A6M5 Mod 52c, A6M6 Mod 53c, A7M1 Sam, A7M2 Sam, A8K1, B5N2 Kate, B6N2a Jill, B7A2 Grace, D3A1 Val, D3A2 Val, D4Y1-C Judy, D4Y2 Judy, D4Y3a Judy, D4Y5 Judy, E13A1 Jake, G8N1 Rita, J5N2 Tenrai, J6K1 Jinpu, J7W1 Shinden, Ki-100, Ki-67 Otsu, Ki-83, Ki-84 Frank, Ki-87, Ki-94-II, N1K1 Rex, N1K1-Ja George, N1K2-Ja Shiden-Kai, P1Y1 Ginga, R2Y2 Keiun.\n" +
+		"\n" +
+		"<color=#E0B030><b>TTE Aircraft</b></color>\n" +
+		"22 aircraft from the TTE team, used with credit to them.\n" +
+		"USA: A-20G Havoc, B-24D Liberator, B-25J Mitchell, J2F-5 Duck, P-38E Lightning, P-39D Airacobra, PBM-3 Mariner, PBY-5a Catalina.\n" +
+		"Australia: Beaufighter Mk21, Beaufort MkI, Kittyhawk MkIA, Sunderland MkIII.\n" +
+		"Japan: A5M4 Claude, A6M2-N Rufe, E14Y Glen, G3M2 Nell, H6K4 Mavis, H8K2 Emily, J1N1 Gekko, Ki-43-II Hayabusa, Ki-45 Toryu, Ki-49-IIb Donryu.\n",
 
 
 		"<color=#E0B030><b>Lasting damage</b></color>\n" +

@@ -120,7 +120,7 @@ NEW IN v0.22.5 - IN-GAME BOOK
 
 NEW IN v0.24 - SHIPS AND AIRCRAFT FROM RamZ'S CATALOGUE (by RamZ, not by me)
 - Thank you to RamZ, whose Unit Catalog is public use: 84 warships (v0.24.1) and 93 aircraft (v0.24.2) for Japan, USA and Australia. They are RamZ's work. He is also credited for the TTE merchant ships, which are believed to be his.
-- 20 more warships from the TTE team (v0.24.1), credited to them.
+- 20 more warships (v0.24.1) and 22 aircraft (v0.24.2) from the TTE team, credited to them.
 - Costs and dates are my estimates and it is not fully tested yet. Steps: Docs/new_ships_v0.24.md
 
 NEW IN v0.23 - TTE SHIPS (by the TTE team, not by me)

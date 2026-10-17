@@ -1,0 +1,1 @@
+﻿{"unitName":"P-39D Airacobra","weaponDescriptions":["Guns/Payloads|1x 37mm M4","|6x Machine Gun","|","|bomb_us_250lb"],"payloadDisplayNames":["1x250lb Bombs","1x500lb (SAP)Bombs","None"],"payloadIndexes":["0","1","2"],"endurance":[0.8,0.6,1]}

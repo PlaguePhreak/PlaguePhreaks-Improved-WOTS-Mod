@@ -1,0 +1,1 @@
+﻿{"unitName":"A5M4 Claude","weaponDescriptions":["|2x 7.7mm Type 97","|","|bomb_ij_60kg"],"payloadDisplayNames":["2x 60kg Bomb","None"],"payloadIndexes":["0","1"],"endurance":[0.9,1]}

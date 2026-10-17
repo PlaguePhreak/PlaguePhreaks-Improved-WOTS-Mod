@@ -1,0 +1,1 @@
+﻿{"unitName":"P-38E Lightning","weaponDescriptions":["Guns/Payloads|1x 20mm AN/M2","|4x 12.7mm AN/M2","|","|bomb_us_500lb","|bomb_us_250lb"],"payloadDisplayNames":["2x500lb (SAP)Bombs","2x250lb Bombs","None"],"payloadIndexes":["0","1","2"],"endurance":[0.83,0.86,1]}

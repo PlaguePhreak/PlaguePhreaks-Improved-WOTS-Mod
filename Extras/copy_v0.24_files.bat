@@ -4,7 +4,7 @@ rem Ships and aircraft must be installed together: the new carriers carry the ne
 rem This takes a few minutes and about 2 GB of disk space.
 
 set RAM=E:\mods\WOTS\custom mod\Ram_s Unit Catalog Release\override
-set TTE=E:\mods\WOTS\custom mod\TTE Override\WarOnTheSea_Data\StreamingAssets\override
+set TTE=E:\mods\WOTS\custom mod\Extra files\TTE Override\WarOnTheSea_Data\StreamingAssets\override
 set DST=E:\SteamLibrary\steamapps\common\War on the Sea\WarOnTheSea_Data\StreamingAssets\override
 
 echo Copying RamZ ships (v0.24.1)...
@@ -208,6 +208,32 @@ xcopy "%RAM%\unit\air\tbf1c" "%DST%\unit\air\tbf1c\" /E /I /Y /Q
 xcopy "%RAM%\unit\air\tbm3" "%DST%\unit\air\tbm3\" /E /I /Y /Q
 xcopy "%RAM%\unit\air\walrusmk1" "%DST%\unit\air\walrusmk1\" /E /I /Y /Q
 
+echo Copying TTE aircraft (v0.24.2)...
+xcopy "%TTE%\unit\air\p400" "%DST%\unit\air\p400\" /E /I /Y /Q
+xcopy "%TTE%\unit\air\p38e" "%DST%\unit\air\p38e\" /E /I /Y /Q
+xcopy "%TTE%\unit\air\j2f" "%DST%\unit\air\j2f\" /E /I /Y /Q
+xcopy "%TTE%\unit\air\pby" "%DST%\unit\air\pby\" /E /I /Y /Q
+xcopy "%TTE%\unit\air\pbm" "%DST%\unit\air\pbm\" /E /I /Y /Q
+xcopy "%TTE%\unit\air\a20" "%DST%\unit\air\a20\" /E /I /Y /Q
+xcopy "%TTE%\unit\air\b24" "%DST%\unit\air\b24\" /E /I /Y /Q
+xcopy "%TTE%\unit\air\b25j" "%DST%\unit\air\b25j\" /E /I /Y /Q
+xcopy "%TTE%\unit\air\p40" "%DST%\unit\air\p40\" /E /I /Y /Q
+xcopy "%TTE%\unit\air\beaufighter" "%DST%\unit\air\beaufighter\" /E /I /Y /Q
+xcopy "%TTE%\unit\air\beaufort" "%DST%\unit\air\beaufort\" /E /I /Y /Q
+xcopy "%TTE%\unit\air\sunderland" "%DST%\unit\air\sunderland\" /E /I /Y /Q
+xcopy "%TTE%\unit\air\a5m4" "%DST%\unit\air\a5m4\" /E /I /Y /Q
+xcopy "%TTE%\unit\air\a6m2n" "%DST%\unit\air\a6m2n\" /E /I /Y /Q
+xcopy "%TTE%\unit\air\ki43" "%DST%\unit\air\ki43\" /E /I /Y /Q
+xcopy "%TTE%\unit\air\ki45" "%DST%\unit\air\ki45\" /E /I /Y /Q
+xcopy "%TTE%\unit\air\ki49" "%DST%\unit\air\ki49\" /E /I /Y /Q
+xcopy "%TTE%\unit\air\j1n1" "%DST%\unit\air\j1n1\" /E /I /Y /Q
+xcopy "%TTE%\unit\air\e14y" "%DST%\unit\air\e14y\" /E /I /Y /Q
+xcopy "%TTE%\unit\air\h6k" "%DST%\unit\air\h6k\" /E /I /Y /Q
+xcopy "%TTE%\unit\air\emily" "%DST%\unit\air\emily\" /E /I /Y /Q
+xcopy "%TTE%\unit\air\g3m" "%DST%\unit\air\g3m\" /E /I /Y /Q
+rem TTE bomb and torpedo files: only copied when the game does not already have that file
+for %%%%f in ("%%TTE%%\ammunition\*.txt") do if not exist "%%DST%%\ammunition\%%%%~nxf" copy "%%%%f" "%%DST%%\ammunition\" >nul
+
 echo Copying RamZ ammunition (v0.24.2)...
 if exist "%RAM%\ammunition" xcopy "%RAM%\ammunition" "%DST%\ammunition\" /E /I /Y /Q
 if not exist "%DST%\materials\ammunition_original.txt" copy "%DST%\materials\ammunition.txt" "%DST%\materials\ammunition_original.txt"
