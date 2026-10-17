@@ -1,4 +1,4 @@
-# New map locations: research (for v0.24.3)
+# New map locations: research (for v0.25)
 
 **Status: all 10 locations below are now built in the Override files (pending test).** Lae, Buna, Gasmata, Cairns and Horn Island start owned by their historical side (Allies and Japan swap in campaign002). Finschhafen, Kiriwina, Madang, Wewak and Manus start empty (neutral, level 0) so either side can capture them. Files changed in both campaigns: `campaign/campaignXXX/mapLandLocations.txt`, `campaign/campaignXXX/seaWaypoints.txt` (new in the repo) and `language/english/campaign/campaignXXX/mapLocationNames.txt` (new in the repo). Start a NEW campaign to see them; old saves keep the old 22 locations.
 
@@ -58,7 +58,7 @@ Fitted from known towns already on the map (Port Moresby, Rabaul, Cooktown, Guad
 - Townsville, Darwin and Noumea: off the south and west edge of the map.
 
 ## Recommendation
-Start v0.24.3 with Lae, Buna and Cairns (Aaron's picks), then add Gasmata and Horn Island if the first three work. All fit the Aug 1942 start date, and they put real targets on the Papuan north coast, which the map is missing today. Group B can come after the air base rework (v0.24.4).
+Start v0.25 with Lae, Buna and Cairns (Aaron's picks), then add Gasmata and Horn Island if the first three work. All fit the Aug 1942 start date, and they put real targets on the Papuan north coast, which the map is missing today. Group B can come after the air base rework (v0.25.1).
 
 The files needed to build these are now in the project folder (`game_files/`). Next step when Aaron says go: write the new lines, names and waypoints (with two-way links) for the chosen locations.
 
