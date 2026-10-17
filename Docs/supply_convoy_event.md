@@ -323,12 +323,12 @@ In method **Spawn**, find this line:
 CampaignInterface.instance.MoveMobileToDestination(goa, destination.gameObjectAnimator.currentMap2DLocation, true);
 ```
 
-Replace it with:
+Replace it with (dnSpy renames `goa` to `gameObjectAnimator` and `cm` to `instance2` in this method, so use these names):
 
 ```csharp
-goa.mobileMapObject.type = 0;
-goa.mobileMapObject.speed = cm.GetMobileMapObjectSpeed(goa.mobileMapObject);
-CampaignAI.instance.StartCoroutine(CampaignAI.instance.MoveMobileNextFrame(goa, destination.gameObjectAnimator.currentMap2DLocation, true, false));
+gameObjectAnimator.mobileMapObject.type = 0;
+gameObjectAnimator.mobileMapObject.speed = instance2.GetMobileMapObjectSpeed(gameObjectAnimator.mobileMapObject);
+CampaignAI.instance.StartCoroutine(CampaignAI.instance.MoveMobileNextFrame(gameObjectAnimator, destination.gameObjectAnimator.currentMap2DLocation, true, false));
 ```
 
 ### Edit 3 - replace the whole Tick method
