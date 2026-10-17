@@ -76,7 +76,7 @@ Direction: the mod aims to be **realistic / historical**. New ideas should follo
   - Would be new:
     1. A small entry record: in-game date/time, type (the 8 tabs), text, a place on the map to jump to (position or the unit/base), and an unread flag.
     2. A type for each message key (for example "AirReady" is Air, "BingoFuel" is Fleet); anything unlisted goes under Other. The Contacts, Battles, Supply and Admiralty lines in the screenshot may not all go through `ErrorPanel` (the Admiralty orders and the convoy supply messages are mod code), so each of those needs its own line added to write to the log; to check when built.
-    3. The bell button, the small count/unread popup, the Messages window with its tabs and Show buttons (built in code like the other mod UI, because the DLL has no place for new Unity objects in dnSpy).
+    3. The bell button, the small count/unread popup, the Messages window with its tabs and Show buttons (built in code, the way `ModLogTabs` builds its tab bar).
     4. Saving per campaign: add a list of log entries to `CampaignData` (it is written by `CampaignManager.GetCampaignDataString` with `JsonUtility`, so a plain list of text lines saves and loads with the rest). Old saves load with an empty log. Cap the list (for example the last 500) so saves stay small.
   - Open points: whether the existing fading pop-ups stay (suggest yes, the log is added alongside); whether opening the window marks everything read or only what is on screen.
 - Task-force overview: scout coverage, fuel/ammo, formation status at a glance (M) - first step is v0.21.4 below (done, tested)
