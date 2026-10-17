@@ -20,6 +20,7 @@ v0.24.1 - New ships from RamZ's catalogue and the TTE mod (pending test)
 * 84 new warships (Japan, USA, Australia) from RamZ's public Unit Catalog, used with credit to RamZ. They are his work, not mine. He is also credited for the TTE merchant ships, which are believed to be his.
 * "Australia" ships: Perth, County, Leander, N Class, T/U/V Class, Battle class and Colossus class (British designs that served with the RAN).
 * 20 more warships from the TTE mod (Colorado, New Mexico, Pennsylvania, Tennessee, Bogue, Omaha, Clemson and Wickes, Hiyo, Chitose, Taiyo, Ryuho, Hosho, Nisshin, Akitsu Maru, Kamikawa Maru, Kitakami, Yubari, Type-A, Type-C, Tribal). Credit to the TTE team.
+* Shipyard order: inside each nation the ships are listed by class: submarine, destroyer escort, destroyer, light cruiser, heavy cruiser, battlecruiser, battleship, light carrier, carrier, then merchants and auxiliaries (only unit/sea/allUnitsList.txt changed).
 * The in-game book has a new page "Custom ships" (first title "RamZ Catalogue Ships", listed by ship class) and a page "Custom aircraft". dnSpy steps are in Docs/guide_book.md.
 * Costs, supply cost, sunk value and dates are my estimates (cost is RamZ's value, doubled for battleships, battlecruisers and carriers). Both campaigns get the ships. Some RamZ ships duplicate stock ones (Essex, Iowa); both show in the shipyard.
 * Files: allUnitsList.txt, mountData.txt (+56), weapons.txt (+134), seaUnits.txt for both campaigns, 104 ship name files. Models are copied by Extras/copy_v0.24_files.bat. Steps: Docs/new_ships_v0.24.md.
