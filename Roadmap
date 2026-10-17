@@ -206,4 +206,10 @@ Logistics work goes under v0.22, then v0.22.1, v0.22.2 and so on. It builds on t
 - **v0.24.1** 84 ships from RamZ's catalogue (Japan, USA, Australia) plus 20 TTE ships (new_ships_v0.24.md, pending test). Credit to RamZ and the TTE team.
 - **v0.24.2** 93 aircraft from RamZ's catalogue plus 22 from TTE (pending test).
 - **v0.24.3** New map locations (planned, next up after v0.24.1 and v0.24.2 are tested and working).
+- **v0.24.4** Air base rework (planned, depends on v0.24.3): with so many new aircraft from v0.24.2, put them to use at locations on the map, using the new locations from v0.24.3 as air bases. Details to be worked out when v0.24.3 is done.
+  - Idea: give every aircraft its historical loadout (the bombs, torpedoes and rockets it really carried), where it does not have that already. To check first what is already set per aircraft.
+- **v0.24.5** Starting task forces rework (planned, to discuss in detail later; needs the new ships from v0.24.1): a full rework of the task forces each side starts with, built to look like real WW2 forces.
+  - Each side gets: 1 carrier task force, 1 surface action group with a battleship, 2 cruiser forces, 3-4 destroyer patrols and 3-4 submarine patrols.
+  - US carrier force modelled on TF 16 (USS Enterprise and her battle group). Japanese carrier force modelled on the Carrier Striking Force with both Shokaku and Zuikaku.
+  - Names follow the lead ship: "Enterprise Carrier Force", "Shokaku Carrier Force", "(Main ship) Surface Action Group", "(First ship) Destroyer Patrol", and the same style for the cruiser forces and submarine patrols.
 - **Later (rules popup fix)** The "Ship Orders" rules page (modrules1.txt) says light carriers take 30 days, but the game code gives them 42 days like fleet carriers. Change the text to 42 (or the build time to 30). Left as is for now.
