@@ -9,6 +9,7 @@
 {"nation":"usa","available":[15,6,1919],"unitID":"manley"}
 {"nation":"usa","available":[1,1,1944],"unitID":"rudderow44"}
 {"nation":"usa","available":[1,1,1944],"unitID":"tacoma44"}
+{"nation":"usa","available":[1,12,1919],"unitID":"clemson"}
 {"nation":"usa","available":[15,6,1934],"unitID":"farragut"}
 {"nation":"usa","available":[27,8,1936],"unitID":"porter"}
 {"nation":"usa","available":[23,7,1936],"unitID":"mahan"}
@@ -20,7 +21,6 @@
 {"nation":"usa","available":[25,7,1940],"unitID":"benson"}
 {"nation":"usa","available":[14,6,1940],"unitID":"gleaves"}
 {"nation":"usa","available":[4,6,1942],"unitID":"fletcher"}
-{"nation":"usa","available":[1,12,1919],"unitID":"clemson"}
 {"nation":"usa","available":[1,1,1942],"unitID":"benson42"}
 {"nation":"usa","available":[1,1,1942],"unitID":"fletcher42"}
 {"nation":"usa","available":[1,1,1942],"unitID":"mahan42"}
