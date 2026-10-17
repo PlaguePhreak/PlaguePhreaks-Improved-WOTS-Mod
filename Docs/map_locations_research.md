@@ -1,6 +1,8 @@
 # New map locations: research (for v0.24.3)
 
-Research and proposal only. Nothing has been added to the map yet. History is from general knowledge of the Pacific War and should be double-checked before we write descriptions. Map positions are estimates (see "How positions were worked out") and must be checked in game.
+**Status: all 10 locations below are now built in the Override files (pending test).** Lae, Buna, Gasmata, Cairns and Horn Island start owned by their historical side (Allies and Japan swap in campaign002). Finschhafen, Kiriwina, Madang, Wewak and Manus start empty (neutral, level 0) so either side can capture them. Files changed in both campaigns: `campaign/campaignXXX/mapLandLocations.txt`, `campaign/campaignXXX/seaWaypoints.txt` (new in the repo) and `language/english/campaign/campaignXXX/mapLocationNames.txt` (new in the repo). Start a NEW campaign to see them; old saves keep the old 22 locations.
+
+History is from general knowledge of the Pacific War and should be double-checked before we write descriptions. Map positions are estimates (see "How positions were worked out") and must be checked in game.
 
 ## What a location needs (how the game defines one)
 Each location is one line in `Override/campaign/campaign00X/mapLandLocations.txt` (both campaigns, same list). Fields used today, e.g. Rabaul:
