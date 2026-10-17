@@ -1,0 +1,1 @@
+﻿{"unitName":"Worcester (1947)","weaponDescriptions":["40mm Bofors","20mm Oerlikon"],"namesInClass":["Worcester","Roanoke","Vallejo","Gary"],"instancesInClass":["worcester","roanoke","vallejo","gary"]}

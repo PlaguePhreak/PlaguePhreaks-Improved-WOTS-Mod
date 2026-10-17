@@ -1,0 +1,1 @@
+﻿{"unitName":"Saipan (1945)","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"],"namesInClass":["Saipan","Wright"],"instancesInClass":["saipan","wright"]}

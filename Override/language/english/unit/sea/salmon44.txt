@@ -1,0 +1,1 @@
+﻿{"unitName":"Salmon (1944)","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"],"namesInClass":["Salmon","Seal","Skipjack","Snapper","Stingray","Sturgeon"],"instancesInClass":["salmon","seal","skipjack","snapper","stingray","sturgeon"]}

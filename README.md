@@ -1,6 +1,6 @@
 Everything here is a WIP and still in testing.
 This is for game version 1.09a (the newest version of the game).
-Current mod version: v0.23.2 (see the change log for everything that's in it)
+Current mod version: v0.24.2 (see the change log for everything that's in it)
 The supply convoy event (v0.22.4) appears but does not sail to your home port by itself yet (fix planned). The TTE ships (v0.23 to v0.23.2) are not fully tested yet. v0.20.9 failed its test, so work on aircraft is on hold.
 
 If there's something you'd like to use for your own mod, please give credit.
@@ -117,6 +117,11 @@ NEW IN v0.22 - SUPPLY
 
 NEW IN v0.22.5 - IN-GAME BOOK
 - A book button at the top left of the campaign map (the fuel barrel is now under it). Click it to read what's new and the features of the mod, page by page
+
+NEW IN v0.24 - SHIPS AND AIRCRAFT FROM RamZ'S CATALOGUE (by RamZ, not by me)
+- Thank you to RamZ, whose Unit Catalog is public use: 84 warships (v0.24.1) and 93 aircraft (v0.24.2) for Japan, USA and Australia. They are RamZ's work. He is also credited for the TTE merchant ships, which are believed to be his.
+- 20 more warships from the TTE team (v0.24.1), credited to them.
+- Costs and dates are my estimates and it is not fully tested yet. Steps: Docs/new_ships_v0.24.md
 
 NEW IN v0.23 - TTE SHIPS (by the TTE team, not by me)
 - 23 merchant ships, transports, a hospital ship, an oiler (Patapsco) and a destroyer escort (Manley) from the TTE mod, used with credit to the TTE team

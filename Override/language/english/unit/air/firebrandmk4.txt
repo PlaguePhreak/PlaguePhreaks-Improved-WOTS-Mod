@@ -1,0 +1,1 @@
+﻿{"unitName":"Firebrand TF Mk IV","weaponDescriptions":["Guns/Payloads|4x20mm Hispano MkV"],"payloadDisplayNames":["1xMk XV Torpedo","8xRP3 Rocket","None"],"payloadIndexes":["0","1","2"],"endurance":[0.75,0.9,1]}

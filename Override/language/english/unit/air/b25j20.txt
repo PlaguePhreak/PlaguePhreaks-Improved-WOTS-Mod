@@ -1,0 +1,1 @@
+﻿{"unitName":"B-25J-20 Mitchell","weaponDescriptions":["Guns/Payloads|12x12.7mm AN/M2"],"payloadDisplayNames":["1x2000lb(HE)","2x1600lb(AP)","4x1000lb(HE)","4x500lb(HE)","6x500lb(HE)","8x250lb(HE)","8xHVAR","6x350lb Depth Charge","None"],"payloadIndexes":["0","1","2","3","4","5","6","7","8"],"endurance":[0.78,0.76,0.76,0.78,0.76,0.78,0.95,0.82,1]}

@@ -1,0 +1,1 @@
+﻿{"unitName":"Independence (1943)","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"],"namesInClass":["Independence","Princeton","Belleau Wood","Cowpens","Monterey","Langley","Cabot","Bataan","San Jacinto"],"instancesInClass":["independence","princeton","belleau wood","cowpens","monterey","langley","cabot","bataan","san jacinto"]}

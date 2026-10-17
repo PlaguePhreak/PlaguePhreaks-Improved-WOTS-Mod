@@ -1,0 +1,1 @@
+﻿{"unitName":"Iowa (1945)","weaponDescriptions":["40mm Bofors"],"namesInClass":["Missouri","Wisconsin"],"instancesInClass":["missouri","wisconsin"]}

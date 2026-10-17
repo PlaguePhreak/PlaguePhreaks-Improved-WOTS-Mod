@@ -1,0 +1,1 @@
+﻿{"unitName":"N1K2-Ja Shiden-Kai","weaponDescriptions":["Guns|4x 20mm Type99Mk2"],"payloadDisplayNames":["None","4x250kg(HE)","4x250kg(SAP)","4x250kg(AP+HE)"],"payloadIndexes":["0","1","2","3"],"endurance":[1,0.66,0.66,0.66]}

@@ -1,0 +1,1 @@
+﻿{"unitName":"B-17G Flying Fortress","weaponDescriptions":["Guns/Payloads|13x12.7mm AN/M2"],"payloadDisplayNames":["8x500lb(HE)","12x500lb(HE)","6x1000lb(HE)","8x1000lb(HE)","2x2000lb(HE)","4x2000lb(HE)","None"],"payloadIndexes":["0","1","2","3","4","5","6"],"endurance":[0.8,0.7,0.7,0.5,0.8,0.5,1]}

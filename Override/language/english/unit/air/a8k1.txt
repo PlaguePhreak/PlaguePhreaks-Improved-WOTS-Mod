@@ -1,0 +1,1 @@
+﻿{"unitName":"A8K1","weaponDescriptions":["Guns|6x 20mm Type99Mk2"],"payloadDisplayNames":["None","2x250kg (SAP)","2x250kg (GP)"],"payloadIndexes":["0","1","2"],"endurance":[1,0.75,0.75]}

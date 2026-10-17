@@ -1,0 +1,1 @@
+﻿{"unitName":"B6N2a Jill","weaponDescriptions":["Guns/Payloads|2x13mm Type2"],"payloadDisplayNames":["1xType93 Mod3 Torpedo","1x800kg(GP)","1x800kg(AP)","1x500kg(GP)","1x500kg(SAP)","2x250kg(GP)","2x250kg(SAP)","None"],"payloadIndexes":["0","1","2","3","4","5","6","7"],"endurance":[0.66,0.7,0.7,0.8,0.8,0.75,0.75,1]}

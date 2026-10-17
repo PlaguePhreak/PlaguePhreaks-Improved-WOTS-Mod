@@ -1,0 +1,1 @@
+﻿{"unitName":"Kitakami","weaponDescriptions":["Type 96 25mm Guns"],"namesInClass":["Kitakami","Ōi"],"instancesInClass":["kitakami","oi"]}

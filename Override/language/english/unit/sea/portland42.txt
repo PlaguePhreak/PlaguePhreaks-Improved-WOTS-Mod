@@ -1,0 +1,1 @@
+﻿{"unitName":"Portland (1942)","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"],"namesInClass":["Portland","Indianapolis"],"instancesInClass":["portland","indianapolis"]}

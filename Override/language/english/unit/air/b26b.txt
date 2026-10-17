@@ -1,0 +1,1 @@
+﻿{"unitName":"B-26B Marauder","weaponDescriptions":["Guns/Payloads|11x12.7mm AN/M2"],"payloadDisplayNames":["4x1000lb(HE)","1xMk13 Torpedo","2x2000lb(HE)","6x500lb(HE)","10x500lb(HE)","None"],"payloadIndexes":["0","1","2","3","4","5"],"endurance":[0.66,0.7,0.66,0.75,0.55,1]}

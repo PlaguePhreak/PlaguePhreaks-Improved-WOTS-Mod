@@ -1,0 +1,1 @@
+﻿{"unitName":"Ki-100","weaponDescriptions":["Guns/Payloads|4x 20mm Cannon"],"payloadDisplayNames":["None","2x250kg(HE)"],"payloadIndexes":["0","1"],"endurance":[1,0.65]}

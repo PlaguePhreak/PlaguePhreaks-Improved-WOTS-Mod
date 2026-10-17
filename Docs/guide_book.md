@@ -1,6 +1,6 @@
 # v0.22.5 Features and change log book [GUIDE]
 
-Status: installed and tested (v0.22.5). Text updated for v0.23 to v0.23.2 (new pages Custom ships and Credits): see "Updating the book text" below. The update is not compiled yet.
+Status: installed and tested (v0.22.5). Text updated for v0.23 to v0.24.2 (pages Custom ships, Custom aircraft and Credits): see "Updating the book text" below. The update is not compiled yet.
 
 ## Updating the book text (v0.23.2) - short steps
 The book text is inside the DLL, so it needs one dnSpy edit. Only the lists `titles` and `bodies` changed (3 new pages: CUSTOM SHIPS after SUPPLY, CREDITS at the end; page 1 and the supply convoy text changed).
@@ -9,7 +9,7 @@ The book text is inside the DLL, so it needs one dnSpy edit. Only the lists `tit
 3. Select all the code, delete it, and paste the whole class from the code block below (Step 1).
 4. Click **Compile**. If it gives errors, send me the exact message.
 5. **File > Save Module**.
-6. Start the game, open a campaign and click the book: you should see 12 pages. Check page 1, page 4 (CUSTOM SHIPS) and the last page (CREDITS).
+6. Start the game, open a campaign and click the book: you should see 13 pages. Check page 1, page 4 (CUSTOM SHIPS), page 5 (CUSTOM AIRCRAFT) and the last page (CREDITS).
 
 No other method changes. Nothing else in the DLL needs touching.
 
@@ -65,6 +65,7 @@ public static class ModGuide
 		"EVENTS",
 		"SUPPLY",
 		"CUSTOM SHIPS",
+		"CUSTOM AIRCRAFT",
 		"REPAIR AND DAMAGE",
 		"CREWS AND VETERANCY",
 		"FUEL AND SHIPS",
@@ -77,6 +78,8 @@ public static class ModGuide
 
 	private static string[] bodies = new string[]
 	{
+		"<color=#E0B030><b>Version 0.24 to 0.24.2</b></color>\n" +
+		"84 new warships and 93 new aircraft from RamZ's Unit Catalog (Japan, USA and Australia), and 20 more warships from the TTE team. See the pages CUSTOM SHIPS and CUSTOM AIRCRAFT. Costs and dates are estimates.\n\n" +
 		"<color=#E0B030><b>Version 0.23 to 0.23.2</b></color>\n" +
 		"23 new merchant ships, oilers and transports from the TTE team (not made by the mod author), in limited numbers: 10-30 of each type for each side. The Manley now sits between the submarines and the destroyers in the ship list.\n\n" +
 		"<color=#E0B030><b>Version 0.22.5</b></color>\n" +
@@ -101,14 +104,71 @@ public static class ModGuide
 		"<color=#E0B030><b>Numbers</b></color>\n" +
 		"Weekly supplies at home ports are 6,000. Outposts start with 1 supply per troop.",
 
-		"<color=#E0B030><b>New merchant ships</b></color>\n" +
-		"23 merchant ships, transports, a hospital ship, an oiler (Patapsco) and a destroyer escort (Manley) were added. ALL of them are made by the TTE team and used with credit to them. They are not the work of the mod author.\n\n" +
-		"<color=#E0B030><b>Limited numbers</b></color>\n" +
-		"Each type has a pool of 10-30 ships for each side. A ship that is built or sunk is gone for good. The stock merchants (C3 Cargo, Nippon Maru, Kamogawa Maru) are unlimited, so convoys can still form when the new pools run out.\n\n" +
-		"<color=#E0B030><b>Convoys</b></color>\n" +
-		"The AI builds its convoys from a random mix of the merchants and oilers, new ones included. A hospital ship can turn up in a convoy.\n\n" +
-		"<color=#E0B030><b>Ship list</b></color>\n" +
-		"The Manley sits between the submarines and the destroyers.",
+		"<color=#E0B030><b>RamZ Catalogue Ships</b></color>\n" +
+		"84 ships from RamZ's public Unit Catalog (thank you, RamZ!), listed by ship class. Their model, weapons and names are RamZ's work. Only Japan, USA and Australia are used.\n" +
+		"\n" +
+		"<color=#E0B030><b>Battleships</b></color>\n" +
+		"USA: Iowa (1944), Iowa (1945), Nebraska, Nevada, North Carolina, South Dakota.\n" +
+		"Japan: Fuso, Kongo, Satsuma, Yamato.\n" +
+		"\n" +
+		"<color=#E0B030><b>Battlecruisers</b></color>\n" +
+		"USA: Constellation.\n" +
+		"\n" +
+		"<color=#E0B030><b>Aircraft Carriers</b></color>\n" +
+		"USA: Enterprise, Essex, Hornet, Lexington, Midway (1945), Midway (1946), Ranger, Saratoga (1942), Saratoga (1944), Yorktown.\n" +
+		"Australia: Colossus.\n" +
+		"Japan: G14, G15, Shokaku, Taiho, Zuikaku.\n" +
+		"\n" +
+		"<color=#E0B030><b>Light Carriers</b></color>\n" +
+		"USA: Independence, Saipan, Sangamon.\n" +
+		"\n" +
+		"<color=#E0B030><b>Heavy Cruisers</b></color>\n" +
+		"USA: Alaska, Baltimore, Des Moines, New Orleans(1945), Portland, Puerto Rico, Wichita.\n" +
+		"Australia: County.\n" +
+		"Japan: Aoba, Maya, Mogami, Myoko, Tone.\n" +
+		"\n" +
+		"<color=#E0B030><b>Light Cruisers</b></color>\n" +
+		"USA: Atlanta (1942), Atlanta (1944), Austin, Cleveland, Oakland (1943), Oakland (1945), St. Louis, Worcester.\n" +
+		"Australia: Leander, Perth.\n" +
+		"Japan: Agano, Agano-Kai, Isuzu.\n" +
+		"\n" +
+		"<color=#E0B030><b>Destroyers</b></color>\n" +
+		"USA: Benson, Fletcher (1942), Fletcher (1943), Gearing, Mahan, Porter (1942), Porter (1944), Somers, Sumner.\n" +
+		"Australia: Battle, N Class, T,U,V Class.\n" +
+		"Japan: Akizuki, Ayanami, Kagero, Kitakaze, Shimakaze, Shiratsuyu, Yugumo.\n" +
+		"\n" +
+		"<color=#E0B030><b>Destroyer Escorts</b></color>\n" +
+		"USA: Rudderow, Tacoma.\n" +
+		"Japan: Chidori, Mutsuki.\n" +
+		"\n" +
+		"<color=#E0B030><b>Submarines</b></color>\n" +
+		"USA: Balao, Balao GUPPY, Gato, Salmon.\n" +
+		"Japan: Type B3.\n" +
+		"\n" +
+		"<color=#E0B030><b>TTE Warships</b></color>\n" +
+		"20 more ships from the TTE team, used with credit to them.\n" +
+		"Battleships: Colorado, New Mexico, Pennsylvania, Tennessee.\n" +
+		"Aircraft carriers: Hiyo.\n" +
+		"Light carriers: Akitsu Maru, Bogue, Chitose, Hosho, Kamikawa Maru, Nisshin, Ryuho, Taiyo.\n" +
+		"Light cruisers: Kitakami, Omaha, Yubari.\n" +
+		"Destroyers: Tribal, Clemson & Wickes.\n" +
+		"Submarines: Type-A, Type-C.\n" +
+		"\n" +
+		"<color=#E0B030><b>TTE Merchant Ships</b></color>\n" +
+		"23 merchant ships, transports, a hospital ship, an oiler (Patapsco) and a destroyer escort (Manley) from the TTE team, in limited pools of 10-30 of each type for each side. They are used with credit to the TTE team. The stock merchants (C3 Cargo, Nippon Maru, Kamogawa Maru) are unlimited, so convoys can still form when the pools run out. The AI builds its convoys from a random mix of merchants and oilers, new ones included.",
+
+		"<color=#E0B030><b>RamZ Catalogue Aircraft</b></color>\n" +
+		"93 aircraft from RamZ's public Unit Catalog (plus 3 British types that his new Australian carriers use). Japan, USA and Australia only.\n" +
+		"\n" +
+		"<color=#E0B030><b>USA</b></color>\n" +
+		"A-26C-45 Invader, A2D-1 Skyshark, AD-2 Skyraider, AM-1 Mauler, AU-1 Corsair, B-17G Flying Fortress, B-25J-20 Mitchell, B-26B Marauder, B-29A Superfortress, BTD-1 Destroyer, F2A-3 Buffalo, F2G-1 Corsair, F2G-2 Corsair, F4F-3 Wildcat, F4F-4 Wildcat, F4U-1A Corsair, F4U-1D Corsair, F4U-2 Corsair, F4U-4 Corsair, F4U-4B Corsair, F6F-3 Hellcat, F6F-5 Hellcat, F6F-5N Hellcat, F7F-3 Tigercat, F8F-1B Bearcat, FM-2 Wildcat, OS2U-3 Kingfisher, P-38G-10 Lightning, P-38J-15 Lightning, P-38K-1 Lightning, P-38L-5 Lightning, P-39D Airacobra, P-40F-10 Warhawk, P-43A-1 Lancer, P-47D-28 Thunderbolt, P-47M-1 Thunderbolt, P-47N-15 Thunderbolt, P-51D-20 Mustang, P-51H-5 Mustang, P-61C-1 Black Widow, P-63C-5 Kingcobra, P-82B Twin Mustang, PB4Y-2 Privateer, PBJ-1J Mitchell, PV-2D Harpoon, SB2C-1C Helldiver, SB2C-4 Helldiver, SB2U-3 Vindicator, SBD-3 Dauntless, SBD-5 Dauntless, SBD-6 Dauntless, SOC-1 Seagull, TBD-1 Devastator, TBF-1C Avenger, TBM-3 Avenger.\n" +
+		"\n" +
+		"<color=#E0B030><b>Australia</b></color>\n" +
+		"Beaufighter Mk VIc, Corsair F Mk II, Firebrand TF Mk IV, Walrus Mk I.\n" +
+		"\n" +
+		"<color=#E0B030><b>Japan</b></color>\n" +
+		"A6M2 Mod 21, A6M3 Mod 22a, A6M3 Mod 32, A6M5 Mod 52a, A6M5 Mod 52c, A6M6 Mod 53c, A7M1 Sam, A7M2 Sam, A8K1, B5N2 Kate, B6N2a Jill, B7A2 Grace, D3A1 Val, D3A2 Val, D4Y1-C Judy, D4Y2 Judy, D4Y3a Judy, D4Y5 Judy, E13A1 Jake, G8N1 Rita, J5N2 Tenrai, J6K1 Jinpu, J7W1 Shinden, Ki-100, Ki-67 Otsu, Ki-83, Ki-84 Frank, Ki-87, Ki-94-II, N1K1 Rex, N1K1-Ja George, N1K2-Ja Shiden-Kai, P1Y1 Ginga, R2Y2 Keiun.",
+
 
 		"<color=#E0B030><b>Lasting damage</b></color>\n" +
 		"Knocked-out equipment stays broken until you get to a port.\n\n" +
@@ -167,6 +227,8 @@ public static class ModGuide
 		"<color=#E0B030><b>Custom ships</b></color>\n" +
 		"All custom merchant ships in the game (merchants, transports, hospital ship, oilers and the destroyer escort) are from the TTE team and are used with credit to them. They are not the work of the mod author.\n" +
 		"The TTE mod is about 4 years old and the team is no longer active. Their assets are used with credit, and will be removed at the request of any TTE member.\n\n" +
+		"<color=#E0B030><b>RamZ</b></color>\n" +
+		"Thank you to RamZ for his public Unit Catalog: the 84 warships and 93 aircraft in v0.24, and (as far as we know) some of the TTE merchant ships. They are his work, not the work of the mod author.\n\n" +
 		"<color=#E0B030><b>Inspiration</b></color>\n" +
 		"The events and the survivors system were inspired by Kiko. The Hit log is a copy of the idea from the ADBA Mod Team's Hitlog."
 	};

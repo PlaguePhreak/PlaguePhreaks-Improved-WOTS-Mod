@@ -1,0 +1,1 @@
+﻿{"unitName":"Perth (1942)","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"],"namesInClass":["Perth","Hobart"],"instancesInClass":["perth","hobart"]}

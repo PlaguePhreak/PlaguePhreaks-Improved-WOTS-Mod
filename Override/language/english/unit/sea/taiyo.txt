@@ -1,0 +1,1 @@
+{"unitName":"Taiyō","weaponDescriptions":["Type 96 25mm Guns","Type 93 13.2mm Guns"],"namesInClass":["Taiyō","Un'yō","Chūyō"],"instancesInClass":["taiyō","un'yō","chūyō"]}

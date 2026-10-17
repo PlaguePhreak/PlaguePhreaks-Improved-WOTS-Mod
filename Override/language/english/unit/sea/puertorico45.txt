@@ -1,0 +1,1 @@
+﻿{"unitName":"Puerto Rico (1945)","weaponDescriptions":["40mm Bofors","20mm Oerlikon"],"namesInClass":["Puerto Rico","Samoa"],"instancesInClass":["puerto rico","samoa"]}

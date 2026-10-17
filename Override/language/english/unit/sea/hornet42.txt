@@ -1,0 +1,1 @@
+﻿{"unitName":"Hornet (1942)","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"],"namesInClass":["Hornet"],"instancesInClass":["hornet"]}

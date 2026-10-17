@@ -1,0 +1,1 @@
+﻿{"unitName":"Benson (1942)","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"],"namesInClass":["Benson","Mayo","Gleaves","Niblack","Madison","Lansdale","Hilary P. Jones","Charles F. Hughes","Plunkett"],"instancesInClass":["benson","mayo","gleaves","niblack","madison","lansdale","hilary p. jones","charles f. hughes","plunkett"]}

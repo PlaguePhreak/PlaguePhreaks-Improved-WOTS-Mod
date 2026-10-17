@@ -51,6 +51,7 @@ Direction: the mod aims to be **realistic / historical**. New ideas should follo
 40. Troop supply upkeep and AI supply convoys, v0.22 (supply_upkeep.md) (tested)
 41. Features and change log book, v0.22.5 (guide_book.md) (tested)
 42. TTE merchant ships, oilers and transports with limited pools, v0.23 to v0.23.2 (tte_merchants.md, ship_limits.md) (pending test)
+43. New ships and aircraft from RamZ's catalogue and TTE, v0.24.1 and v0.24.2 (new_ships_v0.24.md) (pending test)
 - Note: Zero vs Wildcat swings a lot between battles. If Zeros keep winning long dogfights, give the Zero 20 mm its own short ammo supply (about 8 s) instead of sharing the 30 s gun timer.
 
 ## AI overhaul
@@ -200,3 +201,7 @@ Logistics work goes under v0.22, then v0.22.1, v0.22.2 and so on. It builds on t
 
 ## Hard to do, but might try when we complete everything
 - Mixed aircraft types in one single air group (instead of separate groups escorting a leader). Hard because payload, flight split in battle, map speed/endurance and the return to base all assume one aircraft type per group (L)
+
+## v0.24 New ships and aircraft (RamZ catalogue)
+- **v0.24.1** 84 ships from RamZ's catalogue (Japan, USA, Australia) plus 20 TTE ships (new_ships_v0.24.md, pending test). Credit to RamZ and the TTE team.
+- **v0.24.2** 93 aircraft from RamZ's catalogue (pending test). TTE has about 20 more aircraft types not in the stock game, not added yet.

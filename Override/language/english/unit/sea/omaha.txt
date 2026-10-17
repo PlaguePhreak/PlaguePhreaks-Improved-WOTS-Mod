@@ -1,0 +1,1 @@
+﻿{"unitName":"Omaha","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"],"namesInClass":["Omaha","Milwaukee","Cincinnati","Raleigh","Detroit","Richmond","Concord","Trenton","Marblehead","Memphis"],"instancesInClass":["omaha","milwaukee","cinncinnati","raleigh","detroit","richmond","concord","trenton","marblehead","memphis"]}

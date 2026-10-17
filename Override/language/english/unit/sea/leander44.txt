@@ -1,0 +1,1 @@
+﻿{"unitName":"Leander (1944)","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"],"namesInClass":["Leander","Achilles"],"instancesInClass":["leander","achilles"]}

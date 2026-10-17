@@ -1,0 +1,1 @@
+﻿{"unitName":"Nebraska (1944)","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"],"namesInClass":["Nebraska"],"instancesInClass":["nebraska"]}

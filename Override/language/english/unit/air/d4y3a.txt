@@ -1,0 +1,1 @@
+﻿{"unitName":"D4Y3a Judy","weaponDescriptions":["Guns|2x 7.7mm Type97"],"payloadDisplayNames":["3x250kg(SAP) Bombs","3x250kg(GP) Bombs","1x500kg(SAP) Bomb","1x500kg(GP) Bomb","1x250kg(SAP) Bomb","1x250kg(GP) Bomb","None"],"payloadIndexes":["0","1","2","3","4","5","6"],"endurance":[0.5,0.5,0.7,0.7,0.85,0.85,1]}

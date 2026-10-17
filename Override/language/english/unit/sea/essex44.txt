@@ -1,0 +1,1 @@
+﻿{"unitName":"Essex (1944)","weaponDescriptions":[],"namesInClass":["Essex","Yorktown","Intrepid","Hornet","Franklin","Lexington","Bunker Hill","Wasp","Bennington","Bon Homme Richard"],"instancesInClass":["essex","yorktown_e","intrepid","hornet_e","franklin","lexington_e","bunkerhill","wasp_e","bennington","bonhomme_richard"]}

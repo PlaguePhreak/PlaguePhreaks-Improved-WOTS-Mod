@@ -1,0 +1,1 @@
+﻿{"unitName":"SB2C-1C Helldiver","weaponDescriptions":["Guns/Payloads|2x20mm AN/M2"],"payloadDisplayNames":["2x1000lb(AP)","1xMk13/44 Torpedo","1x1600lb(AP)","1x1000lb(GP)","2x500lb(GP)","2x350lb Depth Charge","None"],"payloadIndexes":["0","1","2","3","4","5","6"],"endurance":[0.67,0.63,0.68,0.7,0.7,0.8,1]}

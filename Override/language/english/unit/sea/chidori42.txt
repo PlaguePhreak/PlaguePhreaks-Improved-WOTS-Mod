@@ -1,0 +1,1 @@
+﻿{"unitName":"Chidori (1942)","weaponDescriptions":["Type 96 25mm Guns"],"namesInClass":["Chidori","Manazuru","Tomozuru","Hatsukari"],"instancesInClass":["chidori","manazuru","tomozuru","hatsukari"]}

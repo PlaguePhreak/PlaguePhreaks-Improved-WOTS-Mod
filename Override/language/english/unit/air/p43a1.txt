@@ -1,0 +1,1 @@
+﻿{"unitName":"P-43A-1 Lancer","weaponDescriptions":["Guns/Payloads|4x12.7mm AN/M2"],"payloadDisplayNames":["None"],"payloadIndexes":["0"],"endurance":[1]}

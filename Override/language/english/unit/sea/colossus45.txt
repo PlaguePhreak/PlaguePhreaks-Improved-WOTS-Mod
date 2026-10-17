@@ -1,0 +1,1 @@
+﻿{"unitName":"Colossus (1945)","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"],"namesInClass":["Colossus","Glory","Venerable","Vengeance"],"instancesInClass":["colossus","glory","venerable","vengeance"]}

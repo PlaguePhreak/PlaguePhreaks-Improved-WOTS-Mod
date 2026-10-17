@@ -1,0 +1,1 @@
+﻿{"unitName":"Des Moines (1948)","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"],"namesInClass":["Des Moines","Salem","Newport News"],"instancesInClass":["des moines","salem","newport news"]}

@@ -1,0 +1,1 @@
+﻿{"unitName":"P-51D-20 Mustang","weaponDescriptions":["Guns/Payloads|6x12.7mm AN/M2"],"payloadDisplayNames":["None","2x1000lb(HE)","2x500lb(HE)","6xHVAR"],"payloadIndexes":["0","1","2","3"],"endurance":[1,0.7,0.8,0.9]}

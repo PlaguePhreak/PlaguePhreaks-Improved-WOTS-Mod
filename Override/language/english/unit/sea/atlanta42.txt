@@ -1,0 +1,1 @@
+﻿{"unitName":"Atlanta (1942)","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"],"namesInClass":["Atlanta","Juneau","San Diego","San Juan"],"instancesInClass":["atlanta","juneau","san diego","san juan"]}

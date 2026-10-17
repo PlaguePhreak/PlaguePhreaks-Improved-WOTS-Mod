@@ -1,0 +1,1 @@
+﻿{"unitName":"B7A2 Grace","weaponDescriptions":["Guns/Payloads|2x20mm Type99 Mk2"],"payloadDisplayNames":["1xType 93 Mod 3 Torpedo","1x800kg (GP)","1x800kg (AP)","1x500kg (SAP)","1x500kg (GP)","2x250kg (SAP)","None"],"payloadIndexes":["0","1","2","3","4","5","6"],"endurance":[0.8,0.8,0.8,0.85,0.85,0.85,1]}

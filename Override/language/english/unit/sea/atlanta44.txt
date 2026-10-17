@@ -1,0 +1,1 @@
+﻿{"unitName":"Atlanta (1944)","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"],"namesInClass":["San Diego","San Juan"],"instancesInClass":["san diego","san juan"]}

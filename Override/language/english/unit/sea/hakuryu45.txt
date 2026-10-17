@@ -1,0 +1,1 @@
+﻿{"unitName":"G15 (1945)","weaponDescriptions":["Type 96 25mm Guns"],"namesInClass":["Hakuryū","Kenryū","Zuiryū","Jinryū","Ōryū"],"instancesInClass":["hakuryu","kenryu","zuiryu","jinryu","oryu"]}

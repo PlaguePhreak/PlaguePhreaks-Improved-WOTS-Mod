@@ -1,0 +1,1 @@
+﻿{"unitName":"P-51H-5 Mustang","weaponDescriptions":["Guns/Payloads|6x12.7mm AN/M2"],"payloadDisplayNames":["None","2x1000lb Bomb(HE)","2x500lb Bomb(HE)","6x HVAR Rockets"],"payloadIndexes":["0","1","2","3"],"endurance":[1,0.75,0.85,0.9]}

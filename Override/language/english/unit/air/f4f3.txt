@@ -1,0 +1,1 @@
+﻿{"unitName":"F4F-3 Wildcat","weaponDescriptions":["Guns/Payloads|4x12.7mm AN/M2"],"payloadDisplayNames":["None","2x100lb(HE)Bomb"],"payloadIndexes":["0","1"],"endurance":[1,0.8]}

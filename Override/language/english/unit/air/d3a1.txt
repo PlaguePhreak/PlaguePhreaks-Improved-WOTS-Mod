@@ -1,0 +1,1 @@
+﻿{"unitName":"D3A1 Val","weaponDescriptions":["Guns|2x 7.7mm Type97"],"payloadDisplayNames":["1x250kg(SAP)+2x60kg(GP)","1x250kg(GP)+2x60kg(GP)","1x250kg(AP)+2x60kg(GP)","None"],"payloadIndexes":["0","1","2","3"],"endurance":[0.62,0.62,0.62,1]}

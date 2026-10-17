@@ -1,0 +1,1 @@
+﻿{"unitName":"PV-2D Harpoon","weaponDescriptions":["Guns/Payloads|8x12.7mm AN/M2"],"payloadDisplayNames":["1xMk13/44 Torpedo","6x1000lb Bomb(SAP)","6x500lb(SAP)","6x250lb(HE)","2xTinyTim+8xHVAR","6x350lb Depth Charge","6x650lb Depth Charge","None"],"payloadIndexes":["0","1","2","3","4","5","6","7"],"endurance":[0.75,0.6,0.8,0.9,0.85,0.75,0.85,1]}

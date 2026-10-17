@@ -1,0 +1,1 @@
+﻿{"unitName":"F2G-2 Corsair","weaponDescriptions":["Guns/Payloads|6x12.7mm AN/M2"],"payloadDisplayNames":["None","2x1000lb Bomb(SAP)","2x500lb Bomb(SAP)","2x Tiny Tim+8xHVAR","2x Tiny Tim","8x HVAR Rockets"],"payloadIndexes":["0","1","2","3","4","5"],"endurance":[1,0.8,0.9,0.8,0.9,0.9]}

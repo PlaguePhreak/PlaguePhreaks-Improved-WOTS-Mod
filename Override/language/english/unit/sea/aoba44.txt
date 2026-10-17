@@ -1,0 +1,1 @@
+﻿{"unitName":"Aoba (1944)","weaponDescriptions":["Type 96 25mm Guns","Type 93 13.2mm Guns"],"namesInClass":["Aoba"],"instancesInClass":["aoba"]}
