@@ -205,5 +205,32 @@ Logistics work goes under v0.22, then v0.22.1, v0.22.2 and so on. It builds on t
 ## v0.24 New ships and aircraft (RamZ catalogue)
 - **v0.24.1** 84 ships from RamZ's catalogue (Japan, USA, Australia) plus 20 TTE ships (new_ships_v0.24.md, pending test). Credit to RamZ and the TTE team.
 - **v0.24.2** 93 aircraft from RamZ's catalogue plus 22 from TTE (pending test).
-- **v0.24.3** New map locations (planned, next up after v0.24.1 and v0.24.2 are tested and working).
+- **v0.24.3** New map locations (planned, next up after v0.24.1 and v0.24.2 are tested and working). Research and candidate list (Cairns, Lae, Buna and more): map_locations_research.md.
 - **Later (rules popup fix)** The "Ship Orders" rules page (modrules1.txt) says light carriers take 30 days, but the game code gives them 42 days like fleet carriers. Change the text to 42 (or the build time to 30). Left as is for now.
+
+## Economy rework (planned)
+Goal: command points (CP) should come mostly from holding and upgrading bases, not from sinking ships. Players are pushed to raise port and air base levels.
+
+Requested by Aaron:
+- CP from sinking ships drops to roughly 10-15% of today's value
+- Base CP per week drops to 50
+- Port level and air base level give a lot more CP per level
+
+Where the game works this out (names for dnSpy):
+- **Sinking ships** `ActionReport.DisplayData` (it adds to `pointsGained` for every enemy ship destroyed or scuttled). Today a sunk ship gives `cost * enemySunkYield`, and `enemySunkYield` is 0.5 in both campaigns' setup.txt (so half the ship's cost). `useSunkYieldPoints` is false, so the per-ship `sunkYield` table is not used. `CampaignManager` (line ~1596, scenario setup) also multiplies `enemySunkYield` by the campaign difficulty modifier `SunkPoints`.
+- **Weekly CP** `CampaignManager.CheckWeekly`. It adds `commandPointsPerWeek` + difficulty modifier, but wrapped in `Mathf.Max(75, ...)`, a hard-coded floor of 75. Setting 50 in setup.txt alone would do nothing: the DLL change `75` to `50` is needed.
+- **Base CP** same method: `commandPointsPerLocation` (per base held), `commandPointsPerPortRank` and `commandPointsPerAirfieldRank` (per level of each port and air base you hold), each plus a difficulty modifier.
+- **Display** `SummaryStats` (the summary screen, `<WEEKLYCP>`, `<CPPORT>`, `<CPAIRFIELD>` lines) reads the same setup values, so it follows automatically except for the 75 floor above.
+
+Proposed changes (values are a first guess, to tune in testing):
+1. setup.txt, both campaigns: `"enemySunkYield":0.06` (was 0.5, about 12% of today's CP per ship). No DLL change.
+2. setup.txt: `"commandPointsPerWeek":[50,0]` (was [75,0]). DLL: in `CampaignManager.CheckWeekly` change `Mathf.Max(75, ...)` to `Mathf.Max(50, ...)`.
+3. setup.txt: `"commandPointsPerPortRank":[6,0]` (was [3,0]) and `"commandPointsPerAirfieldRank":[4,0]` (was [1,0]). `"commandPointsPerLocation":[2,0]` stays. No DLL change.
+4. Enemy side stays as is (its values are 0; the AI does not earn CP from bases).
+
+Rough effect at the start of the campaign (player side, per week): Allies today 75 + 8 + 24 + 14 = 121 CP, with the proposal 50 + 8 + 48 + 56 = 162 CP. Upgrading one port by 1 level goes from +3 to +6 CP per week, and one air base level from +1 to +4. Ship kills fall from cost x 0.5 to cost x 0.06.
+
+Open points to decide when this is built:
+- Port and air base ranks may want different weights. Check what each upgrade costs (`suppliesPerUpgrade0` and the fuel and engineering lists in setup.txt) and match the CP reward to it.
+- Whether the AI should earn CP from bases too (today the enemy gets none, which makes the player's economy the only one that rewards base levels).
+- Rules popup and docs text that mention command points from sinking ships need updating.
