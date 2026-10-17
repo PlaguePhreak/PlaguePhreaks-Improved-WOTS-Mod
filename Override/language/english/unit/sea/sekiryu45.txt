@@ -1,0 +1,1 @@
+﻿{"unitName":"G14 (1945)","weaponDescriptions":["Type 96 25mm Guns"],"namesInClass":["Sekiryū","Kokuryū"],"instancesInClass":["sekiryu","kokuryu"]}

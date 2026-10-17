@@ -1,0 +1,1 @@
+﻿{"unitName":"A6M2-N Rufe","weaponDescriptions":["Guns/Payloads|2x 20mm Type99 Mk1","|2x 7.7mm Type97","|","|bomb_ij_60kg"],"payloadDisplayNames":["2x 60kg Bomb","None"],"payloadIndexes":["0","1"],"endurance":[0.9,1]}

@@ -1,0 +1,1 @@
+﻿{"unitName":"Porter (1944)","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"],"namesInClass":["Phelps","Selfridge","McDougal","Winslow","Clark","Moffett","Balch"],"instancesInClass":["phelps","selfridge","mcdougal","winslow","clark","moffett","balch"]}

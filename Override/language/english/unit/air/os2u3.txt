@@ -1,0 +1,1 @@
+﻿{"unitName":"OS2U-3 Kingfisher","weaponDescriptions":["Guns/Payloads|2x7.62mm AN/M2"],"payloadDisplayNames":["2x350lb Depth Charge","2x100lb(HE)","None"],"payloadIndexes":["0","1","2"],"endurance":[0.65,0.8,1]}

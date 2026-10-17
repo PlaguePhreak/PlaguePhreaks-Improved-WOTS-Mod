@@ -1,0 +1,1 @@
+﻿{"unitName":"Ki-83","weaponDescriptions":["Guns/Payloads|2x 30mm Ho-155 Cannon","|2x 20mm Ho-5 Cannon"],"payloadDisplayNames":["None"],"payloadIndexes":["0"],"endurance":[1]}

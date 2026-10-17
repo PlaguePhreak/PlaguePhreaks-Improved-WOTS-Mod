@@ -1,0 +1,1 @@
+﻿{"unitName":"Iowa (1944)","weaponDescriptions":["40mm Bofors"],"namesInClass":["Iowa","New Jersey"],"instancesInClass":["iowa","new jersey"]}

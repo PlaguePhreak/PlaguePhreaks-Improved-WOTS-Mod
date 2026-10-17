@@ -1,0 +1,1 @@
+﻿{"unitName":"J1N1 Gekko","weaponDescriptions":["Guns/Payloads|1x 20mm Type99 Mk2","|6x 7.7mm Type 97","|","|bomb_ij_60kg"],"payloadDisplayNames":["2x60kg Bombs","None"],"payloadIndexes":["0","1"],"endurance":[0.9,1]}

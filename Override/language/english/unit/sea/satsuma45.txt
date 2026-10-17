@@ -1,0 +1,1 @@
+﻿{"unitName":"Satsuma (1945)","weaponDescriptions":["Type 96 25mm Guns","Type 93 13.2mm Guns"],"namesInClass":["Satsuma"],"instancesInClass":["satsuma"]}

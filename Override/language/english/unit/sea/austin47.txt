@@ -1,0 +1,1 @@
+﻿{"unitName":"Austin (1947)","weaponDescriptions":["40mm Bofors","20mm Oerlikon"],"namesInClass":["Austin","Tallahassee","Cheyenne","Chattanooga","Laramie"],"instancesInClass":["austin","tallahassee","cheyenne","chattanooga","laramie"]}

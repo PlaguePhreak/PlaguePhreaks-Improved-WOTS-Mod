@@ -1,0 +1,1 @@
+﻿{"unitName":"F7F-3 Tigercat","weaponDescriptions":["Guns/Payloads|4x20mm AN/M2","|4x12.7mm AN/M2"],"payloadDisplayNames":["3xTinyTim","1xMk13/44 Torpedo","1x2000lb(HE),2x1000lb(HE)","1x1600lb(AP),2x1000lb(SAP)","8xHVAR","None"],"payloadIndexes":["0","1","2","3","4","5"],"endurance":[0.77,0.72,0.75,0.77,0.9,1]}

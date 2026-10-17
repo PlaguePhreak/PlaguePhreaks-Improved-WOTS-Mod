@@ -1,0 +1,1 @@
+﻿{"unitName":"P-38K-1 Lightning","weaponDescriptions":["Guns/Payloads|1x20mm AN/M2","|4x12.7mm AN/M2"],"payloadDisplayNames":["None"],"payloadIndexes":["0"],"endurance":[1]}

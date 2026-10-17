@@ -1,0 +1,1 @@
+﻿{"unitName":"A7M1 Sam","weaponDescriptions":["Guns|2x 20mm Type99Mk2","|2x 13.2mm Type3"],"payloadDisplayNames":["None"],"payloadIndexes":["0"],"endurance":[1]}

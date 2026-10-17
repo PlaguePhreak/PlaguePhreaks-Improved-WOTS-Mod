@@ -1,0 +1,1 @@
+{"unitName":"Battle (1945)","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"],"namesInClass":["Barfleur","Trafalgar","Armada","Camperdown","Hogue","Lagos"],"instancesInClass":["Barfleur","Trafalgar","Armada","Camperdown","Hogue","Lagos"]}

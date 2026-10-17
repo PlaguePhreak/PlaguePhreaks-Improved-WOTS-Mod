@@ -1,0 +1,1 @@
+﻿{"unitName":"A6M3 Mod 32","weaponDescriptions":["Guns|2x 20mm Type99Mk1","|2x 7.7mm Type97"],"payloadDisplayNames":["None"],"payloadIndexes":["0"],"endurance":[1]}

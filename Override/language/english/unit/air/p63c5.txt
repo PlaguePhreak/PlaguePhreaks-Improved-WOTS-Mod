@@ -1,0 +1,1 @@
+﻿{"unitName":"P-63C-5 Kingcobra","weaponDescriptions":["Guns/Payloads|1x37mm M10","|4x12.7mm AN/M2"],"payloadDisplayNames":["None","3x500lb(HE)"],"payloadIndexes":["0","1"],"endurance":[1,0.7]}

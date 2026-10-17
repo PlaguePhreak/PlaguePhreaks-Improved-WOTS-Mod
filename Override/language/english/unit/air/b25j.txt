@@ -1,0 +1,1 @@
+﻿{"unitName":"B-25J Mitchell","weaponDescriptions":["Guns/Payloads|13x 12.7mm AN/M2","|","|bomb_us_2000lb","|bomb_us_1600lb_ap","|bomb_us_500lb","|depthcharge_mark17"],"payloadDisplayNames":["1x2000lb Bomb","2x 1600lb (AP)Bombs","6x500lb (SAP)Bombs","12x250lb Bombs","6x325lb Depth Charge","None"],"payloadIndexes":["0","1","2","3","4","5"],"endurance":[0.8,0.76,0.76,0.76,0.8,1]}  

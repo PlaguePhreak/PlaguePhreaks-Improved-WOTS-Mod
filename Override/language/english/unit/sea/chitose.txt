@@ -1,0 +1,1 @@
+﻿{"unitName":"Chitose","weaponDescriptions":[],"namesInClass":["Chitose","Chiyoda"],"instancesInClass":["chitose","chiyoda"]}

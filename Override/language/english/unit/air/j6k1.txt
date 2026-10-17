@@ -1,0 +1,1 @@
+﻿{"unitName":"J6K1 Jinpu","weaponDescriptions":["Guns/Payloads|6x 20mm Type 99 Mk 2 Cannon"],"payloadDisplayNames":["None"],"payloadIndexes":["0"],"endurance":[1]}

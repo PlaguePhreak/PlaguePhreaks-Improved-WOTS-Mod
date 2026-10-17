@@ -1,0 +1,1 @@
+﻿{"unitName":"Oakland (1943)","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"],"namesInClass":["Oakland","Reno","Flint","Tucson"],"instancesInClass":["oakland","reno","flint","tucson"]}

@@ -1,0 +1,1 @@
+﻿{"unitName":"Type B3","weaponDescriptions":["Type 96 25mm Guns"],"namesInClass":["I-54","I-56","I-58"],"instancesInClass":["i-54","i-56","i-58"]}

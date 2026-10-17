@@ -1,0 +1,1 @@
+﻿{"unitName":"F6F-5N Hellcat","weaponDescriptions":["Guns/Payloads|2x20mm AN/M2","|4x12.7mm AN/M2"],"payloadDisplayNames":["None","1xMk13/44 Torpedo","1x2000lb(HE)+2x1000lb(HE)","2x1000lb(HE)","2x500lb(HE)","3xTinyTim","2xTinyTim+6xHVAR","6xHVAR"],"payloadIndexes":["0","1","2","3","4","5","6","7"],"endurance":[1,0.66,0.5,0.66,0.77,0.7,0.66,0.9]}

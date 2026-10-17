@@ -1,0 +1,1 @@
+﻿{"unitName":"P-38G-10 Lightning","weaponDescriptions":["Guns/Payloads|1x20mm AN/M2","|4x12.7mm AN/M2"],"payloadDisplayNames":["None","2x1000lb(SAP)","2x500lb(SAP)","2x250lb(HE)"],"payloadIndexes":["0","1","2","3"],"endurance":[1,0.8,0.86,0.92]}

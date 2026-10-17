@@ -1,0 +1,1 @@
+﻿{"unitName":"Tennessee","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"],"namesInClass":["Tennessee"],"instancesInClass":["tennessee"]}

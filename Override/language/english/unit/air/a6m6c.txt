@@ -1,0 +1,1 @@
+﻿{"unitName":"A6M6 Mod 53c","weaponDescriptions":["Guns|2x 20mm Type99Mk2","|3x 13.2mm Type3"],"payloadDisplayNames":["None","1x250kg(HE)"],"payloadIndexes":["0","1"],"endurance":[1,0.7]}

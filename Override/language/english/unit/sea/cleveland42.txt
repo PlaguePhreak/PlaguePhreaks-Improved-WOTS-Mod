@@ -1,0 +1,1 @@
+﻿{"unitName":"Cleveland (1942)","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"],"namesInClass":["Cleveland","Columbia","Montpelier","Denver","Santa Fe","Birmingham"],"instancesInClass":["cleveland","columbia","montpelier","denver","santa fe","birmingham"]}

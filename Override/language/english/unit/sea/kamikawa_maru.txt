@@ -1,0 +1,1 @@
+﻿{"unitName":"Kamikawa Maru","weaponDescriptions":[],"namesInClass":["Kamikawa Maru","Kiyokawa Maru","Kinugawa Maru"],"instancesInClass":["kamikawa maru","kiyokawa maru","kinugawa maru"]}

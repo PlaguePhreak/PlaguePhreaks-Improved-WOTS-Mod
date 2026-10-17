@@ -1,0 +1,1 @@
+{"unitName":"County (1942)","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"],"namesInClass":["Canberra","Australia","Cornwall","Cumberland"],"instancesInClass":["canberra","australia","cornwall","cumberland"]}

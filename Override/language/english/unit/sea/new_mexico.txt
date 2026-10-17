@@ -1,0 +1,1 @@
+﻿{"unitName":"New Mexico","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"],"namesInClass":["New Mexico","Mississippi","Idaho"],"instancesInClass":["new mexico","mississippi","idaho"]}

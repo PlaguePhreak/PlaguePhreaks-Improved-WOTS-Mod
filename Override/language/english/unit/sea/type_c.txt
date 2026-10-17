@@ -1,0 +1,1 @@
+﻿{"unitName":"Type-C","weaponDescriptions":[],"namesInClass":["I-16","I-18","I-20","I-22","I-24","I-46","I-47","I-48"],"instancesInClass":["i-16","i-18","i-20","i-22","i-24","i-46","i-47","i-48"]}

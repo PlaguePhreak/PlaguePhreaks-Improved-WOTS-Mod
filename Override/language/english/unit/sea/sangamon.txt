@@ -1,0 +1,1 @@
+﻿{"unitName":"Sangamon","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"],"namesInClass":["Sangamon","Suwannee","Chenango","Santee"],"instancesInClass":["sangamon","suwannee","chenango","santee"]}

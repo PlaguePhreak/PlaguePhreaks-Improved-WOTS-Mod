@@ -1,0 +1,1 @@
+﻿{"unitName":"Bogue","weaponDescriptions":[],"namesInClass":["Altamaha","Barnes","Block Island","Bogue","Breton","Card","Copahee","Core","Nassau","Prince William","Croatan"],"instancesInClass":["altamaha","barnes","block_island","bogue","breton","card","copahee","core","nassau","prince_william","croatan"]}

@@ -1,0 +1,1 @@
+{"unitName":"Tribal","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"],"namesInClass":["Arunta","Warramunga"],"instancesInClass":["Arunta","Warramunga"]}

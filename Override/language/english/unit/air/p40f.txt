@@ -1,0 +1,1 @@
+﻿{"unitName":"P-40F-10 Warhawk","weaponDescriptions":["Guns/Payloads|6x12.7mm AN/M2"],"payloadDisplayNames":["None","1x500lb(HE)+2x100lb(HE)","1x500lb(HE)"],"payloadIndexes":["0","1","2"],"endurance":[1,0.85,0.9]}

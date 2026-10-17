@@ -1,0 +1,1 @@
+﻿{"unitName":"F4U-2 Corsair","weaponDescriptions":["Guns/Payloads|5x12.7mm AN/M2"],"payloadDisplayNames":["None","2x1000lb Bomb(HE)","2x500lb Bomb(HE)","8x HVAR Rockets"],"payloadIndexes":["0","1","2","3"],"endurance":[1,0.7,0.8,0.8]}

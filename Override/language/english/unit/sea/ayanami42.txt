@@ -1,0 +1,1 @@
+﻿{"unitName":"Ayanami (1942)","namesInClass":["Ayanami","Shikinami","Asagiri","Yūgiri","Amagiri","Sagiri","Oboro","Akebono","Sazanami","Ushio"],"instancesInClass":["ayanami","shikinami","asagiri","yugiri","amagiri","sagiri","oboro","akebono","sazanami","ushio"]}

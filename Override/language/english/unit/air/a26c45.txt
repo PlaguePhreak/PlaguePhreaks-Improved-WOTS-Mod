@@ -1,0 +1,1 @@
+﻿{"unitName":"A-26C-45 Invader","weaponDescriptions":["Guns/Payloads|8x12.7mm AN/M2"],"payloadDisplayNames":["2x2000lb Bomb(HE)","4x1000lb(HE)","4x1000lb(SAP)","4x1000lb(AP)","10x500lb(SAP)","2xMk13/44 Torpedo","14xHVAR","None"],"payloadIndexes":["0","1","2","3","4","5","6","7"],"endurance":[0.78,0.78,0.78,0.78,0.78,0.75,0.9,1]}

@@ -1,0 +1,1 @@
+﻿{"unitName":"Beaufighter Mk VIc","weaponDescriptions":["Guns/Payloads|4x 20mm Cannon","|1x Machine Gun","|","|torpedo_markxii"],"payloadDisplayNames":["1x Mk XII Torpedo","None"],"payloadIndexes":["0","1"],"endurance":[0.7,1]}  

@@ -1,0 +1,1 @@
+﻿{"unitName":"Yorktown (1942)","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"],"namesInClass":["Yorktown","Enterprise"],"instancesInClass":["yorktown","enterprise"]}

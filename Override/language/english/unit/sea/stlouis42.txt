@@ -1,0 +1,1 @@
+﻿{"unitName":"St. Louis (1942)","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"],"namesInClass":["St. Louis","Helena"],"instancesInClass":["st. louis","helena"]}

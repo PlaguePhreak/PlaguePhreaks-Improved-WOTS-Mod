@@ -1,0 +1,1 @@
+﻿{"unitName":"Midway (1945)","weaponDescriptions":["40mm Bofors Guns","20mm Oerlikon Guns"],"namesInClass":["Midway","Coral Sea"],"instancesInClass":["midway","coral sea"]}

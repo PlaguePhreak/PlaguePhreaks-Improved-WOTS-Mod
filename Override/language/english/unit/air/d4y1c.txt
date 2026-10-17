@@ -1,0 +1,1 @@
+﻿{"unitName":"D4Y1-C Judy","weaponDescriptions":["Guns|2x 7.7mm Type97"],"payloadDisplayNames":["None"],"payloadIndexes":["0"],"endurance":[1]}

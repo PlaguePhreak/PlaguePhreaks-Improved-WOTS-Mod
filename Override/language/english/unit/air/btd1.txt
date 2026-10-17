@@ -1,0 +1,1 @@
+﻿{"unitName":"BTD-1 Destroyer","weaponDescriptions":["Guns/Payloads|2x20mm AN/M2"],"payloadDisplayNames":["2xMk13/44 Torpedo","2x1000lb(HE)","2x1600lb(AP)","4x500lb(SAP)","4x350lb Depth Charge","None"],"payloadIndexes":["0","1","2","3","4","5"],"endurance":[0.47,0.88,0.65,0.88,0.90,1]}
