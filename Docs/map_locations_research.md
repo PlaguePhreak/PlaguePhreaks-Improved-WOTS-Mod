@@ -8,10 +8,23 @@ Each location is one line in `Override/campaign/campaign00X/mapLandLocations.txt
 
 Three more things outside that line (all found in the decompiled code):
 1. **Display name**: `language/campaign/campaignXXX/mapLocationNames.txt`. Names are matched to locations by line number (`CampaignManager.CreateLandLocations`), so the new name must sit on the same line number as its location. Safest: add new locations at the END of both files.
-2. **Sea waypoint**: `campaign/campaignXXX/seaWaypoints.txt` needs a waypoint with the same name as the location, `isLocation: true`, its position, and links to its north / south / east / west neighbour waypoints (`CampaignManager.CreateSeaWaypoints`). Ships and AI missions sail between these. **This file is not in the repo or the project folder** (it ships with the game), so we need a copy from the game folder before adding any location.
+2. **Sea waypoint**: `campaign/campaignXXX/seaWaypoints.txt` needs a waypoint with the same name as the location, `isLocation: true`, its position, and links to its north / south / east / west neighbour waypoints (`CampaignManager.CreateSeaWaypoints`). Ships and AI missions sail between these. Copies from the game folder are in the project folder (`game_files/`), not in the repo.
 3. **Optional**: `sea_missions.txt` (AI patrols/convoys that start at or target the location), `setup.txt` lists (`mustControl` = bases the player must hold to win, `maxPortAt` / `maxAirAt`), and CP income (each location held gives `commandPointsPerLocation`, plus CP per port and air base level).
 
 A neutral land location (like `newgeorgia`, faction 2, levels 0) is the lowest-effort kind: one line, one name, one waypoint.
+
+## What the real game files show (checked 17 Oct 2026)
+Copies are now in the project folder under `game_files/campaign001` and `campaign002` (`seaWaypoints.txt`, `mapLocationNames.txt`).
+- `mapLocationNames.txt` has 22 lines, one per location, in exactly the same order as `mapLandLocations.txt` (BORPOP first, VELLA LA VELLA last). New names must be added at the end of both language files, in the same order as the new lines at the end of `mapLandLocations.txt`.
+- `seaWaypoints.txt` has 70 waypoints. A location is a waypoint with `isLocation: true` and the same name as its `locationID`, e.g. `{"waypointName":"cooktown","isLocation":true,"pos":["-0.32","-0.346","0.002"],"sNorthWP":["Coral6"],"sSouthWP":[],"sEastWP":["Coral0"],"sWestWP":[]}`. `pos` is x, y and a radius. The four lists say which waypoints a ship can sail to going north, south, east or west.
+- Links must be added in both directions: the new location lists its neighbours, and each neighbour needs the new location added to its own lists (otherwise ships can sail out but never in, or the other way round).
+- Port Moresby only links south (to `Coral6`), so the PNG north coast is currently a gap: there is no waypoint near Lae or Buna. Nearest existing waypoints:
+  - Lae (-0.271, 0.161): `Bism6` (-0.232, 0.193), `Bism5` (-0.258, 0.230), `Sol0` (-0.183, 0.131)
+  - Buna (-0.229, 0.048): `Sol0`, `Coral7` (-0.128, -0.054)
+  - Cairns (-0.307, -0.440): `Coral0` (-0.199, -0.327), `Coral6` (-0.257, -0.109)
+  - Gasmata (-0.173, 0.192): `Sol0`, `Bism6`
+- The campaign002 waypoint file is almost identical to campaign001 (a few Japan-side link differences, e.g. at `Bism4`), so edit both.
+- Neutral land locations in the current files (faction 2) are all in the Solomons: `kolombangara`, `malaita`, `newgeorgia`, `rennell`, `russell`, `santacruz`, `santaisabel`, `vellalavella`.
 
 ## How positions were worked out
 Fitted from known towns already on the map (Port Moresby, Rabaul, Cooktown, Guadalcanal). About 0.0294 map x per degree of longitude and 0.059 map y per degree of latitude. Check: it puts Tulagi at (0.116, 0.021) vs `florida` (0.116, 0.024) and Munda at (0.031, 0.067) vs `newgeorgia` (0.039, 0.062), so it is good to about 0.01.
@@ -45,4 +58,4 @@ Fitted from known towns already on the map (Port Moresby, Rabaul, Cooktown, Guad
 ## Recommendation
 Start v0.24.3 with Lae, Buna and Cairns (Aaron's picks), then add Gasmata and Horn Island if the first three work. All fit the Aug 1942 start date, and they put real targets on the Papuan north coast, which the map is missing today. Group B can come after the air base rework (v0.24.4).
 
-Before building: get `seaWaypoints.txt` and `mapLocationNames.txt` for both campaigns from the game folder and add them to the project folder.
+The files needed to build these are now in the project folder (`game_files/`). Next step when Aaron says go: write the new lines, names and waypoints (with two-way links) for the chosen locations.
