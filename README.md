@@ -1,7 +1,8 @@
 Everything here is a WIP and still in testing.
 This is for game version 1.09a (the newest version of the game).
 Current mod version: v0.24.2 (see the change log for everything that's in it)
-The supply convoy event (v0.22.4) appears but does not sail to your home port by itself yet (fix planned). The TTE ships (v0.23 to v0.23.2) are not fully tested yet. v0.20.9 failed its test, so work on aircraft is on hold.
+The supply convoy event (v0.22.4) appears but does not sail to your home port by itself yet (fix planned).
+v0.20.9 failed its tests, so work on aircraft is on hold.
 
 If there's something you'd like to use for your own mod, please give credit.
 
@@ -12,14 +13,15 @@ The events and the survivors system were inspired by Kiko.
 The Hitlog system is a 'copy' from the ADBA Mod Teams Hitlog system, so thanks to them for the inspiration for mine
 
 -------------------------------------------------
-CREDITS - CUSTOM SHIPS (TTE)
+CREDITS - CUSTOM SHIPS 
 -------------------------------------------------
 
-ALL custom merchant ships currently in the game (merchants, transports, the hospital ship, oilers and the destroyer escort / transport)
-come from the TTE mod team. They are NOT my own creation: I did not make the models, and
-all credit for them goes to the TTE team.
-I have used the TTE team's assets and credit them for it. The TTE mod is about 4 years old and the team is no longer active.
+Almost all of the custom merchant ships currently in the game (merchants, transports, the hospital ship, and oilers)
+come from the TTE mod team. They are NOT my own creation: I did not make the models, and all credit for them goes to the TTE team.
+
 If any member of the TTE team wants their assets removed from this mod, I will remove them at their request.
+
+I have also used RamZ Catalogue for all the custom ships in the mod, so all credit goes to him for those.
 
 I have no experience in modding or coding, so I'm using an AI (Claude) to help me write the code.
 I test everything myself in game and decide what goes in.
