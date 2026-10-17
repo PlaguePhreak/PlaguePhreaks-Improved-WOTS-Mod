@@ -7,6 +7,9 @@ Changes are made in Assembly-CSharp.dll (dnSpy) and in the game's text files (Ov
 The mod is in alpha, so every version is 0.x. Version numbers group the work in the order it was built, and each follow-on part of a feature area gets a point number (v0.17.1, v0.17.2 and so on). Earlier test builds called v0.10 to v0.19 "v1.0" to "v1.9" (for example v1.8.4 is now v0.18.4).
 
 
+Numbering: a major change gets a whole number (v0.25 = new map locations); the minor changes under it are v0.25.1, v0.25.2 and so on. What used to be called v0.24.3 to v0.24.6 is now v0.25 to v0.25.3.
+NOTE: the in-game logbook (ModGuide class, What's New page) still uses the old numbers and must be updated to match.
+
 v0.24.2 - New aircraft from RamZ's catalogue and TTE (pending test)
 -----------------------------------------------------------
 * 22 more aircraft from the TTE mod, used with credit to the TTE team (P-39D, P-38E, J2F, PBY, PBM, A-20G, B-24D, B-25J, Kittyhawk, Beaufighter, Beaufort, Sunderland, A5M4, A6M2-N, Ki-43, Ki-45, Ki-49, J1N1, E14Y, H6K, H8K2, G3M2). 115 new aircraft in total.

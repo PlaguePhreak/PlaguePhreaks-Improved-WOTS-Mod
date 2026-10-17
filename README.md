@@ -60,7 +60,7 @@ MAIN FEATURES
 - Darker nights, and battle speed up to x10
 
 COMING NEXT (see the Roadmap file)
-- v0.24.3: new map locations to fight for (planned, after v0.24.1 and v0.24.2 are tested)
+- v0.25: new map locations to fight for (planned, after v0.24.1 and v0.24.2 are tested)
 - Fix for the Admiralty supply convoy so it sails to your home port by itself
 - Small text fix: the Ship Orders rules page says light carriers take 30 days, but the game uses 42
 
