@@ -121,6 +121,9 @@ NEW IN v0.22.5 - IN-GAME BOOK
 NEW IN v0.24 - SHIPS AND AIRCRAFT FROM RamZ'S CATALOGUE (by RamZ, not by me)
 - Thank you to RamZ, whose Unit Catalog is public use: 84 warships (v0.24.1) and 93 aircraft (v0.24.2) for Japan, USA and Australia. They are RamZ's work. He is also credited for the TTE merchant ships, which are believed to be his.
 - 20 more warships (v0.24.1) and 22 aircraft (v0.24.2) from the TTE team, credited to them.
+- The shipyard list is ordered by ship class inside each nation: submarine, destroyer escort, destroyer, light cruiser, heavy cruiser, battlecruiser, battleship, light carrier, carrier, then merchants and auxiliaries
+- The new ships must be ordered and built like the others (50% deposit and a build wait), and they ignore historical dates, so they can be ordered from the start of the campaign. This goes for the AI too
+- The in-game book has new pages "Custom ships" and "Custom aircraft", and its "What's new" page was rewritten
 - Costs and dates are my estimates and it is not fully tested yet. Steps: Docs/new_ships_v0.24.md
 
 NEW IN v0.23 - TTE SHIPS (by the TTE team, not by me)
@@ -131,6 +134,11 @@ NEW IN v0.23 - TTE SHIPS (by the TTE team, not by me)
 - Limited numbers (v0.23.1): each type has a pool of 10-30 ships for each side. A ship that is built or sunk is gone for good. The three stock merchants stay unlimited
 - The Manley sits between the submarines and the destroyers in the ship list (v0.23.2)
 - Install: the ship models (3D files) are not in this repo. See Docs/tte_merchants.md
+
+COMING NEXT (see the Roadmap file)
+- v0.24.3: new map locations to fight for (planned, after v0.24.1 and v0.24.2 are tested)
+- Fix for the Admiralty supply convoy so it sails to your home port by itself
+- Small text fix: the Ship Orders rules page says light carriers take 30 days, but the game uses 42
 
 The full list is in the change log. The rules pages at the start of a campaign explain it all in game.
 
