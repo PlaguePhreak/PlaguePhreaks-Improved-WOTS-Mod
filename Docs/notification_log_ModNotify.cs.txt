@@ -1,0 +1,679 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using UnityEngine;
+using UnityEngine.Events;
+using UnityEngine.UI;
+using WorldMapStrategyKit;
+
+// Campaign notification log (v0.26, untested): bell button, count badge and Messages window.
+// Whole class goes in with dnSpy "Add Class". See Docs/notification_log.md.
+public static class ModNotify
+{
+	private class Entry
+	{
+		public long ticks;
+		public int cat;
+		public bool read;
+		public bool hasPos;
+		public float x;
+		public float y;
+		public string text;
+	}
+
+	// Settings: change these numbers if you want something else.
+	public const int MaxEntries = 500;
+	public const int BellSlot = 1;
+	private const float RowH = 46f;
+
+	private static readonly string[] tabNames = new string[8] { "All", "Contacts", "Battles", "Fleet", "Air", "Supply", "Admiralty", "Other" };
+
+	private static readonly Color gold = new Color(0.72f, 0.58f, 0.3f, 1f);
+	private static readonly Color dark = new Color(0.07f, 0.12f, 0.19f, 0.97f);
+	private static readonly Color lit = new Color(0.5f, 0.3f, 0.08f, 0.95f);
+
+	private static Dictionary<string, int> keyCats;
+	private static List<Entry> entries = new List<Entry>();
+	private static object owner;
+	private static bool dirty;
+	private static int tab;
+
+	private static GameObject bellObj;
+	private static Image bellBack;
+	private static GameObject badgeObj;
+	private static Image badgeBack;
+	private static Text badgeText;
+	private static GameObject panel;
+	private static RectTransform contentRect;
+	private static Image[] tabBacks = new Image[8];
+	private static Text[] tabTexts = new Text[8];
+	private static Font font;
+	private static int fontSize = 16;
+
+	static ModNotify()
+	{
+		keyCats = new Dictionary<string, int>();
+		Map(1, "SpottedSea", "SpottedAir");
+		Map(2, "LocationAttacked", "LocationGained", "LocationLost", "LocationDefended", "LocationFailed", "Bombarded", "EnemyBombarded", "EnemyStrategicBombed");
+		Map(3, "NewSea", "ShipDelivered", "ShipsDelivered", "BingoFuel", "LowFuel", "OutOfFuel", "UnloadedCargo", "UnloadingCargo", "Rearmed", "RearmedCarrierWarning", "ShipsReleased", "CrewPromoted", "SurvivorsReported", "SurvivorsRescued", "SurvivorsLost");
+		Map(4, "NewAir", "AirReady", "AirOpsStart", "DamagedAircraft");
+		Map(5, "SupplyLow", "SeaLanesOpen", "SeaLanesClosed", "AdditionalCommand", "AdditionalCommandRR");
+	}
+
+	private static void Map(int cat, params string[] keys)
+	{
+		for (int i = 0; i < keys.Length; i++)
+		{
+			keyCats[keys[i]] = cat;
+		}
+	}
+
+	// Which tab a message belongs to. 0 = not a notification (an "you can't do that" popup).
+	private static int Category(string key)
+	{
+		int cat;
+		if (keyCats.TryGetValue(key, out cat))
+		{
+			return cat;
+		}
+		string audio;
+		if (ErrorPanel.instance != null && ErrorPanel.instance.audioReferences.TryGetValue(key, out audio) && audio.EndsWith("AlarmBlip"))
+		{
+			return 0;
+		}
+		return 7;
+	}
+
+	// True when a campaign is set up and its saved log has been read in.
+	private static bool Sync()
+	{
+		CampaignManager cm = CampaignManager.instance;
+		if (cm == null || cm.campaignData == null || cm.landMapLocations == null || cm.landMapLocations.Count == 0)
+		{
+			return false;
+		}
+		if (!object.ReferenceEquals(owner, cm.landMapLocations))
+		{
+			owner = cm.landMapLocations;
+			Import(cm.campaignData.notifyLog);
+			dirty = true;
+		}
+		return true;
+	}
+
+	// Called from ErrorPanel.SetErrorMessage for every campaign message.
+	public static void Add(string key, string text, string s0, string s1, string s2)
+	{
+		try
+		{
+			if (!Sync())
+			{
+				return;
+			}
+			int cat = Category(key);
+			if (cat == 0)
+			{
+				return;
+			}
+			Push(cat, text, s0, s1, s2);
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[NOTIFY] add failed: " + ex.ToString());
+		}
+	}
+
+	// Called from CampaignEvent.CreateEvent for the pop-up events (convoys and so on): Admiralty tab.
+	public static void AddEvent(string eventName, string header, string content)
+	{
+		try
+		{
+			if (eventName == "SUMMARY" || eventName == "start" || !Sync())
+			{
+				return;
+			}
+			Push(6, header + ": " + content, null, null, null);
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[NOTIFY] event add failed: " + ex.ToString());
+		}
+	}
+
+	private static void Push(int cat, string text, string s0, string s1, string s2)
+	{
+		if (string.IsNullOrEmpty(text))
+		{
+			return;
+		}
+		long ticks = CampaignInterface.instance.dateTime.Ticks;
+		string clean = text.Replace('\t', ' ').Replace('\r', ' ').Replace('\n', ' ');
+		if (entries.Count > 0)
+		{
+			Entry last = entries[entries.Count - 1];
+			if (last.ticks == ticks && last.text == clean)
+			{
+				return;
+			}
+		}
+		Entry e = new Entry();
+		e.ticks = ticks;
+		e.cat = cat;
+		e.text = clean;
+		e.read = panel != null && panel.activeSelf;
+		FindPosition(e, s0, s1, s2);
+		entries.Add(e);
+		if (entries.Count > MaxEntries)
+		{
+			entries.RemoveAt(0);
+		}
+		dirty = true;
+		if (panel != null && panel.activeSelf)
+		{
+			Refresh();
+		}
+	}
+
+	// Remember where the message happened (a port or one of the task forces named in it).
+	private static void FindPosition(Entry e, string s0, string s1, string s2)
+	{
+		CampaignManager cm = CampaignManager.instance;
+		string[] names = new string[3] { s0, s1, s2 };
+		for (int i = 0; i < names.Length && !e.hasPos; i++)
+		{
+			string n = names[i];
+			if (string.IsNullOrEmpty(n))
+			{
+				continue;
+			}
+			for (int j = 0; j < cm.landMapLocations.Count; j++)
+			{
+				MapLocation ml = cm.landMapLocations[j];
+				if (ml != null && ml.locationName == n)
+				{
+					e.hasPos = true;
+					e.x = ml.locationPosition.x;
+					e.y = ml.locationPosition.y;
+					break;
+				}
+			}
+			if (e.hasPos)
+			{
+				break;
+			}
+			if (FindMobile(e, cm.playerMobile, n))
+			{
+				break;
+			}
+			FindMobile(e, cm.otherMobile, n);
+		}
+	}
+
+	private static bool FindMobile(Entry e, List<GameObjectAnimator> list, string n)
+	{
+		if (list == null)
+		{
+			return false;
+		}
+		for (int i = 0; i < list.Count; i++)
+		{
+			GameObjectAnimator g = list[i];
+			if (g != null && g.mobileMapObject != null && g.mobileMapObject.mobileName == n)
+			{
+				e.hasPos = true;
+				e.x = g.currentMap2DLocation.x;
+				e.y = g.currentMap2DLocation.y;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// Saving and loading with the campaign (CampaignData.notifyLog).
+	public static void Save(CampaignData data)
+	{
+		try
+		{
+			if (data == null || owner == null)
+			{
+				return;
+			}
+			List<string> list = new List<string>();
+			for (int i = 0; i < entries.Count; i++)
+			{
+				Entry e = entries[i];
+				list.Add(e.ticks.ToString(CultureInfo.InvariantCulture) + "\t" + e.cat + "\t" + (e.read ? "1" : "0") + "\t" + (e.hasPos ? "1" : "0") + "\t" + e.x.ToString("R", CultureInfo.InvariantCulture) + "\t" + e.y.ToString("R", CultureInfo.InvariantCulture) + "\t" + e.text);
+			}
+			data.notifyLog = list;
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[NOTIFY] save failed: " + ex.ToString());
+		}
+	}
+
+	private static void Import(List<string> saved)
+	{
+		entries = new List<Entry>();
+		if (saved == null)
+		{
+			return;
+		}
+		for (int i = 0; i < saved.Count; i++)
+		{
+			try
+			{
+				string[] p = saved[i].Split(new char[1] { '\t' }, 7);
+				if (p.Length < 7)
+				{
+					continue;
+				}
+				Entry e = new Entry();
+				e.ticks = long.Parse(p[0], CultureInfo.InvariantCulture);
+				e.cat = int.Parse(p[1], CultureInfo.InvariantCulture);
+				e.read = p[2] == "1";
+				e.hasPos = p[3] == "1";
+				e.x = float.Parse(p[4], CultureInfo.InvariantCulture);
+				e.y = float.Parse(p[5], CultureInfo.InvariantCulture);
+				e.text = p[6];
+				entries.Add(e);
+			}
+			catch
+			{
+			}
+		}
+	}
+
+	// Per-frame upkeep, called from ModTFOverlay.Update.
+	public static void Tick()
+	{
+		try
+		{
+			Sync();
+			if (dirty && badgeText != null)
+			{
+				dirty = false;
+				UpdateBadge();
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[NOTIFY] tick failed: " + ex.ToString());
+		}
+	}
+
+	private static int UnreadCount()
+	{
+		int n = 0;
+		for (int i = 0; i < entries.Count; i++)
+		{
+			if (!entries[i].read)
+			{
+				n++;
+			}
+		}
+		return n;
+	}
+
+	private static void UpdateBadge()
+	{
+		int total = entries.Count;
+		int unread = UnreadCount();
+		badgeText.text = (unread > 0) ? (total + "  ·  " + unread + " new") : total.ToString();
+		badgeBack.color = (unread > 0) ? lit : new Color(0.07f, 0.12f, 0.19f, 0.92f);
+		if (bellBack != null)
+		{
+			bellBack.color = (unread > 0) ? lit : new Color(0.07f, 0.12f, 0.19f, 0.92f);
+		}
+	}
+
+	public static void Build(Transform root)
+	{
+		Remove();
+		try
+		{
+			Sprite icon = null;
+			try
+			{
+				icon = AssetLoader.instance.ImportSprite("interface/images/map/bell.png");
+			}
+			catch (Exception ex)
+			{
+				Debug.LogError("[NOTIFY] could not load bell.png: " + ex.Message);
+			}
+			bellObj = ModTFOverlay.MakeButton(root, BellSlot, icon, "BELL", "Notification log", new UnityAction(Toggle), out bellBack);
+			font = null;
+			fontSize = 16;
+			if (TooltipManager.instance != null && TooltipManager.instance.toolTipText != null)
+			{
+				font = TooltipManager.instance.toolTipText.font;
+				fontSize = TooltipManager.instance.toolTipText.fontSize;
+			}
+			if (font == null)
+			{
+				font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+			}
+			BuildBadge(root);
+			BuildPanel(root);
+			dirty = true;
+			Debug.Log("[NOTIFY] bell added, icon " + (icon != null ? "loaded" : "not found"));
+		}
+		catch (Exception ex2)
+		{
+			Debug.LogError("[NOTIFY] build failed: " + ex2.ToString());
+		}
+	}
+
+	public static void Remove()
+	{
+		if (bellObj != null)
+		{
+			UnityEngine.Object.Destroy(bellObj);
+		}
+		if (badgeObj != null)
+		{
+			UnityEngine.Object.Destroy(badgeObj);
+		}
+		if (panel != null)
+		{
+			UnityEngine.Object.Destroy(panel);
+		}
+		bellObj = null;
+		badgeObj = null;
+		panel = null;
+		badgeText = null;
+	}
+
+	private static void BuildBadge(Transform root)
+	{
+		RectTransform rt = NewRect("ModNotifyBadge", root);
+		rt.anchorMin = new Vector2(0f, 1f);
+		rt.anchorMax = new Vector2(0f, 1f);
+		rt.pivot = new Vector2(0f, 1f);
+		rt.anchoredPosition = new Vector2(54f, -18f - (float)BellSlot * 46f);
+		rt.sizeDelta = new Vector2(110f, 24f);
+		badgeBack = rt.gameObject.AddComponent<Image>();
+		badgeBack.color = new Color(0.07f, 0.12f, 0.19f, 0.92f);
+		badgeBack.raycastTarget = false;
+		RectTransform tr = NewRect("Text", rt);
+		Stretch(tr, 4f, 0f, 4f, 0f);
+		badgeText = NewText(tr, fontSize - 1, TextAnchor.MiddleCenter, Color.white);
+		badgeText.horizontalOverflow = HorizontalWrapMode.Overflow;
+		badgeObj = rt.gameObject;
+		// Draw behind the bell so the bell's hover tip is not covered.
+		badgeObj.transform.SetSiblingIndex(bellObj.transform.GetSiblingIndex());
+	}
+
+	private static void Toggle()
+	{
+		if (panel == null)
+		{
+			return;
+		}
+		bool open = !panel.activeSelf;
+		if (open)
+		{
+			Sync();
+			tab = 0;
+			Refresh();
+			for (int i = 0; i < entries.Count; i++)
+			{
+				entries[i].read = true;
+			}
+			dirty = true;
+		}
+		panel.SetActive(open);
+	}
+
+	private static void Close()
+	{
+		if (panel != null)
+		{
+			panel.SetActive(false);
+		}
+	}
+
+	private static void SetTab(int index)
+	{
+		tab = index;
+		Refresh();
+	}
+
+	private static void Show(Entry e)
+	{
+		Close();
+		CampaignInterface ci = CampaignInterface.instance;
+		ci.map.FlyToLocation(new Vector2(e.x, e.y), 0f, ci.map.zoomMinDistance);
+	}
+
+	// Rebuild the tab labels and the list of rows.
+	private static void Refresh()
+	{
+		if (panel == null || contentRect == null)
+		{
+			return;
+		}
+		int[] counts = new int[8];
+		bool[] anyUnread = new bool[8];
+		for (int i = 0; i < entries.Count; i++)
+		{
+			Entry e = entries[i];
+			counts[0]++;
+			counts[e.cat]++;
+			if (!e.read)
+			{
+				anyUnread[0] = true;
+				anyUnread[e.cat] = true;
+			}
+		}
+		for (int t = 0; t < 8; t++)
+		{
+			tabTexts[t].text = tabNames[t] + " (" + counts[t] + ")";
+			tabTexts[t].color = anyUnread[t] ? new Color(1f, 0.75f, 0.3f, 1f) : Color.white;
+			tabBacks[t].color = (t == tab) ? lit : dark;
+		}
+		for (int c = contentRect.childCount - 1; c >= 0; c--)
+		{
+			UnityEngine.Object.Destroy(contentRect.GetChild(c).gameObject);
+		}
+		int row = 0;
+		for (int j = entries.Count - 1; j >= 0; j--)
+		{
+			Entry e2 = entries[j];
+			if (tab != 0 && e2.cat != tab)
+			{
+				continue;
+			}
+			BuildRow(e2, row);
+			row++;
+		}
+		contentRect.sizeDelta = new Vector2(0f, (float)row * RowH);
+		contentRect.anchoredPosition = Vector2.zero;
+	}
+
+	private static void BuildRow(Entry e, int index)
+	{
+		RectTransform rt = NewRect("Row", contentRect);
+		rt.anchorMin = new Vector2(0f, 1f);
+		rt.anchorMax = new Vector2(1f, 1f);
+		rt.pivot = new Vector2(0.5f, 1f);
+		rt.anchoredPosition = new Vector2(0f, -(float)index * RowH);
+		rt.sizeDelta = new Vector2(0f, RowH);
+		Image back = rt.gameObject.AddComponent<Image>();
+		back.color = (index % 2 == 0) ? new Color(1f, 1f, 1f, 0.05f) : new Color(1f, 1f, 1f, 0.0f);
+		back.raycastTarget = false;
+		RectTransform dateRt = NewRect("Date", rt);
+		dateRt.anchorMin = new Vector2(0f, 0f);
+		dateRt.anchorMax = new Vector2(0f, 1f);
+		dateRt.pivot = new Vector2(0f, 0.5f);
+		dateRt.anchoredPosition = new Vector2(8f, 0f);
+		dateRt.sizeDelta = new Vector2(112f, 0f);
+		Text dateText = NewText(dateRt, fontSize - 2, TextAnchor.MiddleLeft, e.read ? new Color(0.65f, 0.68f, 0.72f, 1f) : new Color(1f, 0.75f, 0.3f, 1f));
+		dateText.text = new DateTime(e.ticks).ToString("d MMM yy HH:mm", CultureInfo.InvariantCulture);
+		RectTransform msgRt = NewRect("Message", rt);
+		Stretch(msgRt, 126f, 2f, 84f, 2f);
+		Text msg = NewText(msgRt, fontSize - 2, TextAnchor.MiddleLeft, e.read ? new Color(0.8f, 0.83f, 0.87f, 1f) : Color.white);
+		msg.text = e.text;
+		RectTransform btnRt = NewRect("Show", rt);
+		btnRt.anchorMin = new Vector2(1f, 0.5f);
+		btnRt.anchorMax = new Vector2(1f, 0.5f);
+		btnRt.pivot = new Vector2(1f, 0.5f);
+		btnRt.anchoredPosition = new Vector2(-6f, 0f);
+		btnRt.sizeDelta = new Vector2(66f, 28f);
+		Image border = btnRt.gameObject.AddComponent<Image>();
+		border.color = e.hasPos ? gold : new Color(0.3f, 0.3f, 0.3f, 1f);
+		Button btn = btnRt.gameObject.AddComponent<Button>();
+		btn.targetGraphic = border;
+		btn.interactable = e.hasPos;
+		if (e.hasPos)
+		{
+			Entry captured = e;
+			btn.onClick.AddListener(new UnityAction(delegate { Show(captured); }));
+		}
+		RectTransform inner = NewRect("Back", btnRt);
+		Stretch(inner, 2f, 2f, 2f, 2f);
+		Image innerImg = inner.gameObject.AddComponent<Image>();
+		innerImg.color = dark;
+		innerImg.raycastTarget = false;
+		RectTransform lbl = NewRect("Text", btnRt);
+		Stretch(lbl, 0f, 0f, 0f, 0f);
+		NewText(lbl, fontSize - 2, TextAnchor.MiddleCenter, e.hasPos ? Color.white : new Color(0.5f, 0.5f, 0.5f, 1f)).text = "Show";
+	}
+
+	private static void BuildPanel(Transform root)
+	{
+		RectTransform dim = NewRect("ModNotify", root);
+		Stretch(dim, 0f, 0f, 0f, 0f);
+		dim.gameObject.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0.35f);
+		panel = dim.gameObject;
+		RectTransform win = NewRect("Window", dim);
+		win.anchorMin = new Vector2(0.2f, 0.06f);
+		win.anchorMax = new Vector2(0.8f, 0.94f);
+		win.offsetMin = Vector2.zero;
+		win.offsetMax = Vector2.zero;
+		win.gameObject.AddComponent<Image>().color = gold;
+		RectTransform back = NewRect("Back", win);
+		Stretch(back, 2f, 2f, 2f, 2f);
+		Image backImg = back.gameObject.AddComponent<Image>();
+		backImg.color = dark;
+		backImg.raycastTarget = false;
+		RectTransform title = NewRect("Title", win);
+		title.anchorMin = new Vector2(0f, 1f);
+		title.anchorMax = new Vector2(1f, 1f);
+		title.pivot = new Vector2(0.5f, 1f);
+		title.anchoredPosition = new Vector2(0f, -10f);
+		title.sizeDelta = new Vector2(-40f, 32f);
+		NewText(title, fontSize + 6, TextAnchor.MiddleLeft, Color.white).text = "Messages";
+		RectTransform closeRt = NewRect("Close", win);
+		closeRt.anchorMin = new Vector2(1f, 1f);
+		closeRt.anchorMax = new Vector2(1f, 1f);
+		closeRt.pivot = new Vector2(1f, 1f);
+		closeRt.anchoredPosition = new Vector2(-8f, -8f);
+		closeRt.sizeDelta = new Vector2(32f, 32f);
+		Image closeBorder = closeRt.gameObject.AddComponent<Image>();
+		closeBorder.color = gold;
+		Button closeBtn = closeRt.gameObject.AddComponent<Button>();
+		closeBtn.targetGraphic = closeBorder;
+		closeBtn.onClick.AddListener(new UnityAction(Close));
+		RectTransform closeBack = NewRect("Back", closeRt);
+		Stretch(closeBack, 2f, 2f, 2f, 2f);
+		Image closeBackImg = closeBack.gameObject.AddComponent<Image>();
+		closeBackImg.color = dark;
+		closeBackImg.raycastTarget = false;
+		RectTransform closeLabel = NewRect("Text", closeRt);
+		Stretch(closeLabel, 0f, 0f, 0f, 0f);
+		NewText(closeLabel, fontSize + 2, TextAnchor.MiddleCenter, Color.white).text = "X";
+		for (int i = 0; i < 8; i++)
+		{
+			int index = i;
+			RectTransform tabRt = NewRect("Tab " + tabNames[i], win);
+			tabRt.anchorMin = new Vector2((float)i / 8f, 1f);
+			tabRt.anchorMax = new Vector2((float)(i + 1) / 8f, 1f);
+			tabRt.pivot = new Vector2(0.5f, 1f);
+			tabRt.anchoredPosition = new Vector2(0f, -50f);
+			tabRt.sizeDelta = new Vector2(-6f, 30f);
+			Image tabBorder = tabRt.gameObject.AddComponent<Image>();
+			tabBorder.color = gold;
+			Button tabBtn = tabRt.gameObject.AddComponent<Button>();
+			tabBtn.targetGraphic = tabBorder;
+			tabBtn.onClick.AddListener(new UnityAction(delegate { SetTab(index); }));
+			RectTransform tabBack = NewRect("Back", tabRt);
+			Stretch(tabBack, 2f, 2f, 2f, 2f);
+			tabBacks[i] = tabBack.gameObject.AddComponent<Image>();
+			tabBacks[i].color = dark;
+			tabBacks[i].raycastTarget = false;
+			RectTransform tabLabel = NewRect("Text", tabRt);
+			Stretch(tabLabel, 0f, 0f, 0f, 0f);
+			tabTexts[i] = NewText(tabLabel, fontSize - 2, TextAnchor.MiddleCenter, Color.white);
+			tabTexts[i].horizontalOverflow = HorizontalWrapMode.Overflow;
+		}
+		RectTransform scrollRt = NewRect("Scroll", win);
+		Stretch(scrollRt, 12f, 12f, 12f, 92f);
+		ScrollRect scroll = scrollRt.gameObject.AddComponent<ScrollRect>();
+		RectTransform view = NewRect("Viewport", scrollRt);
+		Stretch(view, 0f, 0f, 16f, 0f);
+		view.gameObject.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0f);
+		view.gameObject.AddComponent<RectMask2D>();
+		contentRect = NewRect("Content", view);
+		contentRect.anchorMin = new Vector2(0f, 1f);
+		contentRect.anchorMax = new Vector2(1f, 1f);
+		contentRect.pivot = new Vector2(0.5f, 1f);
+		contentRect.anchoredPosition = Vector2.zero;
+		contentRect.sizeDelta = Vector2.zero;
+		RectTransform barRt = NewRect("Scrollbar", scrollRt);
+		barRt.anchorMin = new Vector2(1f, 0f);
+		barRt.anchorMax = new Vector2(1f, 1f);
+		barRt.pivot = new Vector2(1f, 1f);
+		barRt.anchoredPosition = Vector2.zero;
+		barRt.sizeDelta = new Vector2(12f, 0f);
+		barRt.gameObject.AddComponent<Image>().color = new Color(0.03f, 0.06f, 0.1f, 1f);
+		RectTransform slide = NewRect("Sliding Area", barRt);
+		Stretch(slide, 0f, 0f, 0f, 0f);
+		RectTransform handle = NewRect("Handle", slide);
+		handle.sizeDelta = Vector2.zero;
+		Image handleImg = handle.gameObject.AddComponent<Image>();
+		handleImg.color = gold;
+		Scrollbar bar = barRt.gameObject.AddComponent<Scrollbar>();
+		bar.direction = Scrollbar.Direction.BottomToTop;
+		bar.handleRect = handle;
+		bar.targetGraphic = handleImg;
+		scroll.content = contentRect;
+		scroll.viewport = view;
+		scroll.horizontal = false;
+		scroll.vertical = true;
+		scroll.movementType = ScrollRect.MovementType.Clamped;
+		scroll.scrollSensitivity = 30f;
+		scroll.verticalScrollbar = bar;
+		scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
+		panel.SetActive(false);
+	}
+
+	private static RectTransform NewRect(string name, Transform parent)
+	{
+		GameObject go = new GameObject(name, typeof(RectTransform));
+		go.transform.SetParent(parent, false);
+		return go.GetComponent<RectTransform>();
+	}
+
+	private static void Stretch(RectTransform rt, float left, float bottom, float right, float top)
+	{
+		rt.anchorMin = Vector2.zero;
+		rt.anchorMax = Vector2.one;
+		rt.offsetMin = new Vector2(left, bottom);
+		rt.offsetMax = new Vector2(-right, -top);
+	}
+
+	private static Text NewText(RectTransform rt, int size, TextAnchor anchor, Color colour)
+	{
+		Text t = rt.gameObject.AddComponent<Text>();
+		t.font = font;
+		t.fontSize = size;
+		t.alignment = anchor;
+		t.color = colour;
+		t.supportRichText = false;
+		t.horizontalOverflow = HorizontalWrapMode.Wrap;
+		t.verticalOverflow = VerticalWrapMode.Truncate;
+		t.raycastTarget = false;
+		return t;
+	}
+}
