@@ -284,3 +284,116 @@ public static class ModConvoy
 - The route is found by the map's water pathfinder, not by the AI waypoints, so it may take a different path than the AI convoys.
 - Port stock limits (`replenish0Max`) are not checked by me; the game's own unload code decides what happens if a port is full.
 - The spawn can be deep in enemy waters. That is part of the danger.
+
+# v0.22.6 Fix: the convoy now sails to your home port [CONVOY]
+
+Status: code written, not compiled or tested (the game cannot be run here). Root cause not proven, so the fix does three things at once.
+
+## What was wrong
+The convoy appeared on the northern edge but never moved. Reading the game code (`CampaignInterface.MoveMobileToDestination`, `CampaignAI.MoveMobileNextFrame`), the likely causes are:
+1. The move order was given in the same frame the ship was created. The game's own code waits one frame before ordering a freshly created ship to move (`MoveMobileNextFrame`).
+2. The new task force never had its type and speed set before the order.
+3. If the water route is not found, nothing happens and nothing retries.
+
+## What the fix does
+- Sets type and speed on the convoy, then orders the move one frame later, the same way the AI does.
+- Every minute (`Tick`), if the convoy is not moving it is told to sail again, and `[CONVOY] not moving, re-issuing the order` is written to output_log.txt.
+- Arrival is measured by distance to the home port (12 km), and a convoy that stops within 25 km of the port counts as arrived, so it can never stop just short and sit there.
+
+## dnSpy steps (3 edits in the existing ModConvoy class)
+### Edit 1 - add a helper method
+1. Open **ModConvoy** > right-click the class > **Edit Class (C#)...**
+2. Add this method anywhere inside the class:
+
+```csharp
+	public static void Sail()
+	{
+		if ((UnityEngine.Object)convoy == (UnityEngine.Object)null || (UnityEngine.Object)destination == (UnityEngine.Object)null)
+		{
+			return;
+		}
+		CampaignInterface.instance.MoveMobileToDestination(convoy, destination.gameObjectAnimator.currentMap2DLocation, true, false);
+	}
+```
+
+### Edit 2 - the move order in Spawn
+In method **Spawn**, find this line:
+
+```csharp
+CampaignInterface.instance.MoveMobileToDestination(goa, destination.gameObjectAnimator.currentMap2DLocation, true);
+```
+
+Replace it with:
+
+```csharp
+goa.mobileMapObject.type = 0;
+goa.mobileMapObject.speed = cm.GetMobileMapObjectSpeed(goa.mobileMapObject);
+CampaignAI.instance.StartCoroutine(CampaignAI.instance.MoveMobileNextFrame(goa, destination.gameObjectAnimator.currentMap2DLocation, true, false));
+```
+
+### Edit 3 - replace the whole Tick method
+Replace method **Tick** with:
+
+```csharp
+	public static void Tick()
+	{
+		try
+		{
+			if ((UnityEngine.Object)convoy == (UnityEngine.Object)null)
+			{
+				return;
+			}
+			MobileMapObject mmo = convoy.mobileMapObject;
+			if ((UnityEngine.Object)mmo == (UnityEngine.Object)null || (Utilities.DoesMobileContainSubtype(mmo, UnitSubType.Merchant).Count == 0 && Utilities.DoesMobileContainSubtype(mmo, UnitSubType.Oiler).Count == 0))
+			{
+				Lost();
+				return;
+			}
+			if ((UnityEngine.Object)destination == (UnityEngine.Object)null || destination.currentFaction != 0)
+			{
+				return;
+			}
+			float distance = CampaignManager.instance.GetDistanceInMetresBetweenMapObjects(convoy.currentMap2DLocation, destination.gameObjectAnimator.currentMap2DLocation);
+			if (distance > 12000f && !(!convoy.isMoving && distance <= 25000f))
+			{
+				if (!convoy.isMoving)
+				{
+					Debug.Log("[CONVOY] not moving, re-issuing the order, " + (distance / 1000f) + " km from " + destination.locationName);
+					Sail();
+				}
+				return;
+			}
+			int[] got = new int[4];
+			for (int i = 0; i < mmo.cargo.Count; i++)
+			{
+				string[] parts = mmo.cargo[i].Split(new char[1] { '|' });
+				for (int j = 0; j < 4 && j < parts.Length; j++)
+				{
+					got[j] += int.Parse(parts[j]);
+				}
+			}
+			CampaignManager.instance.RemoveAllCargoFromShips(mmo);
+			GameObjectAnimator done = convoy;
+			convoy = null;
+			CampaignInterface.instance.DestroyMapMobileObject(done);
+			Debug.Log("[CONVOY] arrived at " + destination.locationName + " troops " + got[0] + " supplies " + got[1] + " engineering " + got[2] + " fuel " + got[3]);
+			CampaignEvent.instance.CreateEvent("convoyarrived");
+			CampaignEvent.instance.contentText.text = CampaignEvent.instance.contentText.text + "\n\n<b>Delivered:</b> " + got[0] + " troops, " + got[1] + " supplies, " + got[2] + " engineering, " + got[3] + " fuel.";
+		}
+		catch (Exception ex)
+		{
+			Debug.Log("[CONVOY] tick error " + ex.Message + " " + ex.StackTrace);
+		}
+	}
+```
+
+Click **Compile**, then **File > Save Module**.
+
+## Test
+1. Pass 20 to 30 days. When the convoy popup shows, run time for a few minutes: the convoy should move south-ish towards your home port.
+2. If it does not move, send me output_log.txt lines starting with `[CONVOY]`. `not moving, re-issuing` repeating with the same km means the water route to the port is not found, and I will send it to a sea waypoint next to the port instead.
+3. At the port you should see "Convoy Arrived" and the port stocks go up.
+
+## Not covered
+- If the home port is captured while the convoy is at sea, it waits where it is (same as before).
+- After this works, the "Supply convoy event" page in the in-game book says "For now it does not sail"; its text (guide_book.md) needs one edit.
