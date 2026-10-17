@@ -25,7 +25,7 @@ public static class ModNotify
 	public const int MaxEntries = 500;
 	public const int BellSlot = 1;
 	private const float RowH = 46f;
-	private const float HideAfter = 8f;
+	private const float HideAfter = 1f;
 
 	private static readonly string[] tabNames = new string[8] { "All", "Contacts", "Battles", "Fleet", "Air", "Supply", "Admiralty", "Other" };
 
