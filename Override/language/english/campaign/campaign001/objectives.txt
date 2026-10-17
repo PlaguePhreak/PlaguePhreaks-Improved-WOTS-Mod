@@ -1,0 +1,18 @@
+﻿<b>COUNTERATTACK ON THE AUSTRALIAN FRONT</b>
+
+August 7th 1942
+The Japanese advance has been halted at the gates of Australia, but their forces still hold New Guinea and the Solomon Islands. Their main base, <color=#E0B030>RABAUL</color>, feeds every attack against our supply lines between America and Australia.
+The Marines are landing on <color=#E0B030>GUADALCANAL</color> and the <color=#E0B030>FLORIDA ISLANDS</color> today. The time to strike back is now.
+
+Your orders are to expel the Japanese from the South Pacific and crush all resistance, by taking their home port.
+
+
+You must:
+
+1) Capture <color=#E0B030>RABAUL</color>, the Japanese home port
+
+2) Maintain control of:
+   - <color=#E0B030>COOKTOWN</color>
+   - <color=#E0B030>NEW HEBRIDES</color>
+
+The campaign is lost if the Japanese hold <color=#E0B030>RABAUL</color>, <color=#E0B030>COOKTOWN</color> and <color=#E0B030>NEW HEBRIDES</color> at the same time.
