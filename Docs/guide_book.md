@@ -81,7 +81,7 @@ public static class ModGuide
 		"<color=#E0B030><b>Version 0.24 to 0.24.2</b></color>\n" +
 		"84 new warships and 93 new aircraft from RamZ's Unit Catalog (Japan, USA and Australia), and 20 more warships and 22 aircraft from the TTE team. See the pages CUSTOM SHIPS and CUSTOM AIRCRAFT. Costs and dates are estimates.\n\n" +
 		"<color=#E0B030><b>Version 0.23 to 0.23.2</b></color>\n" +
-		"23 new merchant ships, oilers and transports from the TTE team (not made by the mod author), in limited numbers: 10-30 of each type for each side. The Manley now sits between the submarines and the destroyers in the ship list.\n\n" +
+		"23 new merchant ships, oilers and transports from the TTE team (not made by me), in limited numbers: 10-30 of each type for each side. The Manley now sits between the submarines and the destroyers in the ship list.\n\n" +
 		"<color=#E0B030><b>Version 0.22.5</b></color>\n" +
 		"This book. It lists what the mod has added and what the keys are. Use Next and Previous to turn the pages and scroll down inside a page.\n\n" +
 		"<color=#E0B030><b>Version 0.22.4</b></color>\n" +
@@ -161,19 +161,133 @@ public static class ModGuide
 		"93 aircraft from RamZ's public Unit Catalog (plus 3 British types that his new Australian carriers use). Japan, USA and Australia only.\n" +
 		"\n" +
 		"<color=#E0B030><b>USA</b></color>\n" +
-		"A-26C-45 Invader, A2D-1 Skyshark, AD-2 Skyraider, AM-1 Mauler, AU-1 Corsair, B-17G Flying Fortress, B-25J-20 Mitchell, B-26B Marauder, B-29A Superfortress, BTD-1 Destroyer, F2A-3 Buffalo, F2G-1 Corsair, F2G-2 Corsair, F4F-3 Wildcat, F4F-4 Wildcat, F4U-1A Corsair, F4U-1D Corsair, F4U-2 Corsair, F4U-4 Corsair, F4U-4B Corsair, F6F-3 Hellcat, F6F-5 Hellcat, F6F-5N Hellcat, F7F-3 Tigercat, F8F-1B Bearcat, FM-2 Wildcat, OS2U-3 Kingfisher, P-38G-10 Lightning, P-38J-15 Lightning, P-38K-1 Lightning, P-38L-5 Lightning, P-39D Airacobra, P-40F-10 Warhawk, P-43A-1 Lancer, P-47D-28 Thunderbolt, P-47M-1 Thunderbolt, P-47N-15 Thunderbolt, P-51D-20 Mustang, P-51H-5 Mustang, P-61C-1 Black Widow, P-63C-5 Kingcobra, P-82B Twin Mustang, PB4Y-2 Privateer, PBJ-1J Mitchell, PV-2D Harpoon, SB2C-1C Helldiver, SB2C-4 Helldiver, SB2U-3 Vindicator, SBD-3 Dauntless, SBD-5 Dauntless, SBD-6 Dauntless, SOC-1 Seagull, TBD-1 Devastator, TBF-1C Avenger, TBM-3 Avenger.\n" +
+		"A-26C-45 Invader\n" +
+		"A2D-1 Skyshark\n" +
+		"AD-2 Skyraider\n" +
+		"AM-1 Mauler\n" +
+		"AU-1 Corsair\n" +
+		"B-17G Flying Fortress\n" +
+		"B-25J-20 Mitchell\n" +
+		"B-26B Marauder\n" +
+		"B-29A Superfortress\n" +
+		"BTD-1 Destroyer\n" +
+		"F2A-3 Buffalo\n" +
+		"F2G-1 Corsair\n" +
+		"F2G-2 Corsair\n" +
+		"F4F-3 Wildcat\n" +
+		"F4F-4 Wildcat\n" +
+		"F4U-1A Corsair\n" +
+		"F4U-1D Corsair\n" +
+		"F4U-2 Corsair\n" +
+		"F4U-4 Corsair\n" +
+		"F4U-4B Corsair\n" +
+		"F6F-3 Hellcat\n" +
+		"F6F-5 Hellcat\n" +
+		"F6F-5N Hellcat\n" +
+		"F7F-3 Tigercat\n" +
+		"F8F-1B Bearcat\n" +
+		"FM-2 Wildcat\n" +
+		"OS2U-3 Kingfisher\n" +
+		"P-38G-10 Lightning\n" +
+		"P-38J-15 Lightning\n" +
+		"P-38K-1 Lightning\n" +
+		"P-38L-5 Lightning\n" +
+		"P-39D Airacobra\n" +
+		"P-40F-10 Warhawk\n" +
+		"P-43A-1 Lancer\n" +
+		"P-47D-28 Thunderbolt\n" +
+		"P-47M-1 Thunderbolt\n" +
+		"P-47N-15 Thunderbolt\n" +
+		"P-51D-20 Mustang\n" +
+		"P-51H-5 Mustang\n" +
+		"P-61C-1 Black Widow\n" +
+		"P-63C-5 Kingcobra\n" +
+		"P-82B Twin Mustang\n" +
+		"PB4Y-2 Privateer\n" +
+		"PBJ-1J Mitchell\n" +
+		"PV-2D Harpoon\n" +
+		"SB2C-1C Helldiver\n" +
+		"SB2C-4 Helldiver\n" +
+		"SB2U-3 Vindicator\n" +
+		"SBD-3 Dauntless\n" +
+		"SBD-5 Dauntless\n" +
+		"SBD-6 Dauntless\n" +
+		"SOC-1 Seagull\n" +
+		"TBD-1 Devastator\n" +
+		"TBF-1C Avenger\n" +
+		"TBM-3 Avenger\n" +
 		"\n" +
 		"<color=#E0B030><b>Australia</b></color>\n" +
-		"Beaufighter Mk VIc, Corsair F Mk II, Firebrand TF Mk IV, Walrus Mk I.\n" +
+		"Beaufighter Mk VIc\n" +
+		"Corsair F Mk II\n" +
+		"Firebrand TF Mk IV\n" +
+		"Walrus Mk I\n" +
 		"\n" +
 		"<color=#E0B030><b>Japan</b></color>\n" +
-		"A6M2 Mod 21, A6M3 Mod 22a, A6M3 Mod 32, A6M5 Mod 52a, A6M5 Mod 52c, A6M6 Mod 53c, A7M1 Sam, A7M2 Sam, A8K1, B5N2 Kate, B6N2a Jill, B7A2 Grace, D3A1 Val, D3A2 Val, D4Y1-C Judy, D4Y2 Judy, D4Y3a Judy, D4Y5 Judy, E13A1 Jake, G8N1 Rita, J5N2 Tenrai, J6K1 Jinpu, J7W1 Shinden, Ki-100, Ki-67 Otsu, Ki-83, Ki-84 Frank, Ki-87, Ki-94-II, N1K1 Rex, N1K1-Ja George, N1K2-Ja Shiden-Kai, P1Y1 Ginga, R2Y2 Keiun.\n" +
+		"A6M2 Mod 21\n" +
+		"A6M3 Mod 22a\n" +
+		"A6M3 Mod 32\n" +
+		"A6M5 Mod 52a\n" +
+		"A6M5 Mod 52c\n" +
+		"A6M6 Mod 53c\n" +
+		"A7M1 Sam\n" +
+		"A7M2 Sam\n" +
+		"A8K1\n" +
+		"B5N2 Kate\n" +
+		"B6N2a Jill\n" +
+		"B7A2 Grace\n" +
+		"D3A1 Val\n" +
+		"D3A2 Val\n" +
+		"D4Y1-C Judy\n" +
+		"D4Y2 Judy\n" +
+		"D4Y3a Judy\n" +
+		"D4Y5 Judy\n" +
+		"E13A1 Jake\n" +
+		"G8N1 Rita\n" +
+		"J5N2 Tenrai\n" +
+		"J6K1 Jinpu\n" +
+		"J7W1 Shinden\n" +
+		"Ki-100\n" +
+		"Ki-67 Otsu\n" +
+		"Ki-83\n" +
+		"Ki-84 Frank\n" +
+		"Ki-87\n" +
+		"Ki-94-II\n" +
+		"N1K1 Rex\n" +
+		"N1K1-Ja George\n" +
+		"N1K2-Ja Shiden-Kai\n" +
+		"P1Y1 Ginga\n" +
+		"R2Y2 Keiun\n" +
 		"\n" +
 		"<color=#E0B030><b>TTE Aircraft</b></color>\n" +
 		"22 aircraft from the TTE team, used with credit to them.\n" +
-		"USA: A-20G Havoc, B-24D Liberator, B-25J Mitchell, J2F-5 Duck, P-38E Lightning, P-39D Airacobra, PBM-3 Mariner, PBY-5a Catalina.\n" +
-		"Australia: Beaufighter Mk21, Beaufort MkI, Kittyhawk MkIA, Sunderland MkIII.\n" +
-		"Japan: A5M4 Claude, A6M2-N Rufe, E14Y Glen, G3M2 Nell, H6K4 Mavis, H8K2 Emily, J1N1 Gekko, Ki-43-II Hayabusa, Ki-45 Toryu, Ki-49-IIb Donryu.\n",
+		"<color=#9fb0c0>USA</color>\n" +
+		"A-20G Havoc\n" +
+		"B-24D Liberator\n" +
+		"B-25J Mitchell\n" +
+		"J2F-5 Duck\n" +
+		"P-38E Lightning\n" +
+		"P-39D Airacobra\n" +
+		"PBM-3 Mariner\n" +
+		"PBY-5a Catalina\n" +
+		"\n" +
+		"<color=#9fb0c0>Australia</color>\n" +
+		"Beaufighter Mk21\n" +
+		"Beaufort MkI\n" +
+		"Kittyhawk MkIA\n" +
+		"Sunderland MkIII\n" +
+		"\n" +
+		"<color=#9fb0c0>Japan</color>\n" +
+		"A5M4 Claude\n" +
+		"A6M2-N Rufe\n" +
+		"E14Y Glen\n" +
+		"G3M2 Nell\n" +
+		"H6K4 Mavis\n" +
+		"H8K2 Emily\n" +
+		"J1N1 Gekko\n" +
+		"Ki-43-II Hayabusa\n" +
+		"Ki-45 Toryu\n" +
+		"Ki-49-IIb Donryu\n",
 
 
 		"<color=#E0B030><b>Lasting damage</b></color>\n" +
