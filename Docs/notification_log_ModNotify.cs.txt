@@ -25,6 +25,7 @@ public static class ModNotify
 	public const int MaxEntries = 500;
 	public const int BellSlot = 1;
 	private const float RowH = 46f;
+	private const float HideAfter = 8f;
 
 	private static readonly string[] tabNames = new string[8] { "All", "Contacts", "Battles", "Fleet", "Air", "Supply", "Admiralty", "Other" };
 
@@ -37,6 +38,7 @@ public static class ModNotify
 	private static object owner;
 	private static bool dirty;
 	private static int tab;
+	private static float hideAt;
 
 	private static GameObject bellObj;
 	private static Image bellBack;
@@ -295,6 +297,11 @@ public static class ModNotify
 				dirty = false;
 				UpdateBadge();
 			}
+			if (badgeObj != null && hideAt > 0f && Time.unscaledTime >= hideAt)
+			{
+				badgeObj.SetActive(false);
+				hideAt = 0f;
+			}
 		}
 		catch (Exception ex)
 		{
@@ -319,8 +326,23 @@ public static class ModNotify
 	{
 		int total = entries.Count;
 		int unread = UnreadCount();
-		badgeText.text = (unread > 0) ? (total + "  ·  " + unread + " new") : total.ToString();
-		badgeBack.color = (unread > 0) ? lit : new Color(0.07f, 0.12f, 0.19f, 0.92f);
+		if (unread > 0)
+		{
+			badgeText.text = unread + " new";
+			badgeBack.color = lit;
+			badgeObj.SetActive(true);
+			hideAt = 0f;
+		}
+		else
+		{
+			badgeText.text = total.ToString();
+			badgeBack.color = new Color(0.07f, 0.12f, 0.19f, 0.92f);
+			// Seen: leave the badge up for a few seconds, then hide it.
+			if (badgeObj.activeSelf && hideAt <= 0f)
+			{
+				hideAt = Time.unscaledTime + HideAfter;
+			}
+		}
 		if (bellBack != null)
 		{
 			bellBack.color = (unread > 0) ? lit : new Color(0.07f, 0.12f, 0.19f, 0.92f);
@@ -390,16 +412,17 @@ public static class ModNotify
 		rt.anchorMin = new Vector2(0f, 1f);
 		rt.anchorMax = new Vector2(0f, 1f);
 		rt.pivot = new Vector2(0f, 1f);
-		rt.anchoredPosition = new Vector2(54f, -18f - (float)BellSlot * 46f);
-		rt.sizeDelta = new Vector2(110f, 24f);
+		rt.anchoredPosition = new Vector2(54f, -21f - (float)BellSlot * 46f);
+		rt.sizeDelta = new Vector2(58f, 18f);
 		badgeBack = rt.gameObject.AddComponent<Image>();
 		badgeBack.color = new Color(0.07f, 0.12f, 0.19f, 0.92f);
 		badgeBack.raycastTarget = false;
 		RectTransform tr = NewRect("Text", rt);
-		Stretch(tr, 4f, 0f, 4f, 0f);
-		badgeText = NewText(tr, fontSize - 1, TextAnchor.MiddleCenter, Color.white);
+		Stretch(tr, 2f, 0f, 2f, 0f);
+		badgeText = NewText(tr, fontSize - 4, TextAnchor.MiddleCenter, Color.white);
 		badgeText.horizontalOverflow = HorizontalWrapMode.Overflow;
 		badgeObj = rt.gameObject;
+		badgeObj.SetActive(false);
 		// Draw behind the bell so the bell's hover tip is not covered.
 		badgeObj.transform.SetSiblingIndex(bellObj.transform.GetSiblingIndex());
 	}
