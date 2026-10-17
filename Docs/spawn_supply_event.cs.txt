@@ -1,0 +1,128 @@
+	public static bool Spawn()
+	{
+		CampaignAI ai = CampaignAI.instance;
+		CampaignManager cm = CampaignManager.instance;
+		destination = null;
+		for (int i = 0; i < ai.playerHomePorts.Count; i++)
+		{
+			if (ai.playerHomePorts[i].currentFaction == 0)
+			{
+				destination = ai.playerHomePorts[i];
+				break;
+			}
+		}
+		if ((UnityEngine.Object)destination == (UnityEngine.Object)null)
+		{
+			return false;
+		}
+		List<SeaNavigationWaypoint> top = new List<SeaNavigationWaypoint>();
+		for (int j = 0; j < cm.seaNavigationPoints.Count; j++)
+		{
+			if (!cm.seaNavigationPoints[j].isLocation)
+			{
+				top.Add(cm.seaNavigationPoints[j]);
+			}
+		}
+		top.Sort((SeaNavigationWaypoint a, SeaNavigationWaypoint b) => b.positionRadius.y.CompareTo(a.positionRadius.y));
+		SeaNavigationWaypoint spawn = top[UnityEngine.Random.Range(0, Math.Min(40, top.Count))];
+
+		// slot 1 is always a light cruiser (heavy cruiser only if no light cruiser exists)
+		string leader = Pick(UnitSubType.Light_Cruiser);
+		if (leader == null)
+		{
+			leader = Pick(UnitSubType.Heavy_Cruiser);
+		}
+		string merchant = Pick(UnitSubType.Merchant);
+		string oiler = Pick(UnitSubType.Oiler);
+		if (leader == null || merchant == null || oiler == null)
+		{
+			Debug.Log("[CONVOY] no allied cruiser, transport or oiler found");
+			return false;
+		}
+		List<string> prefabs = new List<string> { leader };
+		List<string> cargo = new List<string> { "0|0|0|0" };
+
+		// 1 to 3 destroyers right after the cruiser (formation slots 2 to 4)
+		int escorts = UnityEngine.Random.Range(1, 4);
+		for (int e = 0; e < escorts; e++)
+		{
+			string destroyer = Pick(UnitSubType.Destroyer);
+			if (destroyer == null)
+			{
+				break;
+			}
+			prefabs.Add(destroyer);
+			cargo.Add("0|0|0|0");
+		}
+
+		// 6 to 12 cargo ships: at least one each of troops, supplies, engineering and fuel, the rest random
+		int ships = UnityEngine.Random.Range(6, 13);
+		int[] count = new int[4] { 1, 1, 1, 1 };
+		for (int s = 4; s < ships; s++)
+		{
+			count[UnityEngine.Random.Range(0, 4)]++;
+		}
+		int[] minimum = new int[4] { minTroops, minSupplies, minEngineering, minFuel };
+		int[] amount = new int[4];
+		for (int type = 0; type < 4; type++)
+		{
+			for (int n = 0; n < count[type]; n++)
+			{
+				string ship = (type == 3) ? Pick(UnitSubType.Oiler) : Pick(UnitSubType.Merchant);
+				if (ship == null)
+				{
+					ship = (type == 3) ? oiler : merchant;
+				}
+				int got = Roll(ship, type, Math.Max(1, minimum[type] / count[type]));
+				amount[type] += got;
+				prefabs.Add(ship);
+				string[] parts = new string[4] { "0", "0", "0", "0" };
+				parts[type] = got.ToString();
+				cargo.Add(string.Join("|", parts));
+			}
+		}
+
+		MobileMapObject tf = ai.newTaskForce;
+		CampaignInterface.instance.ClearNewGroupData(tf);
+		tf.unitPrefabs = prefabs;
+		for (int k = 0; k < prefabs.Count; k++)
+		{
+			UnitData ud = EngagementManager.instance.unitDataDictionary[prefabs[k]];
+			tf.unitInstances.Add(0);
+			tf.unitDisplayNames.Add(ud.namesInClass.Count > 0 ? ud.namesInClass[0] : ud.unitName);
+			tf.cellVariables.Add(string.Empty);
+			tf.ammunitionRemaining.Add(string.Empty);
+			tf.aircraftCooldown.Add(string.Empty);
+			tf.cargo.Add(cargo[k]);
+			tf.bombardments.Add(0);
+			tf.paint.Add(0);
+			tf.speedModifier.Add(1f);
+			tf.currentAircraft.Add(string.Empty);
+		}
+		tf.formation = 18;
+		tf.formationSpacing = 0;
+		tf.mobileName = "SUPPLY CONVOY";
+		tf.customName = true;
+		cm.SetMobileMapObjectSensors(tf);
+		tf.currentFaction = 0;
+
+		GameObjectAnimator previous = CampaignInterface.instance.currentMapObject;
+		GameObjectAnimator goa = CampaignInterface.instance.CreateNewMobileObject(CampaignObjectType.Sea, tf, new Vector2(spawn.positionRadius.x, spawn.positionRadius.y), false, null, string.Empty);
+		CampaignInterface.instance.currentMapObject = previous;
+		convoy = goa;
+
+		goa.mobileMapObject.type = 0;
+		goa.mobileMapObject.speed = cm.GetMobileMapObjectSpeed(goa.mobileMapObject);
+		CampaignAI.instance.StartCoroutine(CampaignAI.instance.MoveMobileNextFrame(goa, destination.gameObjectAnimator.currentMap2DLocation, true, false));
+
+		goa.mobileMapObject.spottedTimer = huntHours * 3600f;
+		if (!cm.spottedContacts.Contains(goa.mobileMapObject))
+		{
+			cm.spottedContacts.Add(goa.mobileMapObject);
+		}
+
+		Debug.Log("[CONVOY] spawned at " + spawn.waypointName + " heading for " + destination.locationName + " ships " + prefabs.Count + " cargo ships " + ships + " troops " + amount[0] + " supplies " + amount[1] + " engineering " + amount[2] + " fuel " + amount[3] + " escorts " + escorts);
+		CampaignEvent.instance.CreateEvent("convoyspawn");
+		CampaignEvent.instance.contentText.text = CampaignEvent.instance.contentText.text + "\n\n<b>Cargo:</b> " + amount[0] + " troops, " + amount[1] + " supplies, " + amount[2] + " engineering, " + amount[3] + " fuel.\n<b>Ships:</b> " + ships + " cargo ships, " + escorts + " destroyers and a cruiser.\n<b>Destination:</b> " + destination.locationName + ".";
+		return true;
+	}
