@@ -13,7 +13,7 @@ Order of ships in each force matters: ship 1 leads and the next four fill the "b
 | San Francisco Cruiser Force | 9 Escorted Wedge | Sol4 | San Francisco, Helena, Buchanan, Aaron Ward, Cushing |
 | Astoria Cruiser Force | 10 Escorted Box | Coral3 | Astoria, Juneau, Mayo, Niblack, Madison |
 | Australia Surface Force | 11 Escorted Diamond | Coral6 (by Port Moresby) | HMAS Australia, HMAS Canberra, HMAS Hobart, Arunta, Warramunga, Napier |
-| 4 destroyer patrols (2-3 ships, random) | line | Coral1, Coral5, Coral7, Coral0 | random from the Farragut, Mahan, Sims, Benham pool |
+| 4 destroyer patrols (2-3 ships, random), named after the first ship, e.g. "Farragut Destroyer Patrol" | line | Coral1, Coral5, Coral7, Coral0 | random from the Farragut, Mahan, Sims, Benham pool |
 | 3-4 submarines (random) | | Sol3, Sol6, Slot8, Sol2 | Gato, Greenling, Grouper, Drum |
 
 ### Japan (campaign002)
@@ -23,7 +23,7 @@ Order of ships in each force matters: ship 1 leads and the next four fill the "b
 | Kongo Surface Action Group | 17 Surface Action Line | SPac3 | Kongo, Fuso, Myoko, Nachi, Haguro, Shigure, Samidare, Akizuki |
 | Chokai Cruiser Force | 9 Escorted Wedge | SPac6 | Chokai, Tenryu, Yudachi, Murasame, Harusame |
 | Suzuya Cruiser Force | 13 Escorted Echelon | Bism3 | Suzuya, Kumano, Kitakami, Amagiri, Asagiri, Yugiri |
-| 4 destroyer patrols (2-3 ships, random) | line | Sol1, SPac4, Bism0, Bism6 | random from the Fubuki, Akatsuki, Asashio pool |
+| 4 destroyer patrols (2-3 ships, random), named after the first ship, e.g. "Farragut Destroyer Patrol" | line | Sol1, SPac4, Bism0, Bism6 | random from the Fubuki, Akatsuki, Asashio pool |
 | 3-4 submarines (random) | | SPac8, Sol5, SPac2, SPac5 | I-15, I-17, I-19, I-16 |
 
 Ships are skipped (and logged as `[STARTFLEET]` errors in output_log.txt) if a class or ship name does not exist. The new-class names were checked against the unit files; the older vanilla ones (Enterprise, Hiei and so on) come from the earlier tested v0.17.4 list.

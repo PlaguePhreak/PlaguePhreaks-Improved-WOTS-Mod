@@ -130,7 +130,7 @@ public void CreateStandingMissions()
                 groupStart.Add(ddStart[p]);
                 groupEnd.Add(ddEnd[p]);
                 groupFormation.Add(0);
-                groupName.Add(string.Empty);
+                groupName.Add("#DD");
             }
             int subCount = UnityEngine.Random.Range(3, 5);
             for (int s = 0; s < subCount && s < subClassPool.Length; s++)
@@ -221,8 +221,13 @@ public void CreateStandingMissions()
                 newTF.type = 0;
                 newTF.formation = groupFormation[g];
                 newTF.formationSpacing = 0;
-                newTF.mobileName = groupName[g];
-                newTF.customName = groupName[g] != string.Empty;
+                string forceName = groupName[g];
+                if (forceName == "#DD")
+                {
+                    forceName = newTF.unitDisplayNames[0] + " Destroyer Patrol";
+                }
+                newTF.mobileName = forceName;
+                newTF.customName = forceName != string.Empty;
                 newTF.speed = CampaignManager.instance.GetMobileMapObjectSpeed(newTF);
                 GameObjectAnimator newMobile = CampaignInterface.instance.CreateNewMobileObject(CampaignObjectType.Sea, newTF, startV, false, null, string.Empty);
                 if (groupStart[g] != groupEnd[g])
