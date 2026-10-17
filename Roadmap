@@ -206,3 +206,4 @@ Logistics work goes under v0.22, then v0.22.1, v0.22.2 and so on. It builds on t
 - **v0.24.1** 84 ships from RamZ's catalogue (Japan, USA, Australia) plus 20 TTE ships (new_ships_v0.24.md, pending test). Credit to RamZ and the TTE team.
 - **v0.24.2** 93 aircraft from RamZ's catalogue plus 22 from TTE (pending test).
 - **v0.24.3** New map locations (planned, next up after v0.24.1 and v0.24.2 are tested and working).
+- **Later (rules popup fix)** The "Ship Orders" rules page (modrules1.txt) says light carriers take 30 days, but the game code gives them 42 days like fleet carriers. Change the text to 42 (or the build time to 30). Left as is for now.
