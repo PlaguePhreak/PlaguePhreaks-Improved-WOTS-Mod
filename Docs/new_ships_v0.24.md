@@ -19,6 +19,7 @@ Credit is in the in-game book (CUSTOM SHIPS, CUSTOM AIRCRAFT and CREDITS pages) 
 - Built from your current game files, so your other changes in these files are kept.
 
 ## Install (numbered steps)
+0. **Get RamZ's ammunition folder first.** Your extracted `override` folder has no `ammunition` folder, but the new ships need it (their torpedoes and the `mod_ordnance` file live there). Without it the ships spawn as "Unknown" and sink. Open `Ram_s Unit Catalog 1.05d.7z` with 7-Zip File Manager, go into `override`, and extract the `ammunition` folder to `E:\mods\WOTS\custom mod\Ram_s Unit Catalog Release\override\ammunition`.
 1. Open `Extras\copy_v0.24_files.bat` in Notepad and check the three paths at the top (RamZ folder, TTE folder, game folder). Change them if yours differ.
 2. Double-click `copy_v0.24_files.bat`. It copies the 104 ship folders and 115 aircraft folders (3D models, a few GB) and RamZ's `materials\ammunition.txt`. It first saves your old one as `ammunition_original.txt` in the same folder.
 3. Copy this repo's `Override` folder over the game's `override` folder and choose "Replace" when asked.

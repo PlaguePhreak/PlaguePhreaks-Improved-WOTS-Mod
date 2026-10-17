@@ -232,10 +232,10 @@ xcopy "%TTE%\unit\air\h6k" "%DST%\unit\air\h6k\" /E /I /Y /Q
 xcopy "%TTE%\unit\air\emily" "%DST%\unit\air\emily\" /E /I /Y /Q
 xcopy "%TTE%\unit\air\g3m" "%DST%\unit\air\g3m\" /E /I /Y /Q
 rem TTE bomb and torpedo files: only copied when the game does not already have that file
-for %%%%f in ("%%TTE%%\ammunition\*.txt") do if not exist "%%DST%%\ammunition\%%%%~nxf" copy "%%%%f" "%%DST%%\ammunition\" >nul
+for %%f in ("%TTE%\ammunition\*.txt") do if not exist "%DST%\ammunition\%%~nxf" copy "%%f" "%DST%\ammunition\" >nul
 
 echo Copying RamZ ammunition (v0.24.2)...
-if exist "%RAM%\ammunition" xcopy "%RAM%\ammunition" "%DST%\ammunition\" /E /I /Y /Q
+if exist "%RAM%\ammunition" (xcopy "%RAM%\ammunition" "%DST%\ammunition\" /E /I /Y /Q) else (echo.&echo WARNING: %RAM%\ammunition is missing. Extract the override\ammunition folder from Ram_s Unit Catalog 1.05d.7z first, or the new ships will spawn as Unknown and sink.&pause)
 if not exist "%DST%\materials\ammunition_original.txt" copy "%DST%\materials\ammunition.txt" "%DST%\materials\ammunition_original.txt"
 copy /Y "%RAM%\materials\ammunition.txt" "%DST%\materials\ammunition.txt"
 
