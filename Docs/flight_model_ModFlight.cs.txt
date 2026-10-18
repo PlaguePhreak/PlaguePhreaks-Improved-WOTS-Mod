@@ -605,6 +605,16 @@ public static class ModFlight
 				return true;
 			}
 
+			if (a.t > 30f)
+			{
+				// Safety: no acrobatic move lasts this long. Give the plane back level.
+				tr.rotation = Quaternion.Euler(0f, tr.eulerAngles.y, 0f);
+				AcroPitch = 0f;
+				AcroRoll = 0f;
+				ua.wantedHeight = y;
+				acro.Remove(id);
+				return true;
+			}
 			if (y < 35f && a.phase < 2)
 			{
 				a.phase = 2;
@@ -655,6 +665,11 @@ public static class ModFlight
 							a.phase = 2;
 						}
 					}
+				}
+				if (a.kind != 1)
+				{
+					// split-S: straight on through to the pull-out
+					a.phase = 2;
 				}
 				if (a.phase == 1)
 				{

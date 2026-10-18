@@ -14,6 +14,9 @@
 5. **Barrel roll.** A 3.5 second full roll round the nose while the plane keeps its turn.
 6. **Acrobatics are done in code, not by the game.** The game's own flight code only knows pitch and a bank angle, so during these moves `ModFlight.Acro` turns the plane itself and hands it back upright. It writes `acro roll-over-attack`, `acro split-S` or `acro barrel-roll` on the flight log lines.
 
+## Update 18 Oct (second round)
+Your second log (no errors) showed a bug: after a **split-S** the plane never gave control back. It finished the move and then flew dead straight and level for hundreds of seconds (about 500 s per plane in the log), which is also why the Zeros earlier did nothing. Fixed in `ModFlight` (the split-S now goes on to its pull-out and finishes, and any acrobatic move that runs longer than 30 seconds is cut off and the plane handed back level). Re-paste `ModFlight` only.
+
 ## Step 1 - replace ModFlight
 1. Class **ModFlight** > **Edit Class (C#)...**, select all, paste the new `Docs/flight_model_ModFlight.cs.txt`. **Compile**.
 
