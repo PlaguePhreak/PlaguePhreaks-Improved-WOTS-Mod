@@ -1,0 +1,165 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+// v0.26.1 flight core. The game flies planes by sliding them along their nose at a speed that never depends on pitch. This adds, on top of
+// the game's own movement and without replacing it:
+//   Energy:      a dive gains speed, a climb loses it (gravity along the nose). In a dive the game's pull back to the wanted speed is eased.
+//   Dive limit:  a plane cannot dive faster than a limit per type (fighters 125% of top speed, dive bombers 105% because of dive brakes,
+//                other bombers 115%).
+//   Stall:       below a minimum speed (35% of top speed for fighters, 45% for others) a plane cannot hold its climb. It lets the nose drop
+//                until it has flying speed again.
+//   Turn limit:  the turn rate is capped by speed. Above corner speed (heavy controls) and below it (nearly stalled) turns are slower.
+// Every number is below and can be changed, then Compile and Save Module.
+public static class ModFlight
+{
+	// Master switch for the whole flight core. Set to false to fly exactly like the original game.
+	public static bool Enabled = true;
+
+	// Gravity along the nose in game units per second squared (9.81 m/s2, 10 m per game unit). EnergyScale makes it stronger or weaker.
+	public const float Gravity = 0.981f;
+	public const float EnergyScale = 2f;
+
+	// Share of the game's pull back toward the wanted speed that is given back while diving (0 to 1).
+	public const float DiveRefund = 0.8f;
+
+	// Turn rate factor limits (share of maxTurnRate).
+	public const float CornerShare = 0.6f;
+	public const float MinTurnFactor = 0.5f;
+	public const float MinFastTurnFactor = 0.55f;
+
+	private static Dictionary<int, float> startSpeed = new Dictionary<int, float>();
+	private static Dictionary<int, float> lastStallLog = new Dictionary<int, float>();
+
+	private static bool Applies(UnitAir ua)
+	{
+		if (!Enabled || ua == null || ua.unitData == null || ua.isDestroyed || ua.shootDown || ua.isParked)
+		{
+			return false;
+		}
+		if (ua.unitAI == null)
+		{
+			return false;
+		}
+		Maneuvre m = ua.unitAI.currentManeuvre;
+		return m == Maneuvre.None || m == Maneuvre.Break_Left || m == Maneuvre.Break_Right;
+	}
+
+	// Call as the first line of UnitAir.UpdateMovementData.
+	public static void Begin(UnitAir ua)
+	{
+		if (!Enabled)
+		{
+			return;
+		}
+		startSpeed[((UnityEngine.Object)ua).GetInstanceID()] = ua.currentSpeed;
+	}
+
+	// Call as the last line of UnitAir.UpdateMovementData.
+	public static void End(UnitAir ua, float duration)
+	{
+		try
+		{
+			if (duration <= 0f || !Applies(ua))
+			{
+				return;
+			}
+			int id = ((UnityEngine.Object)ua).GetInstanceID();
+			float before;
+			if (!startSpeed.TryGetValue(id, out before))
+			{
+				return;
+			}
+			UnitData d = ua.unitData;
+			float maxSpeed = d.maxSpeed;
+			if (maxSpeed <= 0f)
+			{
+				return;
+			}
+			bool fighter = d.unitSubtype == UnitSubType.Fighter;
+
+			// Nose angle in degrees, positive = nose down.
+			float pitch = ((Component)ua).transform.eulerAngles.x;
+			if (pitch > 180f)
+			{
+				pitch -= 360f;
+			}
+			float sinPitch = Mathf.Sin(pitch * ((float)Math.PI / 180f));
+
+			float speed = ua.currentSpeed;
+
+			// Energy. In a dive give back part of what the game took off to pull the plane back to its wanted speed.
+			if (sinPitch > 0.1f && speed < before)
+			{
+				speed += (before - speed) * DiveRefund * Mathf.Clamp01(sinPitch * 2f);
+			}
+			speed += Gravity * EnergyScale * sinPitch * duration;
+
+			// Dive limit.
+			float limit = 1.15f;
+			if (fighter)
+			{
+				limit = 1.25f;
+			}
+			else if (d.unitSubtype == UnitSubType.Dive_Bomber)
+			{
+				limit = 1.05f;
+			}
+			float diveSpeed = maxSpeed * limit;
+			if (speed > diveSpeed)
+			{
+				speed = diveSpeed;
+			}
+
+			// Stall: keep a little above stall speed once recovered, so the nose does not flicker.
+			float stall = maxSpeed * (fighter ? 0.35f : 0.45f);
+			if (speed < stall * 1.1f && ((Component)ua).transform.position.y > 15f)
+			{
+				float y = ((Component)ua).transform.position.y;
+				if (ua.wantedHeight > y - 10f)
+				{
+					ua.wantedHeight = y - 10f;
+				}
+				float last;
+				if (!lastStallLog.TryGetValue(id, out last) || Time.time - last > 5f)
+				{
+					lastStallLog[id] = Time.time;
+					Debug.Log((object)("[FLIGHT] " + d.unitName + " id " + id + " stalling at speed " + speed.ToString("F1") + " (stall " + stall.ToString("F1") + "): nose dropping"));
+				}
+			}
+			if (speed < 0f)
+			{
+				speed = 0f;
+			}
+			ua.currentSpeed = speed;
+			ua.percentMaxSpeed = speed / maxSpeed * ua.currentSpeedPenalty;
+
+			// Turn limit by speed.
+			float corner = maxSpeed * CornerShare;
+			float factor = 1f;
+			if (speed > corner)
+			{
+				factor = Mathf.Clamp(corner / speed, MinFastTurnFactor, 1f);
+			}
+			else if (speed < corner)
+			{
+				float t = Mathf.Clamp01((speed - stall) / Mathf.Max(0.01f, corner - stall));
+				factor = Mathf.Lerp(MinTurnFactor, 1f, t);
+			}
+			float cap = d.maxTurnRate * factor;
+			if (ua.currentTurnRate > cap)
+			{
+				ua.currentTurnRate = cap;
+			}
+			else if (ua.currentTurnRate < -cap)
+			{
+				ua.currentTurnRate = -cap;
+			}
+		}
+		catch (Exception ex)
+		{
+			Enabled = false;
+			Debug.LogError((object)("[FLIGHT] flight core failed and was switched off: " + ex.Message));
+		}
+	}
+}
