@@ -46,7 +46,7 @@ return;
 
 ## Next versions (each one only after the previous passes a test)
 - 0.26.2 Idle flight mode and bank-based turning
-- 0.26.3 Pitch control for fighters (gun run that really aims) and the Mod Options switch
+- 0.26.3 Pitch control for fighters (gun run that really aims)
 - 0.26.4 Fighter manoeuvres (rolls, yo-yos, loops, split-S, weave)
 - 0.26.5 Bombers and torpedo planes on the new model
 - 0.26.6 Formation flying

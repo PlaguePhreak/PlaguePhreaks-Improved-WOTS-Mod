@@ -80,7 +80,7 @@ Rules for every stage: new behaviour writes `[FLIGHT]` lines, and is compared ag
 ## Risks
 - I cannot compile or run anything, so every stage needs your dnSpy build, a test battle and the log back.
 - `PerformManeuvre`, `CustomAirAttack` and aircraft data were tuned for the old movement, so each stage changes the feel. Hence small stages with a test after each.
-- v0.20.9 is the warning: small stages, one switch each.
+- v0.20.9 is the warning: small stages, a test after each.
 
 ## Questions for you
 1. Which of A to L do you accept, cut or want changed?
