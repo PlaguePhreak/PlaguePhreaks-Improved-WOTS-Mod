@@ -57,11 +57,12 @@ public static class ModFlight
 	public const float BankPerTurn = 5f;
 	public const float MaxBank = 80f;
 	// v0.26.4 acrobatics (degrees per second, seconds, units of 10 m)
-	public const float RollOverRate = 150f;
-	public const float PullRate = 70f;
-	public const float BarrelTime = 1.8f;
-	public const float PullOutHeight = 55f;
-	public const float AcroMinHeight = 70f;
+	// Slow and heavy like a real fighter at speed: a half roll takes about 2.5 seconds and a full split-S about 6 seconds.
+	public const float RollOverRate = 70f;
+	public const float PullRate = 30f;
+	public const float BarrelTime = 3.5f;
+	public const float PullOutHeight = 45f;
+	public const float AcroMinHeight = 100f;
 	public const float BulletTravelSpeed = 80f;
 
 	private class AcroState
@@ -71,6 +72,7 @@ public static class ModFlight
 		public float t;
 		public float x;       // nose angle, degrees, positive = down (past 90 the plane is going back the way it came)
 		public float yaw;
+		public float hold;    // seconds spent lined up on the target
 		public float z;       // roll, degrees (barrel roll: how far round)
 		public Unit target;
 	}
@@ -503,8 +505,7 @@ public static class ModFlight
 			}
 			AcroState a = NewAcro(ua, 1);
 			a.target = target;
-			a.z = Mathf.Clamp(a.z, -30f, 30f);
-			Debug.Log((object)("[FLIGHT] " + ua.unitData.unitName + " id " + ((UnityEngine.Object)ua).GetInstanceID() + " roll-over attack: rolling inverted at " + (((Component)ua).transform.position.y * 10f).ToString("F0") + " m"));
+						Debug.Log((object)("[FLIGHT] " + ua.unitData.unitName + " id " + ((UnityEngine.Object)ua).GetInstanceID() + " roll-over attack: rolling inverted at " + (((Component)ua).transform.position.y * 10f).ToString("F0") + " m"));
 			return true;
 		}
 		catch (Exception ex)
@@ -520,7 +521,7 @@ public static class ModFlight
 	{
 		try
 		{
-			if (!Applies(ua) || AcroActive(ua) || ((Component)ua).transform.position.y < 75f)
+			if (!Applies(ua) || AcroActive(ua) || ((Component)ua).transform.position.y < 110f)
 			{
 				return false;
 			}
@@ -621,8 +622,10 @@ public static class ModFlight
 				float goal = 180f;
 				if (a.kind == 1)
 				{
+					// Half roll, then pull through the bottom of a loop. Past 90 degrees the plane is upright again, diving on the
+					// target on the way back (heading is the reverse of where it started). Follow the target down to the end.
 					Unit t = a.target;
-					if (t == null || t.isDestroyed || a.t > 8f || y < PullOutHeight)
+					if (t == null || t.isDestroyed || y < PullOutHeight)
 					{
 						a.phase = 2;
 					}
@@ -632,12 +635,22 @@ public static class ModFlight
 						float dist = toNow.magnitude;
 						Vector3 to = t.transform.position + t.transform.forward * t.currentActualSpeed * (dist / BulletTravelSpeed) - tr.position;
 						float flat = new Vector2(to.x, to.z).magnitude;
-						goal = Mathf.Clamp(Mathf.Atan2(-to.y, Mathf.Max(flat, 1f)) * 57.29578f, 10f, 120f);
-						if (a.x < 85f)
+						float down = Mathf.Atan2(-to.y, Mathf.Max(flat, 1f)) * 57.29578f;
+						goal = 180f - Mathf.Clamp(down, 10f, 70f);
+						if (a.x > 90f)
 						{
-							a.yaw = Mathf.MoveTowardsAngle(a.yaw, Mathf.Atan2(to.x, to.z) * 57.29578f, 45f * dur);
+							a.yaw = Mathf.MoveTowardsAngle(a.yaw, Mathf.Atan2(to.x, to.z) * 57.29578f + 180f, 30f * dur);
 						}
-						if (Vector3.Dot(tr.forward, to) < 0f && a.x > 20f)
+						// finished: lined up for 4 seconds, passed the target, or too close
+						if (a.x >= goal - 2f)
+						{
+							a.hold += dur;
+							if (a.hold > 4f || dist < 12f)
+							{
+								a.phase = 2;
+							}
+						}
+						else if (a.t > 14f)
 						{
 							a.phase = 2;
 						}

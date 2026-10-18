@@ -9,9 +9,9 @@
    - **Trained:** notices after 0.8 s, 85% lead, boom and zoom (US) or turn fight (Japanese), zoom climb after a pass.
    - **Veteran:** instant reaction, the high yo-yo (Japanese), the Thach Weave (US pairs), a **defensive barrel roll** whenever it breaks away, and the **roll-over attack**.
    - **Elite:** all of the above, a higher chance of the roll-over attack, and the **split-S escape**.
-3. **Roll-over attack (your idea).** A Veteran or Elite fighter at least 200 m above its target, 400 to 1300 m away and with it roughly ahead, rolls inverted (about 1.2 s), then pulls the nose down onto the target (up to a vertical dive), fires when it is lined up, and pulls out upright heading back the way it came when it is close, the target is behind it or it gets down to 550 m. It starts only above 700 m.
-4. **Split-S escape.** An Elite pilot above 750 m with an enemy within 450 m on its tail rolls inverted and pulls straight through into a dive away, finishing level and upright on the opposite heading.
-5. **Barrel roll.** A 1.8 second full roll round the nose while the plane keeps its turn.
+3. **Roll-over attack (reworked 18 Oct after your first test).** Now only when the plane a Veteran or Elite fighter is chasing *suddenly* ends up well below it (it was roughly level or above three seconds ago and is now at least 150 m below, 300 to 1100 m away) and is off to the side or behind. The pilot half-rolls (about 2.5 s), pulls through the bottom of a loop so he comes out upright and diving on it from above, fires when lined up, then pulls out level, heading back the way he started. Needs 1000 m height. Never used on a target that has been below all along.
+4. **Split-S escape.** US Elite pilots only (the Zero's controls stiffen in a fast dive and Japanese pilots did not dive away from a fight), 40% of the time, above 1100 m with an enemy within 450 m on their tail. Rolls inverted and pulls through into a dive away, finishing level on the opposite heading. At most once every 40 seconds.
+5. **Barrel roll.** A 3.5 second full roll round the nose while the plane keeps its turn.
 6. **Acrobatics are done in code, not by the game.** The game's own flight code only knows pitch and a bank angle, so during these moves `ModFlight.Acro` turns the plane itself and hands it back upright. It writes `acro roll-over-attack`, `acro split-S` or `acro barrel-roll` on the flight log lines.
 
 ## Step 1 - replace ModFlight
@@ -58,7 +58,7 @@ else if (unitAI.currentManeuvre == Maneuvre.None || unitAI.currentManeuvre == Ma
 2. Watch for: a fighter rolling upside down and diving on a plane below it, a Zero rolling away when you get on its tail (split-S), planes doing a quick full roll when they break, and nothing flying into the sea.
 3. Then switch **Crew system on** and fly the same battle: you should see more simple attacks and slower reactions from Green and Trained pilots.
 4. Send me the output_log.txt. I will search for `pilot is`, `roll-over attack`, `split-S`, `acro`, kills, and any `failed and stopped` line.
-5. If a move looks wrong (too fast a roll, too steep, pulls out too low) tell me which and I will change the numbers at the top of `ModFlight` (`RollOverRate`, `PullRate`, `PullOutHeight`, `BarrelTime`).
+5. If a move looks wrong (too fast a roll, too steep, pulls out too low) tell me which and I will change the numbers at the top of `ModFlight` (`RollOverRate` 70, `PullRate` 30, `PullOutHeight`, `BarrelTime` 3.5; all slowed down in the 18 Oct update).
 
 ## Still to come
 - 0.26.5 Bombers and torpedo planes on the new model

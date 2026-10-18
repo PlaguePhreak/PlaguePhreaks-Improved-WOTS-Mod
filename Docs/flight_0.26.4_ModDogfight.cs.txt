@@ -42,6 +42,8 @@ public class ModDogfight
 		public float acroCooldown;
 		public float nextAcroCheck;
 		public float threatSince;
+		public float lastBelow;
+		public float nextBelowSample;
 	}
 
 	// distances and heights in battle code are metres x 0.1
@@ -245,19 +247,28 @@ public class ModDogfight
 			s.minDist = float.MaxValue;
 			return true;
 		}
-		// v0.26.4: roll-over attack. A Veteran or Elite pilot with a target well below him and ahead rolls inverted and dives straight down on it.
-		if (now >= s.nextAcroCheck)
+		// v0.26.4: roll-over attack. Only when the plane it is chasing suddenly ends up well below it and off to the side or behind (it dived, or
+		// this plane overshot and climbed): a Veteran or Elite pilot rolls over and dives on it from above. Never for a target that has been below all along.
+		float below = u.transform.position.y - target.transform.position.y;
+		if (now >= s.nextBelowSample)
 		{
-			s.nextAcroCheck = now + 1f;
+			s.nextBelowSample = now + 3f;
+			bool wasLevel = s.lastBelow < 100f * 0.1f;
+			s.lastBelow = below;
 			int rank = ModFlight.Rank(u);
-			float below = u.transform.position.y - target.transform.position.y;
-			if (rank >= 2 && now >= s.acroCooldown && below >= 200f * 0.1f && below <= 900f * 0.1f && dist >= 400f * 0.1f && dist <= 1300f * 0.1f && ata < 80f && Random.value < ((rank >= 3) ? 0.6f : 0.35f))
+			if (wasLevel && rank >= 2 && now >= s.acroCooldown && below >= 150f * 0.1f && below <= 900f * 0.1f && dist >= 300f * 0.1f && dist <= 1100f * 0.1f && u.transform.position.y >= 1000f * 0.1f)
 			{
-				if (ModFlight.StartRollAttack(u.unitAir, target))
+				Vector3 fl = u.transform.forward;
+				fl.y = 0f;
+				float side = Mathf.Abs(Utilities.GetSignedAngleToPosition(fl, u.transform.position, new Vector3(target.transform.position.x, u.transform.position.y, target.transform.position.z)));
+				if (side > 75f && Random.value < ((rank >= 3) ? 0.8f : 0.5f))
 				{
-					s.acroCooldown = now + 25f;
-					ModDogfight.SetPhase(u, s, 5, now, 9f, "rolling inverted and diving on " + ModDogfight.Name(target) + " from " + (below * 10f).ToString("F0") + " m above");
-					return true;
+					if (ModFlight.StartRollAttack(u.unitAir, target))
+					{
+						s.acroCooldown = now + 30f;
+						ModDogfight.SetPhase(u, s, 5, now, 12f, ModDogfight.Name(target) + " dropped " + (below * 10f).ToString("F0") + " m below, rolling over to dive on it from above");
+						return true;
+					}
 				}
 			}
 		}
@@ -268,7 +279,7 @@ public class ModDogfight
 	// Phase 5: roll-over attack or split-S. ModFlight.Acro flies the plane; here we only fire (roll-over attack) and decide what to do afterwards.
 	public static bool RollAttack(Unit u, Unit target, ModDogfight.State s, bool japanese, bool targetIsFighter, float dist, float now)
 	{
-		if (ModFlight.AcroActive(u.unitAir) && now < s.phaseUntil + 4f)
+		if (ModFlight.AcroActive(u.unitAir) && now < s.phaseUntil + 12f)
 		{
 			u.wantedTurnRate = 0f;
 			u.wantedSpeed = u.unitData.maxSpeed * 1.2f;
@@ -394,10 +405,11 @@ public class ModDogfight
 		s.turnSign = (a >= 0f) ? 1f : -1f;
 		string how;
 		int rank = ModFlight.Rank(u);
-		bool splitS = rank >= 3 && now >= s.acroCooldown && u.transform.position.y >= 750f * 0.1f && Vector3.Distance(u.transform.position, threat.transform.position) < 450f * 0.1f;
+		// Japanese fighters never dive away from a fight (the Zero's controls stiffen in a fast dive): split-S is a US escape, and not every time.
+		bool splitS = !japanese && rank >= 3 && Random.value < 0.4f && now >= s.acroCooldown && u.transform.position.y >= 1100f * 0.1f && Vector3.Distance(u.transform.position, threat.transform.position) < 450f * 0.1f;
 		if (splitS && ModFlight.StartSplitS(u.unitAir))
 		{
-			s.acroCooldown = now + 25f;
+			s.acroCooldown = now + 40f;
 			s.defendCooldown = now + 3f;
 			ModDogfight.SetPhase(u, s, 5, now, 6f, ModDogfight.Name(threat) + " on her tail at " + (Vector3.Distance(u.transform.position, threat.transform.position) * 10f).ToString("F0") + " m, split-S: rolling inverted and diving away");
 			return;
