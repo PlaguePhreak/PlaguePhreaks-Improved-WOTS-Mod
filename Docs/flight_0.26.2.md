@@ -37,34 +37,35 @@ private void ApplyFlightControls(float duration)
 2. **Compile**.
 
 ## Step 4 - ModDogfight.GunRun
+(Fixed 18 Oct: the first version of this method had `ref` and `(Object)(object)` casts copied from the decompiler, which dnSpy's compiler rejects.)
 1. Class **ModDogfight**, method **`GunRun`** > **Edit Method (C#)...**. Replace the whole method with:
 ```csharp
 public static void GunRun(UnitAIAir ai, Unit u, Unit target, float dist)
 {
-	Vector3 position = ((Component)u).transform.position;
+	Vector3 position = u.transform.position;
 	float num = dist / 80f;
-	Vector3 val = ((Component)target).transform.position + ((Component)target).transform.forward * target.currentActualSpeed * num;
+	Vector3 val = target.transform.position + target.transform.forward * target.currentActualSpeed * num;
 	Vector3 val2 = val - position;
 	Vector3 val3 = val2;
 	val3.y = 0f;
-	Vector3 forward = ((Component)u).transform.forward;
+	Vector3 forward = u.transform.forward;
 	forward.y = 0f;
 	float signedAngleToPosition = Utilities.GetSignedAngleToPosition(forward, position, new Vector3(val.x, position.y, val.z));
 	u.wantedTurnRate = Mathf.Clamp(signedAngleToPosition, 0f - u.unitData.maxTurnRate, u.unitData.maxTurnRate);
-	float num2 = Mathf.Atan2(0f - val2.y, Mathf.Max(((Vector3)(ref val3)).magnitude, 1f)) * 57.29578f;
-	float num3 = Vector3.Angle(((Component)u).transform.forward, val2);
+	float num2 = Mathf.Atan2(0f - val2.y, Mathf.Max(val3.magnitude, 1f)) * 57.29578f;
+	float num3 = Vector3.Angle(u.transform.forward, val2);
 	ModFlight.Aim(u.unitAir, num2);
 	u.wantedHeight = Mathf.Clamp(position.y - num2, 20f, 800f);
 	WeaponParticle weaponParticle = u.weaponParticle;
-	if (!((Object)(object)weaponParticle == (Object)null))
+	if (weaponParticle != null)
 	{
 		float num4 = ((ai.attackRange > 0f) ? ai.attackRange : 40f);
 		bool flag = dist < num4 && num3 < 5f;
-		if (flag && !((Behaviour)weaponParticle).enabled)
+		if (flag && !weaponParticle.enabled)
 		{
 			weaponParticle.FireAll(isOn: true);
 		}
-		else if (!flag && ((Behaviour)weaponParticle).enabled)
+		else if (!flag && weaponParticle.enabled)
 		{
 			StopGuns(u);
 		}
