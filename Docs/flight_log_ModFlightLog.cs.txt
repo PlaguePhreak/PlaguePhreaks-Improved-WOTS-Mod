@@ -10,8 +10,8 @@ public static class ModFlightLog
 	// Set to false to switch the logging off (Compile, Save Module).
 	public static bool Enabled = true;
 
-	// Seconds between lines for one aircraft.
-	public const float Interval = 1f;
+	// Seconds between lines for one aircraft (10 keeps the log small; use 1 for a close look at a dive or dogfight).
+	public const float Interval = 10f;
 
 	private static Dictionary<int, float> lastLogged = new Dictionary<int, float>();
 
