@@ -10,8 +10,8 @@ public static class ModFlightLog
 	// Set to false to switch the logging off (Compile, Save Module).
 	public static bool Enabled = true;
 
-	// Seconds between lines for one aircraft (10 keeps the log small; use 1 for a close look at a dive or dogfight).
-	public const float Interval = 10f;
+	// Seconds between lines for one aircraft (10 keeps the log small; 1 is for a close look at a dive or dogfight. REMINDER: set back to 10 or 20 when the 0.26 series is finished).
+	public const float Interval = 1f;
 
 	private static Dictionary<int, float> lastLogged = new Dictionary<int, float>();
 
@@ -58,7 +58,7 @@ public static class ModFlightLog
 				+ " roll " + roll.ToString("F1")
 				+ " turn " + ua.currentTurnRate.ToString("F1") + "/" + ua.wantedTurnRate.ToString("F1")
 				+ " penalty " + ua.currentSpeedPenalty.ToString("F2")
-				+ " " + maneuvre + " " + action + " " + attack
+				+ " " + maneuvre + " " + action + " " + attack + ModFlight.AimText(ua)
 				+ (ua.isDestroyed ? " DESTROYED" : "")));
 		}
 		catch (Exception ex)

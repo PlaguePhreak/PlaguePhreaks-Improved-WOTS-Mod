@@ -10,6 +10,8 @@ using UnityEngine;
 //   Stall:       below a minimum speed (35% of top speed for fighters, 45% for others) a plane cannot hold its climb. It lets the nose drop
 //                until it has flying speed again.
 //   Turn limit:  the turn rate is capped by speed. Above corner speed (heavy controls) and below it (nearly stalled) turns are slower.
+// v0.26.2 adds pitch control: while a fighter lines up a shot, the nose is pulled to the angle it needs at a real pull rate
+// (the game only allowed 10 degrees per second, so a fighter could never get its nose onto a target in time).
 // Always on: this is the game's flying now, not an option. Every number is below and can be changed, then Compile and Save Module.
 public static class ModFlight
 {
@@ -30,6 +32,17 @@ public static class ModFlight
 
 	private static Dictionary<int, float> startSpeed = new Dictionary<int, float>();
 	private static Dictionary<int, float> lastStallLog = new Dictionary<int, float>();
+	private static Dictionary<int, float> aimPitch = new Dictionary<int, float>();
+	private static Dictionary<int, float> aimUntil = new Dictionary<int, float>();
+	private static HashSet<int> stalled = new HashSet<int>();
+
+	// Pull rates in degrees per second.
+	public const float FighterPitchRate = 40f;
+	public const float OtherPitchRate = 20f;
+	public const float FighterEasyRate = 25f;
+	public const float OtherEasyRate = 12f;
+	public const float MaxAimDown = 60f;
+	public const float MaxAimUp = 50f;
 
 	private static bool Applies(UnitAir ua)
 	{
@@ -113,8 +126,13 @@ public static class ModFlight
 
 			// Stall: keep a little above stall speed once recovered, so the nose does not flicker.
 			float stall = maxSpeed * (fighter ? 0.35f : 0.45f);
+			if (speed >= stall * 1.3f)
+			{
+				stalled.Remove(id);
+			}
 			if (speed < stall * 1.1f && ((Component)ua).transform.position.y > 15f)
 			{
+				stalled.Add(id);
 				float y = ((Component)ua).transform.position.y;
 				if (ua.wantedHeight > y - 10f)
 				{
@@ -160,6 +178,75 @@ public static class ModFlight
 		{
 			failed = true;
 			Debug.LogError((object)("[FLIGHT] flight core failed and stopped: " + ex.Message));
+		}
+	}
+
+	// Called every tick by ModDogfight.GunRun: pitchDown is the nose angle that points at the aim point, in degrees, positive = nose down.
+	public static void Aim(UnitAir ua, float pitchDown)
+	{
+		if (failed || ua == null)
+		{
+			return;
+		}
+		int id = ((UnityEngine.Object)ua).GetInstanceID();
+		aimPitch[id] = pitchDown;
+		aimUntil[id] = Time.time + 0.5f;
+	}
+
+	// Text for the flight log: the pitch the pilot is aiming for, or nothing.
+	public static string AimText(UnitAir ua)
+	{
+		int id = ((UnityEngine.Object)ua).GetInstanceID();
+		float until;
+		float p;
+		if (aimUntil.TryGetValue(id, out until) && Time.time <= until && aimPitch.TryGetValue(id, out p))
+		{
+			return " aim " + p.ToString("F1");
+		}
+		return "";
+	}
+
+	// Replaces the pitch line of UnitAir.ApplyFlightControls. current = the plane's pitch now, heightGap = the game's own wish (positive = nose down).
+	public static float Pitch(UnitAir ua, float current, float heightGap, float duration)
+	{
+		try
+		{
+			if (failed || ua.unitData == null)
+			{
+				return Mathf.SmoothDampAngle(current, heightGap, ref ua.pitchVelocity, 1f, 10f, duration);
+			}
+			int id = ((UnityEngine.Object)ua).GetInstanceID();
+			bool fighter = ua.unitData.unitSubtype == UnitSubType.Fighter;
+			float until;
+			float wanted;
+			float y = ((Component)ua).transform.position.y;
+			if (aimUntil.TryGetValue(id, out until) && Time.time <= until && aimPitch.TryGetValue(id, out wanted) && Applies(ua))
+			{
+				// Do not fly into the sea: the lower the plane, the less it may dive.
+				float maxDown = MaxAimDown;
+				if (y < 50f)
+				{
+					maxDown = Mathf.Clamp((y - 10f) * 1.5f, 0f, MaxAimDown);
+				}
+				float target = Mathf.Clamp(wanted, -MaxAimUp, maxDown);
+				if (y < 12f)
+				{
+					target = Mathf.Min(target, -5f);
+				}
+				if (stalled.Contains(id))
+				{
+					target = Mathf.Max(target, 12f);
+				}
+				ua.pitchVelocity = 0f;
+				return Mathf.MoveTowards(current, target, (fighter ? FighterPitchRate : OtherPitchRate) * duration);
+			}
+			return Mathf.SmoothDampAngle(current, heightGap, ref ua.pitchVelocity, 1f, fighter ? FighterEasyRate : OtherEasyRate, duration);
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[FLIGHT] pitch control failed and stopped: " + ex.Message));
+			return Mathf.SmoothDampAngle(current, heightGap, ref ua.pitchVelocity, 1f, 10f, duration);
 		}
 	}
 }
