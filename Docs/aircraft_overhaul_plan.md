@@ -82,7 +82,37 @@ Rules for every stage: new behaviour writes `[FLIGHT]` lines, and is compared ag
 - **Stage 5, Formation flying (G).**
 - **Stage 4b (0.26.4), Fighter manoeuvres by skill (E, F).** The ladder above, one rung per test.
 - **Stage 6, Damage, data and balance (D, I, H as accepted).** Balance pass over all aircraft.
+- **0.26.8 Remove speed limit and break-up (see its section).**
 - **Stage 7, Cleanup.** Remove dead old-movement code once everything has had a long clean test period.
+
+
+## 0.26.8 Remove speed limit: overspeed break-up and shed wings (requested by Aaron, 18 Oct; research done, nothing built)
+**What Aaron wants:** planes may dive past the 125 to 130% speed they can handle. Past that point the wings get a chance to break off, and the plane can snap apart. Also: could the models be changed live (a wing shot off falls away, a wing snaps off in a fast dive)?
+
+**Why it is number 8:** it needs the 0.26.1 energy model (tested) and the damage work in 0.26.7 (damage that changes how a plane flies), and the mesh work below needs a short test first. It replaces the hard 125% dive cap (and the 105% and 115% caps) from 0.26.1.
+
+**Overspeed design**
+- Each aircraft gets a safe speed (a share of top speed: fighters 125%, dive bombers 105% with dive brakes, other bombers 115%, as today) and a structural limit (about 130 to 150%, set by toughness, see `DamageableAir.ModAirToughness`).
+- Between safe and structural limit nothing breaks, the plane just buffets (log line, small shake).
+- Above the structural limit a break chance per second rises with how far over it is and with pull-up load (turn rate x speed). Wings go first, then the tail or the whole airframe.
+- When a wing goes the plane rolls hard toward the missing wing, turn rate and speed collapse, and it enters the existing shot-down fall (`UnitAir.HitAirUnit`, `Maneuvre.Shot_Down`). Log tag `[BREAKUP]`, message "wings ripped off".
+- Mostly a change in the 0.26.1 `ModFlight.End` plus a small break-up routine. The first version has no visible mesh change, only the roll, smoke and fall. The visible wing comes from the mutation work below.
+
+**Can the models be mutated? (checked in the code and in your aircraft files)**
+- Every aircraft is one solid mesh for the whole airframe (for example `D3A1_Val`, `SBD-5`), plus separate guns, hub, blades and blur, and one collider. The wings are not separate objects, so there is nothing to simply detach.
+- There is no damage model for parts. `DamageableAir` keeps one damage total against a toughness number, with smoke at one third and two thirds, then shot down. No wing, tail or engine zones exist yet.
+- The game already shows destruction by switching things off or on and by gravity and fall (`HitAirUnit`), not by changing the mesh.
+- **What is possible:** cutting the mesh while the game runs. At the moment a wing breaks, the game splits the airframe mesh along a plane through the wing root into a wing piece and a fuselage piece. The wing piece becomes its own falling object (rigid body, tumbling, smoke), and the fuselage keeps flying with the wing triangles removed. This works for every aircraft with no new 3D work. The cut edge is open (no cap), which will look rough up close.
+- **What we do not know yet:** whether the game's meshes can be read at run time (Unity needs "read/write" on them, which depends on how the models were built). A short test finds out: the first step of 0.26.8 is a probe that only logs, for every aircraft model, whether the mesh is readable, its size and its wing span. If it is not readable, the fallback is a fake break: hide the whole wing area with a shader trick or swap in a simple stand-in wing piece that falls, while the real mesh stays.
+- **Per-part hits:** to shoot a wing off, hits need a zone. `DamageableAir.ApplySmallCalibreDamageToAir` is given the hit point, so a hit can be mapped to the left wing, right wing, tail or fuselage by its position on the plane, with a damage total per zone. A wing zone past its limit makes the wing fail. Same cut routine as the overspeed break.
+- **Effect on flying:** missing left wing means roll left, big turn rate and speed loss, plane spins down.
+
+**0.26.8 steps**
+1. Probe (logging only): mesh readability, bounds and wing span per aircraft. One class and one added line.
+2. Overspeed wear and break chance with roll, smoke and fall, no mesh change.
+3. Per-zone damage (wings, tail, fuselage) from hit points.
+4. Real wing cutting and falling wing pieces, if step 1 says the meshes are readable.
+5. Tune per aircraft (a wing coming off a Zero in a dive should happen sooner than on a Dauntless).
 
 ## Risks
 - I cannot compile or run anything, so every stage needs your dnSpy build, a test battle and the log back.
