@@ -44,7 +44,9 @@ public static class ModFlightLog
 			}
 			string side = (ua.faction == Faction.Player) ? "ours" : "enemy";
 			string maneuvre = (ua.unitAI != null) ? ua.unitAI.currentManeuvre.ToString() : "?";
-			string attack = (ua.unitAIAir != null) ? ua.unitAIAir.aiAttack.ToString() : "?";
+			// aiAttack stays at its first value (Level_Bomb) until an attack is given, so only show it while really attacking.
+			string action = (ua.unitAI != null) ? ua.unitAI.currentAIAction.ToString() : "?";
+			string attack = (ua.unitAIAir != null && ua.unitAI.currentAIAction == AIAction.Attack_Unit) ? ua.unitAIAir.aiAttack.ToString() : "Idle";
 			Debug.Log((object)("[FLIGHT] " + ua.unitData.unitName + " id " + id + " (" + side + ", " + now.ToString("F0") + " s)"
 				+ " speed " + ua.currentActualSpeed.ToString("F1") + "/" + ua.wantedSpeed.ToString("F1") + " (max " + ua.unitData.maxSpeed.ToString("F1") + ")"
 				+ " height " + (t.position.y * 10f).ToString("F0") + "/" + (ua.wantedHeight * 10f).ToString("F0") + " m"
@@ -52,7 +54,7 @@ public static class ModFlightLog
 				+ " roll " + roll.ToString("F1")
 				+ " turn " + ua.currentTurnRate.ToString("F1") + "/" + ua.wantedTurnRate.ToString("F1")
 				+ " penalty " + ua.currentSpeedPenalty.ToString("F2")
-				+ " " + maneuvre + " " + attack
+				+ " " + maneuvre + " " + action + " " + attack
 				+ (ua.isDestroyed ? " DESTROYED" : "")));
 		}
 		catch (Exception ex)

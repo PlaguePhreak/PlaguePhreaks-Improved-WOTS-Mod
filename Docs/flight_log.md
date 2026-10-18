@@ -2,7 +2,7 @@
 
 **Status: written, not compiled, not tested.** Back up the DLL first.
 
-**What it does:** nothing you can see in the game. About once a second per aircraft it writes one `[FLIGHT]` line to `output_log.txt`: speed (actual / wanted, and the plane's max), height in metres (actual / wanted), nose angle (pitch), bank (roll), turn rate (actual / wanted), the speed penalty from turning, the current manoeuvre and attack type. One bad line switches the logging off by itself instead of breaking the battle.
+**What it does:** nothing you can see in the game. About once a second per aircraft it writes one `[FLIGHT]` line to `output_log.txt`: speed (actual / wanted, and the plane's max), height in metres (actual / wanted), nose angle (pitch), bank (roll), turn rate (actual / wanted), the speed penalty from turning, the current manoeuvre, AI action and attack type (shows "Idle" when the plane is not attacking). One bad line switches the logging off by itself instead of breaking the battle.
 
 **Why:** the new flight model (Stage 1 onwards) needs real numbers from today's planes to be tuned against, and later to prove the new movement does what it should.
 
