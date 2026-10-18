@@ -260,12 +260,13 @@ public static class ModOptions
 		Button b = go.GetComponent<Button>();
 		b.onClick = new Button.ButtonClickedEvent();
 		b.onClick.AddListener(action);
-		Text t = go.GetComponentInChildren<Text>(true);
-		if (t != null)
+		// The button can hold more than one Text (a shadow or duplicate label), so set them all.
+		Text[] texts = go.GetComponentsInChildren<Text>(true);
+		for (int i = 0; i < texts.Length; i++)
 		{
-			t.text = label.ToUpper();
+			texts[i].text = label.ToUpper();
 		}
-		else
+		if (texts.Length == 0)
 		{
 			Debug.LogError("[MODOPT] no Text found on the button to copy, the label could not be set");
 		}
