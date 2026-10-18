@@ -17,6 +17,9 @@
 ## Update 18 Oct (second round)
 Your second log (no errors) showed a bug: after a **split-S** the plane never gave control back. It finished the move and then flew dead straight and level for hundreds of seconds (about 500 s per plane in the log), which is also why the Zeros earlier did nothing. Fixed in `ModFlight` (the split-S now goes on to its pull-out and finishes, and any acrobatic move that runs longer than 30 seconds is cut off and the plane handed back level). Re-paste `ModFlight` only.
 
+## Update 18 Oct (third round: Wildcats outnumbered)
+Third log (Crew on, Wildcats against A6M2 Zeros and A8K1s, no errors from our code). The Wildcats were not stuck: Japanese fighters were aiming on 94% of their attack lines, the Wildcats only 34%, because the Wildcats were outnumbered about 2.5 to 1 and kept breaking away. There were 750 "on her tail" reactions (about 400 from A6M2s, 235 from A8K1s) and 623 "clear, climbing back to attack" restarts, against only 95 dives. A defence was triggered by any enemy within 600 m for even half a second, then a new one started 3 seconds after the last. Now a plane only counts as a threat inside **400 m** and a pilot does not react again for **8 seconds** after a defence or acrobatic move. Re-paste the `ModDogfight` class (`Docs/flight_0.26.4_ModDogfight.cs.txt`). The two `IndexOutOfRangeException` lines in the log come from `WeaponAAA.InitialiseAAA` (an anti-aircraft gun set up on some unit), not from the flight code; I will look at them separately.
+
 ## Step 1 - replace ModFlight
 1. Class **ModFlight** > **Edit Class (C#)...**, select all, paste the new `Docs/flight_model_ModFlight.cs.txt`. **Compile**.
 
