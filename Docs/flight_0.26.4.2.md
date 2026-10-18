@@ -26,3 +26,8 @@ Log of a battle over mountains: 7 Wildcats and 1 Zero lost; only 3 had a "SHOT D
 - ModFlight: `GroundAt/GroundAhead` read the land height (`TerrainTiles.GetTerrainHeightAtWorldPosition`) under the plane and 6 km ahead... (up to 40 to 60 units = 400 to 600 m ahead). Roll-over attack needs 600 m of air under the plane, split-S 800 m. During any acrobatic move, under 250 m of air: the move is abandoned, the nose is pulled up 12 degrees, `[FLIGHT] ... acrobatic move abandoned` is logged.
 - ModDogfight: over land, under 200 m of air under or ahead of a fighter in any manoeuvre: climb at full speed until clear.
 - Rarer: the wait between special moves is now 40 to 80 s (was 25 to 50); low yo-yo and wingover weights lowered (low yo-yo happened 156 times in 15 minutes, the most common).
+
+## 0.26.4.2.2 (ceiling ratchet, status line)
+Log with 3 fights (Docs: output_log 5): in the last fight (Corsairs vs Zeros, 650 s) the planes crept higher and higher until 75% were above 7500 m, at the 8000 m limit (average height 5600 m in the first 4 minutes, 7660 m after). Every pass sets up "500 m above the target", and the target itself keeps climbing, so each loop is a little higher. At the ceiling there is no room to dive or zoom and that fight produced no kills at all in 650 s.
+- ModDogfight: `MaxHeight` (the highest wanted height for fighters in a fight) is now 6500 m instead of 8000 m.
+- New `[STATUS]` log line every 30 s: how many aircraft on each side are Attack_Unit, Follow_Unit, Follow_Nav_Points etc. This will show why a side "does not engage".

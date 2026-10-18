@@ -77,7 +77,7 @@ public class ModDogfight
 	public const float YoYoHeight = 150f * 0.1f;
 	public const float SplitSDrop = 400f * 0.1f;
 	public const float MinHeight = 200f * 0.1f;
-	public const float MaxHeight = 8000f * 0.1f;
+	public const float MaxHeight = 6500f * 0.1f;
 	public const float WingmanRange = 1500f * 0.1f;
 	// dive speed limits (share of level top speed) and the Zero's heavy controls at high speed
 	public const float USDiveSpeed = 1.2f;
@@ -106,6 +106,7 @@ public class ModDogfight
 	public const float AimDive = 45f;
 
 	public static float nextLossScan;
+	public static float nextStatus;
 	public static Dictionary<int, ModDogfight.State> states = new Dictionary<int, ModDogfight.State>();
 
 	public static ModDogfight.State GetState(Unit u)
@@ -161,6 +162,7 @@ public class ModDogfight
 			s.label = u.unitData.unitName + " id " + u.GetInstanceID() + " (" + (u.faction == Faction.Player ? "ours" : "enemy") + ")";
 			s.lastY = u.transform.position.y;
 			ModDogfight.ScanLosses(now);
+			ModDogfight.Status(now);
 			// Wingman cover: a Trained or better pilot goes after the enemy sitting on a friend's tail, even if he is being chased himself.
 			if (now >= s.nextSupportCheck)
 			{
@@ -683,6 +685,36 @@ public class ModDogfight
 			ModDogfight.SetPhase(u, s, 0, now, 0f, "out of the move, back on " + ModDogfight.Name(target));
 		}
 		return true;
+	}
+
+	// 0.26.4.2.2: every 30 s, one line counting the aircraft on each side by what the AI is doing (to see why a side does not engage)
+	public static void Status(float now)
+	{
+		if (now < ModDogfight.nextStatus || EngagementManager.instance == null || EngagementManager.instance.allAirUnits == null)
+		{
+			return;
+		}
+		ModDogfight.nextStatus = now + 30f;
+		Dictionary<string, int> counts = new Dictionary<string, int>();
+		List<Unit> air = EngagementManager.instance.allAirUnits;
+		for (int i = 0; i < air.Count; i++)
+		{
+			Unit a = air[i];
+			if (a == null || a.isDestroyed || a.isParked || a.unitAI == null)
+			{
+				continue;
+			}
+			string key = (a.faction == Faction.Player ? "ours " : "enemy ") + (ModDogfight.IsFighter(a) ? "fighters " : "others ") + a.unitAI.currentAIAction;
+			int n;
+			counts.TryGetValue(key, out n);
+			counts[key] = n + 1;
+		}
+		string line = "";
+		foreach (KeyValuePair<string, int> kv in counts)
+		{
+			line += kv.Value + " " + kv.Key + "; ";
+		}
+		UnityEngine.Debug.Log("[STATUS] " + now.ToString("F0") + " s: " + line);
 	}
 
 	// 0.26.4.2: once every 2 s, report every fighter that is no longer there: destroyed, or removed from the battle (left the area).
