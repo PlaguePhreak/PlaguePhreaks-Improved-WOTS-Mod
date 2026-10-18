@@ -69,6 +69,7 @@ public class ModDogfight
 		public bool crowded;
 		public float nextCrowdCheck;
 		public float homeY;
+		public float coverCooldown;  // no new wingman cover before this time
 	}
 
 	// distances and heights in battle code are metres x 0.1
@@ -97,6 +98,9 @@ public class ModDogfight
 	// goes on before it looks again
 	public const float RepickSeconds = 15f;
 	public const float TargetHoldSeconds = 300f;
+	// wingman cover: stays on the enemy for this long, then may not help a wingman again for CoverRest seconds
+	public const float CoverSeconds = 30f;
+	public const float CoverRest = 60f;
 	public const float CombatBand = 1000f * 0.1f;
 	public const float TurnFightRepick = 25f;
 	// v0.20.7: give up a run that never got the target in front after this long (seconds),
@@ -177,26 +181,27 @@ public class ModDogfight
 			if (now >= s.nextSupportCheck)
 			{
 				s.nextSupportCheck = now + 1f;
-				if (s.phase != 5 && ModFlight.Rank(u) >= 1)
+				if (s.phase != 5 && now >= s.coverCooldown && ModFlight.Rank(u) >= 1)
 				{
 					Unit attacker = ModDogfight.FindAttackerOfFriend(u);
 					if (attacker != null)
 					{
 						s.supportTarget = attacker;
-						s.supportUntil = now + 8f;
+						s.supportUntil = now + ModDogfight.CoverSeconds;
+						s.coverCooldown = now + ModDogfight.CoverSeconds + ModDogfight.CoverRest;
 						if (s.phase != 4 && attacker != target)
 						{
 							ai.focusedUnit = attacker;
 							target = attacker;
 							s.lastTarget = attacker;
-							ModDogfight.Hold(s, attacker, now, 8f);
+							ModDogfight.Hold(s, attacker, now, ModDogfight.CoverSeconds);
 							ModDogfight.SetPhase(u, s, 0, now, 0f, "covering a wingman: going after " + ModDogfight.Name(attacker) + " on his tail");
 						}
 					}
 				}
 			}
 			// 0.26.4.2.3: one main target, kept for 5 minutes, whatever the game's squad logic picks in between. It only changes when the target is
-			// destroyed, when more than 4 of our aircraft are on it, or when the 5 minutes are up. Wingman cover (8 s) is the only short detour.
+			// destroyed, when more than 4 of our aircraft are on it, or when the 5 minutes are up. Wingman cover (30 s, then 60 s before the next one) is the only short detour.
 			bool coverHold = s.holdTarget != null && now < s.holdUntil && !s.holdTarget.isDestroyed && s.holdTarget.unitAir != null && !s.holdTarget.unitAir.shootDown;
 			if (coverHold)
 			{
@@ -542,7 +547,7 @@ public class ModDogfight
 				// out of the break: straight on to the enemy that was on the friend's tail
 				u.unitAI.focusedUnit = sup;
 				s.lastTarget = sup;
-				ModDogfight.Hold(s, sup, now, 8f);
+				ModDogfight.Hold(s, sup, now, Mathf.Max(0f, s.supportUntil - now));
 				ModDogfight.SetPhase(u, s, 0, now, 0f, "out of the break, going after " + ModDogfight.Name(sup) + " to cover a wingman");
 			}
 			else if (japanese)
@@ -599,7 +604,10 @@ public class ModDogfight
 				wing.unitAI.focusedUnit = threat;
 				ModDogfight.State ws = ModDogfight.GetState(wing);
 				ws.lastTarget = threat;
-				ModDogfight.Hold(ws, threat, now, 8f);
+				ModDogfight.Hold(ws, threat, now, ModDogfight.CoverSeconds);
+				ws.supportTarget = threat;
+				ws.supportUntil = now + ModDogfight.CoverSeconds;
+				ws.coverCooldown = now + ModDogfight.CoverSeconds + ModDogfight.CoverRest;
 				ModDogfight.UseSpecial(s, now);
 				ModDogfight.SetPhase(wing, ws, 0, now, 0f, null);
 				how = "Thach Weave, turning towards " + wing.unitData.unitName + " who turns in on the attacker";
