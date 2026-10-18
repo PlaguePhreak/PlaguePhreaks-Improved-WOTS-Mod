@@ -83,6 +83,7 @@ Rules for every stage: new behaviour writes `[FLIGHT]` lines, and is compared ag
 - **Stage 4b (0.26.4), Fighter manoeuvres by skill (E, F).** The ladder above, one rung per test.
 - **Stage 6, Damage, data and balance (D, I, H as accepted).** Balance pass over all aircraft.
 - **0.26.8 Remove speed limit and break-up (see its section).**
+- **0.26.9 Air auto resolve (see its section).**
 - **Stage 7, Cleanup.** Remove dead old-movement code once everything has had a long clean test period.
 
 
@@ -124,3 +125,21 @@ Rules for every stage: new behaviour writes `[FLIGHT]` lines, and is compared ag
 2. Should the stage order stay (fighters at Stage 3), or should Idle (A) and bank (Stage 1) wait until fighters work?
 3. Anything missing you want in the overhaul (for example scouts, floatplanes or kamikazes getting their own handling)?
 
+## 0.26.9 Air auto resolve (requested by Aaron, 18 Oct; research only, to be discussed when we get there)
+
+**What the game does today** (`CampaignManager` around line 1297, `EngagementPanel.AutoResolve`):
+- The Auto resolve button only appears when one side is a Scout group and the other is a Fighter group (checked on the first aircraft of each group). Nothing else can be auto resolved.
+- The result is a fixed rule, not a fight: if the fighter group has more than 3 more aircraft than the scout group, the scouts are destroyed; otherwise nobody is hurt and both sides just get the post-engagement cooldown. There are no odds, no losses for the fighters, and no use of aircraft type, pilot skill or ammo.
+
+**What Aaron wants:** auto resolve for every kind of air meeting (fighter vs fighter, fighters vs bombers, bombers vs scouts and so on), with a new window titled "Auto resolve" that lists the aircraft on both sides and shows a % chance of victory.
+
+**Rough design (to be agreed later):**
+- Open the button for any air vs air meeting, not just scout vs fighter.
+- Score each aircraft from its data file: speed, gun damage and rate of fire, toughness, armour, and for bombers the defensive guns. Pilot skill counts when crews are on, the same as in the real fight. Fighters score on attack, bombers and scouts mostly on toughness and defence.
+- Chance of victory comes from comparing the two side totals, with a spread so a weaker side can still win sometimes. The window shows each side's aircraft by name and count, plus the % for the player.
+- On the player pressing Resolve, roll the result, then remove destroyed aircraft from each group (a proportion, not all or nothing), keep survivors, apply the post-engagement cooldown, and show a short result line (for example "lost 3 Wildcats, shot down 5 Vals").
+- The player can still choose to fight it out by hand; the window just offers the quick option with honest odds.
+
+**Open questions:** should odds be shown exactly or as a band (Likely, Even, Unlikely)? Should bombers carrying a strike lose their attack if beaten? Should it also work for the AI side meeting AI side?
+
+**Needs:** a new UI panel built in the game's UI system (the hardest part, we will look at how `EngagementPanel` is wired to its prefab first), plus a reworked `EngagementPanel.AutoResolve` and the check in `CampaignManager`.

@@ -86,4 +86,5 @@ public static void GunRun(UnitAIAir ai, Unit u, Unit target, float dist)
 - 0.26.6 Formation flying
 - 0.26.7 Damage affects flight, altitude performance, per-aircraft flight file, flight readout, avoidance
 - 0.26.8 Remove speed limit: overspeed break-up, wings snap off, falling wing pieces
+- 0.26.9 Air auto resolve: new window with odds for any air vs air meeting
 - At the end: set the log `Interval` back to 10 or 20.
