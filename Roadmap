@@ -253,6 +253,7 @@ Numbering: a major change gets a whole number (v0.25 = new map locations), and t
   - **Stages (each one dnSpy edit, each behind a `config.txt` switch, each writes `[FLIGHT]` log lines):** 0 flight logging only; 1 bank and speed in turns; 2 energy (pitch changes speed); 3 pitch control for fighters so the gun run works; 4 bombers and torpedo planes on the new model; 5 formation flying; 6 per-aircraft data and balance pass.
   - The air AI already built (v0.17 air strike AI, v0.20 series) stays and is re-tuned stage by stage. Carrier launch and landing in battle is a separate later step.
   - **Decisions (Aaron):** log first so the changes can be checked, then have the AI use the new movement. The on/off switch ties into the Mod Options pause menu rework (v0.27). Fighters first.
+  - **Full draft plan (draft 2, aircraft_overhaul_plan.md) is waiting for Aaron to go over it: additions A to L (idle flight mode, stall, dive limit, damage effects, pilot skill, formation flying and more) are marked accept or cut. No flight code until it is agreed.**
   - **Stage 0 written, untested (flight_log.md):** `ModFlightLog` class plus one line in `UnitAir.UpdateMovementData`, writes `[FLIGHT]` lines to `output_log.txt`.
 - **Later (rules popup fix)** The "Ship Orders" rules page (modrules1.txt) says light carriers take 30 days, but the game code gives them 42 days like fleet carriers. Change the text to 42 (or the build time to 30). Left as is for now.
 
