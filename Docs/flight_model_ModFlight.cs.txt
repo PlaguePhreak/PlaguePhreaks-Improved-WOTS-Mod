@@ -508,12 +508,57 @@ public static class ModFlight
 		return angle;
 	}
 
+	// 0.26.4.2.1: ground clearance. Battles can be fought over mountains; acrobatics must not dive into them.
+	// Height of the land under a point (0 over sea or when terrain is off), in game units (x 0.1 = metres).
+	public static float GroundAt(Vector3 p)
+	{
+		try
+		{
+			if (TerrainTiles.instance == null || TerrainTiles.instance.disableTerrain)
+			{
+				return 0f;
+			}
+			float g = TerrainTiles.instance.GetTerrainHeightAtWorldPosition(p);
+			return (g > 0f) ? g : 0f;
+		}
+		catch (Exception)
+		{
+			return 0f;
+		}
+	}
+
+	// Highest ground under the plane and along its heading, up to 'ahead' units out
+	public static float GroundAhead(Vector3 pos, Vector3 fwd, float ahead)
+	{
+		fwd.y = 0f;
+		if (fwd.sqrMagnitude < 0.01f)
+		{
+			fwd = Vector3.forward;
+		}
+		fwd.Normalize();
+		float m = GroundAt(pos);
+		for (int i = 1; i <= 4; i++)
+		{
+			float h = GroundAt(pos + fwd * (ahead * i / 4f));
+			if (h > m)
+			{
+				m = h;
+			}
+		}
+		return m;
+	}
+
 	// Roll over and dive down on a plane below. False if the plane cannot do it now (already in a manoeuvre, too low).
 	public static bool StartRollAttack(UnitAir ua, Unit target)
 	{
 		try
 		{
 			if (!Applies(ua) || target == null || AcroActive(ua) || ((Component)ua).transform.position.y < AcroMinHeight)
+			{
+				return false;
+			}
+			// 0.26.4.2.1: needs at least 600 m of air under it (over mountains too)
+			if (((Component)ua).transform.position.y - GroundAhead(((Component)ua).transform.position, ((Component)ua).transform.forward, 60f) < 60f)
 			{
 				return false;
 			}
@@ -536,6 +581,11 @@ public static class ModFlight
 		try
 		{
 			if (!Applies(ua) || AcroActive(ua) || ((Component)ua).transform.position.y < 110f)
+			{
+				return false;
+			}
+			// 0.26.4.2.1: a split-S loses about 700 m, so it needs that much air under it
+			if (((Component)ua).transform.position.y - GroundAhead(((Component)ua).transform.position, ((Component)ua).transform.forward, 60f) < 80f)
 			{
 				return false;
 			}
@@ -619,6 +669,18 @@ public static class ModFlight
 				return true;
 			}
 
+			// 0.26.4.2.1: terrain below or ahead: give up the move and pull up (4 of 7 Wildcat losses in a mountain battle were in a roll-over or split-S)
+			float clear = y - GroundAhead(tr.position, tr.forward, 40f);
+			if (clear < 25f && a.t > 0.3f)
+			{
+				Debug.Log((object)("[FLIGHT] " + ua.unitData.unitName + " id " + id + " acrobatic move abandoned: only " + (clear * 10f).ToString("F0") + " m above the ground, pulling up"));
+				tr.rotation = Quaternion.Euler(-12f, tr.eulerAngles.y, 0f);
+				AcroPitch = -12f;
+				AcroRoll = 0f;
+				ua.wantedHeight = y + 60f;
+				acro.Remove(id);
+				return true;
+			}
 			if (a.t > 30f)
 			{
 				// Safety: no acrobatic move lasts this long. Give the plane back level.

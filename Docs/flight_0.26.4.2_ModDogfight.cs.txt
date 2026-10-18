@@ -147,6 +147,16 @@ public class ModDogfight
 			}
 			ModDogfight.State s = ModDogfight.GetState(u);
 			float now = Time.time;
+			// 0.26.4.2.1: mountains. Less than 200 m of air under the plane or ahead of it (50 units out): climb, whatever the manoeuvre.
+			float groundAhead = ModFlight.GroundAhead(u.transform.position, u.transform.forward, 50f);
+			if (groundAhead > 0f && !ModFlight.AcroActive(u.unitAir) && u.transform.position.y - groundAhead < 20f)
+			{
+				ModDogfight.NormalPitch(u);
+				ModDogfight.StopGuns(u);
+				u.wantedHeight = Mathf.Min(u.transform.position.y + 60f, ModDogfight.MaxHeight);
+				u.wantedSpeed = u.unitData.maxSpeed;
+				return true;
+			}
 			s.self = u;
 			s.label = u.unitData.unitName + " id " + u.GetInstanceID() + " (" + (u.faction == Faction.Player ? "ours" : "enemy") + ")";
 			s.lastY = u.transform.position.y;
@@ -618,9 +628,9 @@ public class ModDogfight
 		float speedShare = u.currentSpeed / Mathf.Max(u.unitData.maxSpeed, 0.1f);
 		float tAway = Vector3.Dot(target.transform.forward, to.normalized);
 		// low yo-yo: target is flying away from me, far ahead, and I am slow: dip below its turn plane to gain speed, then close from behind
-		float wLow = (rank >= 2 && ata < 50f && dist > 500f * 0.1f && dist < 1500f * 0.1f && tAway > 0.5f && speedShare < 0.85f) ? 0.5f : 0f;
+		float wLow = (rank >= 2 && ata < 50f && dist > 500f * 0.1f && dist < 1500f * 0.1f && tAway > 0.5f && speedShare < 0.85f) ? 0.25f : 0f;
 		// wingover: slow, and the target is well off my nose: climbing turn to bring the nose round
-		float wWing = (ata > 100f && dist < 1500f * 0.1f && speedShare < 0.75f) ? 0.4f : 0f;
+		float wWing = (ata > 100f && dist < 1500f * 0.1f && speedShare < 0.75f) ? 0.25f : 0f;
 		float total = wLow + wWing;
 		if (total <= 0f || Random.value > Mathf.Min(1f, total))
 		{
@@ -843,7 +853,7 @@ public class ModDogfight
 
 	public static void UseSpecial(ModDogfight.State s, float now)
 	{
-		s.nextSpecial = now + Random.Range(25f, 50f);
+		s.nextSpecial = now + Random.Range(40f, 80f);
 	}
 
 	// The enemy fighter that is on the tail of the nearest friend that needs help. At most two of our fighters go after the same enemy.

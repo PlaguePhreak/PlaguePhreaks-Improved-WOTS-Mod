@@ -19,3 +19,10 @@ Hit-and-run (the US single pass and zoom away) and the high-side pass (the "posi
 
 ## Please check in the log
 `[LOSS]` lines, new move names (low yo-yo, wingover, lag displacement roll, out-of-plane, defensive spiral, unloaded extension), and that "switching from" lines are far fewer.
+
+## 0.26.4.2.1 (mountain battles, rarer moves)
+Log of a battle over mountains: 7 Wildcats and 1 Zero lost; only 3 had a "SHOT DOWN" line (all high up, 2400 to 4100 m). The other 5 were destroyed in phase 5 (roll-over attack or split-S) at 880 to 1500 m, so they almost certainly flew into the ground.
+- Needs BOTH files: replace `ModFlight` (flight_model_ModFlight.cs.txt) and `ModDogfight` (flight_0.26.4.2_ModDogfight.cs.txt).
+- ModFlight: `GroundAt/GroundAhead` read the land height (`TerrainTiles.GetTerrainHeightAtWorldPosition`) under the plane and 6 km ahead... (up to 40 to 60 units = 400 to 600 m ahead). Roll-over attack needs 600 m of air under the plane, split-S 800 m. During any acrobatic move, under 250 m of air: the move is abandoned, the nose is pulled up 12 degrees, `[FLIGHT] ... acrobatic move abandoned` is logged.
+- ModDogfight: over land, under 200 m of air under or ahead of a fighter in any manoeuvre: climb at full speed until clear.
+- Rarer: the wait between special moves is now 40 to 80 s (was 25 to 50); low yo-yo and wingover weights lowered (low yo-yo happened 156 times in 15 minutes, the most common).
