@@ -348,10 +348,33 @@ public static class ModOptions
 			ms.gameObject.SetActive(true);
 			ms.mainInterface.SetActive(false);
 			ms.optionsInterface.SetActive(true);
+			string path = string.Empty;
+			Transform t = ms.optionsInterface.transform;
+			while (t != null)
+			{
+				if (!t.gameObject.activeSelf)
+				{
+					t.gameObject.SetActive(true);
+				}
+				path = t.name + "/" + path;
+				t = t.parent;
+			}
+			Canvas c = ms.optionsInterface.GetComponentInParent<Canvas>();
+			if (c != null && c.rootCanvas.sortingOrder < 100)
+			{
+				c.rootCanvas.sortingOrder = 100;
+			}
+			Debug.Log("[MODOPT] options path " + path + " visible " + ms.optionsInterface.activeInHierarchy);
+			if (!ms.optionsInterface.activeInHierarchy)
+			{
+				fromPause = false;
+				PauseMenu.instance.gameObject.SetActive(true);
+			}
 		}
 		catch (Exception ex)
 		{
 			fromPause = false;
+			PauseMenu.instance.gameObject.SetActive(true);
 			Debug.LogError("[MODOPT] settings failed: " + ex.ToString());
 		}
 	}
