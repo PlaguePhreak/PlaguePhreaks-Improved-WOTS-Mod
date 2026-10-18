@@ -56,7 +56,12 @@ Replace only the movement layer (`UnitAir.UpdateMovementData`, `ApplyFlightContr
 **B. Stall and minimum speed (Recommend).** Below stall speed a plane loses lift and its nose drops. Stops fighters hanging in the air in a hard climb.
 **C. Dive speed limit and over-speed (Recommend).** Planes cannot dive past a per-type limit; heavy controls at high speed (the Zero idea from v0.20.4) become a rule for everyone.
 **D. Damage affects flight (Recommend, later stage).** Engine hits lower top speed and acceleration; control hits lower turn rate; smoking planes limp home. Builds on the air damage rework (v0.20 air_damage_rework).
-**E. Pilot skill (Optional, ties to the planned v0.18.6 air crew experience).** Green/Trained/Veteran/Elite change reaction time, how hard they pull and gunnery.
+**E. Pilot skill gates the manoeuvres (Recommend, Aaron 18 Oct).** Green / Trained / Veteran / Elite pilots (from the planned v0.18.6 air crew experience) decide which manoeuvres a plane may use, how well it flies them, reaction time and gunnery. A pilot only picks a move from his own rank and below, so skilled pilots are visibly better to watch. Proposed ladder (fighters):
+- **Green:** straight pursuit, simple break turn when shot at, basic gun run. Slow to react, sloppy aim, often overshoots.
+- **Trained:** adds boom and zoom (US) or turn fight (Japanese), slashing passes on bombers, wingman pairs (loose deuce).
+- **Veteran:** adds high and low yo-yos, scissors, defensive barrel roll, Thach Weave for US pairs, deflection shots.
+- **Elite:** adds split-S escape, reversal at the top of a climb, lag pursuit to stay out of the enemy's guns, hammerhead and snap shots, and picks the right move for the enemy (a Zero's turn vs a Wildcat's dive).
+Bombers get a ladder too: Green flies a straight run, Veteran jinks and varies approach height, Elite bombers choose their dive angle and release height more precisely. Until crew experience is built, a plane's rank comes from its nation and year (like the v0.20.3 bomb aim table), then from real experience later.
 **F. Visible manoeuvres (Optional).** Real rolls, loops and split-S as a result of pitch control, replacing the hand-made `PerformManeuvre` curves a few at a time (the old v0.20.10 idea).
 **G. Real formation flying (Recommend).** Slot keeping by speed and heading instead of the pull in `UnitAIAir.FollowUnit`. Formations break and re-form around attacks.
 **H. Altitude performance (Optional).** Top speed and climb change with height (thinner air). Makes high or low altitude matter.
@@ -74,7 +79,8 @@ Rules for every stage: new behaviour writes `[FLIGHT]` lines, and is compared ag
 - **Stage 3, Pitch control for fighters.** `wantedPitch`, and the gun run (`ModDogfight`, `DogfightApproach`, `IsInFiringCone`) uses it. Done when a diving Wildcat gets shots on a Zero (the v0.20.9 failure) and kill counts stay sane.
 - **Stage 4, Bombers and torpedo planes.** Dive, level, torpedo and rocket approaches re-tuned; `Maneuvre` special cases replaced one at a time (Roll_Over and Level_Out first, Kamikaze last).
 - **Stage 5, Formation flying (G).**
-- **Stage 6, Damage, skill, data and balance (D, E, I, H as accepted).** Balance pass over all aircraft.
+- **Stage 4b (0.26.4), Fighter manoeuvres by skill (E, F).** The ladder above, one rung per test.
+- **Stage 6, Damage, data and balance (D, I, H as accepted).** Balance pass over all aircraft.
 - **Stage 7, Cleanup.** Remove dead old-movement code once everything has had a long clean test period.
 
 ## Risks
