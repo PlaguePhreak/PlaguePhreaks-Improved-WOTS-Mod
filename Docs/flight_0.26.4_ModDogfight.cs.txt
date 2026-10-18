@@ -48,9 +48,14 @@ public class ModDogfight
 		public Unit supportTarget;
 		public float supportUntil;
 		public float nextSupportCheck;
+		// 0.26.4.1: special moves (yo-yo, barrel roll, split-S, roll-over) are rare: one at most every 25 to 50 seconds per pilot
+		public float nextSpecial;
+		public float lastZoneLog;
 	}
 
 	// distances and heights in battle code are metres x 0.1
+	// 0.26.4.1: fighters turn back when this far from the middle of the battle (the game removes planes at 5000 units)
+	public const float ZoneTurnBack = 4300f;
 	public const float ThreatRange = 400f * 0.1f;
 	public const float OvershootRange = 120f * 0.1f;
 	public const float USHeightAdvantage = 500f * 0.1f;
@@ -151,6 +156,19 @@ public class ModDogfight
 				}
 			}
 			bool japanese = ModDogfight.IsJapanese(u);
+			// 0.26.4.1: the game parks (removes) any plane that goes beyond 5000 units (50 km) from the middle of the battle. Turn back well before that.
+			if (Utilities.GetXZDistance(Vector3.zero, u.transform.position) > ModDogfight.ZoneTurnBack)
+			{
+				ModDogfight.Steer(u, Vector3.zero, 1f, s, japanese);
+				ModDogfight.SetHeight(u, u.transform.position.y, s);
+				ModDogfight.StopGuns(u);
+				if (now - s.lastZoneLog > 20f)
+				{
+					s.lastZoneLog = now;
+					UnityEngine.Debug.Log("[DOGFIGHT] " + u.unitData.unitName + " id " + u.GetInstanceID() + " is near the edge of the battle area (" + (Utilities.GetXZDistance(Vector3.zero, u.transform.position) * 10f).ToString("F0") + " m from the middle), turning back");
+				}
+				return true;
+			}
 			bool targetIsFighter = ModDogfight.IsFighter(target);
 			float dist = Vector3.Distance(u.transform.position, target.transform.position);
 			if (target != s.lastTarget)
@@ -244,8 +262,9 @@ public class ModDogfight
 		// about to fly past the target
 		if (dist < ModDogfight.OvershootRange && ata < 60f)
 		{
-			if (japanese && targetIsFighter && ModFlight.Rank(u) >= 2)
+			if (japanese && targetIsFighter && ModFlight.Rank(u) >= 2 && ModDogfight.SpecialReady(s, now) && Random.value < 0.3f)
 			{
+				ModDogfight.UseSpecial(s, now);
 				ModDogfight.SetPhase(u, s, 3, now, 3f, "about to overshoot " + ModDogfight.Name(target) + ", high yo-yo");
 			}
 			else
@@ -282,16 +301,17 @@ public class ModDogfight
 			bool wasLevel = s.lastBelow < 100f * 0.1f;
 			s.lastBelow = below;
 			int rank = ModFlight.Rank(u);
-			if (wasLevel && rank >= 2 && now >= s.acroCooldown && below >= 150f * 0.1f && below <= 900f * 0.1f && dist >= 300f * 0.1f && dist <= 1100f * 0.1f && u.transform.position.y >= 1000f * 0.1f)
+			if (wasLevel && rank >= 2 && ModDogfight.SpecialReady(s, now) && now >= s.acroCooldown && below >= 150f * 0.1f && below <= 900f * 0.1f && dist >= 300f * 0.1f && dist <= 1100f * 0.1f && u.transform.position.y >= 1000f * 0.1f)
 			{
 				Vector3 fl = u.transform.forward;
 				fl.y = 0f;
 				float side = Mathf.Abs(Utilities.GetSignedAngleToPosition(fl, u.transform.position, new Vector3(target.transform.position.x, u.transform.position.y, target.transform.position.z)));
-				if (side > 75f && Random.value < ((rank >= 3) ? 0.8f : 0.5f))
+				if (side > 75f && Random.value < ((rank >= 3) ? 0.5f : 0.35f))
 				{
 					if (ModFlight.StartRollAttack(u.unitAir, target))
 					{
-						s.acroCooldown = now + 30f;
+						s.acroCooldown = now + 45f;
+						ModDogfight.UseSpecial(s, now);
 						ModDogfight.SetPhase(u, s, 5, now, 12f, ModDogfight.Name(target) + " dropped " + (below * 10f).ToString("F0") + " m below, rolling over to dive on it from above");
 						return true;
 					}
@@ -454,10 +474,11 @@ public class ModDogfight
 		string how;
 		int rank = ModFlight.Rank(u);
 		// Japanese fighters never dive away from a fight (the Zero's controls stiffen in a fast dive): split-S is a US escape, and not every time.
-		bool splitS = !japanese && rank >= 3 && Random.value < 0.4f && now >= s.acroCooldown && u.transform.position.y >= 1100f * 0.1f && Vector3.Distance(u.transform.position, threat.transform.position) < 450f * 0.1f;
+		bool splitS = !japanese && rank >= 3 && ModDogfight.SpecialReady(s, now) && Random.value < 0.3f && now >= s.acroCooldown && u.transform.position.y >= 1100f * 0.1f && Vector3.Distance(u.transform.position, threat.transform.position) < 450f * 0.1f;
 		if (splitS && ModFlight.StartSplitS(u.unitAir))
 		{
 			s.acroCooldown = now + 40f;
+			ModDogfight.UseSpecial(s, now);
 			s.defendCooldown = now + 8f;
 			ModDogfight.SetPhase(u, s, 5, now, 6f, ModDogfight.Name(threat) + " on her tail at " + (Vector3.Distance(u.transform.position, threat.transform.position) * 10f).ToString("F0") + " m, split-S: rolling inverted and diving away");
 			return;
@@ -477,7 +498,7 @@ public class ModDogfight
 			s.targetHeight = u.transform.position.y - ModDogfight.SplitSDrop;
 			how = "breaking and diving away";
 			// Thach Weave: turn towards a wingman, who turns in on the attacker
-			Unit wing = (rank >= 2) ? ModDogfight.FindWingman(u, threat) : null;
+			Unit wing = (rank >= 2 && Random.value < 0.5f) ? ModDogfight.FindWingman(u, threat) : null;
 			if (wing != null)
 			{
 				float wa = Utilities.GetSignedAngleToPosition(u.transform.forward, u.transform.position, wing.transform.position);
@@ -489,8 +510,9 @@ public class ModDogfight
 				how = "Thach Weave, turning towards " + wing.unitData.unitName + " who turns in on the attacker";
 			}
 		}
-		if (rank >= 2)
+		if (rank >= 2 && ModDogfight.SpecialReady(s, now) && Random.value < 0.3f)
 		{
+			ModDogfight.UseSpecial(s, now);
 			ModFlight.StartBarrelRoll(u.unitAir);
 			how = how + ", barrel roll";
 		}
@@ -607,6 +629,16 @@ public class ModDogfight
 	}
 
 	// A friendly fighter close by that is free to help
+	public static bool SpecialReady(ModDogfight.State s, float now)
+	{
+		return now >= s.nextSpecial;
+	}
+
+	public static void UseSpecial(ModDogfight.State s, float now)
+	{
+		s.nextSpecial = now + Random.Range(25f, 50f);
+	}
+
 	// The enemy fighter that is on the tail of the nearest friend that needs help. At most two of our fighters go after the same enemy.
 	public static Unit FindAttackerOfFriend(Unit u)
 	{

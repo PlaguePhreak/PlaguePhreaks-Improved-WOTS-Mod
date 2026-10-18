@@ -27,6 +27,12 @@ Your last log printed `pilot is Trained` although the save's Mod Options show Cr
 Your fourth log (quick battle, the crew line read OFF so every pilot was Elite, no errors from our code): 24 Wildcats against 72 Japanese fighters (24 each of A6M2 Mod 21, A6M3 Mod 22a and A8K1). The Wildcats lost 5 and shot none down; the Japanese lined up shots on 96% of their attack lines and the Wildcats on 36%, and the Wildcats spent most of the fight running (210 Thach Weaves, 202 breaks with a barrel roll, 192 split-S dives, 409 "clear, climbing back to attack").
 New: **wingman cover** (Trained or better, in `ModDogfight`). Every second a pilot looks for a friendly fighter that has an enemy fighter on its tail within 400 m (the same test as the threat check). If one is within 1500 m of him, and fewer than two of our fighters are already after that enemy, he goes after that enemy: "covering a wingman: going after X on his tail". A pilot who is himself being chased keeps up his break turn (and barrel roll), fires at the enemy on his friend's tail if it crosses his nose, and when the break ends goes straight at that enemy instead of climbing away for another pass. Re-paste the `ModDogfight` class (`Docs/flight_0.26.4_ModDogfight.cs.txt`).
 
+## Update 18 Oct (0.26.4.1: rare moves, stay in the battle area)
+- **Correction to what I told you earlier:** in the 10:12 battle only the 7 Wildcats were really shot down. The Japanese had **no** shoot-downs (the "3 A8K1 and 3 A6M2" I counted were smoking, not downed). Six planes (2 Wildcats, 3 A8K1, 1 A6M2) simply stopped being logged in mid-air at 1000 to 3000 m: you were right that they left the map. `EngagementAI.CheckUnitsOutOfZone` warns a plane that is more than 5000 units (50 km) from the middle of the battle and removes ("parks") it at the next check.
+- **Fix:** fighters now turn back toward the middle when they get 4300 units out (log line `is near the edge of the battle area`). `ZoneTurnBack` in `ModDogfight`.
+- **Rare moves:** a pilot may make a special move (yo-yo, barrel roll, split-S, roll-over) at most once every 25 to 50 s, and each has a lower chance: yo-yo 30%, barrel roll 30%, split-S 30% (was 40%), roll-over 35% Veteran / 50% Elite (was 50 / 80), roll-over cooldown 45 s, Thach Weave 50%.
+- Re-paste `ModDogfight` only. The later moves are planned in `Docs/fighter_manoeuvre_pool_plan.md`.
+
 ## Step 1 - replace ModFlight
 1. Class **ModFlight** > **Edit Class (C#)...**, select all, paste the new `Docs/flight_model_ModFlight.cs.txt`. **Compile**.
 
