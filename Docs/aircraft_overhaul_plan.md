@@ -82,6 +82,7 @@ Rules for every stage: new behaviour writes `[FLIGHT]` lines, and is compared ag
 - **Stage 5, Formation flying (G).**
 - **Stage 4b (0.26.4), Fighter manoeuvres by skill (E, F).** The ladder above, one rung per test. Aaron (18 Oct) asked for a full roll to inverted and a 90 degree dive onto a plane below (split-S / roll-over attack). The game already has this for dive bombers (`Maneuvre.Roll_Over` rolls to 180 degrees, then `Dive_Bomb` flips the nose down while inverted, `UnitAir.ManeuverUpdate` around line 523), so fighters can reuse it for a Veteran/Elite rung: roll over when the target is below and close, then pull through and fire.
 - **Stage 6, Damage, data and balance (D, I, H as accepted).** Balance pass over all aircraft.
+- **0.26.7.1 AA hits, fires and ablaze planes (Aaron, 18 Oct): AAA or a normal AA round can set a plane on fire; it may go ablaze and be shot down, or a skilled pilot cuts the engine or seals the fuel tanks to put the fire out. All new (the game has no fire, engine-off or fuel tank model). To be worked out later.**
 - **0.26.8 Remove speed limit and break-up (see its section).**
 - **0.26.9 Air auto resolve (see its section).**
 - **Stage 7, Cleanup.** Remove dead old-movement code once everything has had a long clean test period.
