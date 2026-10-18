@@ -1,0 +1,740 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using UnityEngine;
+using UnityEngine.Events;
+using UnityEngine.UI;
+
+// Mod Options (v0.27, untested): switches for the mod's features, the extra pause menu buttons
+// and the Mod Options panel. Whole class goes in with dnSpy "Add Class". See Docs/mod_options.md.
+public static class ModOptions
+{
+	public const int Count = 18;
+	// The first 6 settings are locked while a campaign is running (changing them can break a save).
+	public const int LockedCount = 6;
+
+	// Index numbers. Everything else in the mod asks for these through the properties below.
+	private const int ICrew = 0;
+	private const int IVeteran = 1;
+	private const int IRescue = 2;
+	private const int ISupply = 3;
+	private const int IConvoy = 4;
+	private const int ISurvivors = 5;
+	private const int IMinimap = 6;
+	private const int IBadges = 7;
+	private const int ITFOverlay = 8;
+	private const int INotify = 9;
+	private const int IDark = 10;
+	// 11..17 are the log filters for notification categories 1..7 (index = 10 + category).
+
+	private static readonly string[] keys = new string[18]
+	{
+		"crew", "veteran", "rescue", "supply", "convoy", "survivors",
+		"minimap", "badges", "tfoverlay", "notify", "darknights",
+		"log_contacts", "log_battles", "log_fleet", "log_air", "log_supply", "log_admiralty", "log_other"
+	};
+
+	private static readonly string[] names = new string[18]
+	{
+		"Crew system (crew numbers, losses, experience)",
+		"Veteran crews (experience from real fights)",
+		"Rescue missions on the campaign map",
+		"Troop supply upkeep",
+		"Admiralty supply convoy event",
+		"Survivors event (random sinkings)",
+		"Minimap upgrades (torpedo tracks, smoke, rings)",
+		"Group numbers on the roster",
+		"Task force overlay (fuel barrel button, F11)",
+		"Notification log (bell button and Messages window)",
+		"Darker nights",
+		"Contacts", "Battles", "Fleet", "Air", "Supply", "Admiralty", "Other"
+	};
+
+	private static bool[] values = new bool[18]
+	{
+		true, true, true, true, true, true, true, true, true,
+		true, true, true, true, true, true, true, true, true
+	};
+
+	private static bool loaded;
+	private static bool fromPause;
+	private static int pendingLoad;
+
+	// Night tables. The dark one is what config.txt ships with; the stock one is the game's own.
+	private static readonly float[] darkTable = new float[24]
+	{
+		0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 0.45f, 0.65f, 0.8f, 0.9f, 1f, 1f, 1f,
+		1f, 1f, 1f, 1f, 0.9f, 0.8f, 0.65f, 0.45f, 0.25f, 0.25f, 0.25f, 0.25f
+	};
+
+	private static readonly float[] stockTable = new float[24]
+	{
+		0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.6f, 0.7f, 0.8f, 0.9f, 1f, 1f, 1f,
+		1f, 1f, 1f, 1f, 0.9f, 0.8f, 0.7f, 0.6f, 0.5f, 0.5f, 0.5f, 0.5f
+	};
+
+	// What the rest of the mod asks.
+	public static bool Crew { get { return Get(ICrew); } }
+	public static bool Veteran { get { return Get(IVeteran); } }
+	public static bool Rescue { get { return Get(IRescue); } }
+	public static bool Supply { get { return Get(ISupply); } }
+	public static bool Convoy { get { return Get(IConvoy); } }
+	public static bool Survivors { get { return Get(ISurvivors); } }
+	public static bool Minimap { get { return Get(IMinimap); } }
+	public static bool Badges { get { return Get(IBadges); } }
+	public static bool TFOverlay { get { return Get(ITFOverlay); } }
+	public static bool Notify { get { return Get(INotify); } }
+	public static bool DarkNights { get { return Get(IDark); } }
+
+	// True when a notification of this category (1 Contacts ... 7 Other) goes into the log.
+	public static bool LogCategory(int cat)
+	{
+		if (!Get(INotify))
+		{
+			return false;
+		}
+		if (cat < 1 || cat > 7)
+		{
+			return true;
+		}
+		return Get(10 + cat);
+	}
+
+	public static bool Get(int i)
+	{
+		if (!loaded)
+		{
+			Load();
+		}
+		if (i < LockedCount)
+		{
+			string s = CampaignLock();
+			if (s != null)
+			{
+				return s[i] == '1';
+			}
+		}
+		return values[i];
+	}
+
+	// The locked settings of the running campaign, saved with it (CampaignData.modLocked).
+	// null when no campaign is running. An old save without them takes the current settings.
+	private static string CampaignLock()
+	{
+		try
+		{
+			CampaignManager cm = CampaignManager.instance;
+			if (cm == null || cm.campaignData == null || string.IsNullOrEmpty(cm.campaignData.campaignID))
+			{
+				return null;
+			}
+			CampaignData cd = cm.campaignData;
+			if (string.IsNullOrEmpty(cd.modLocked) || cd.modLocked.Length < LockedCount)
+			{
+				char[] c = new char[LockedCount];
+				for (int i = 0; i < LockedCount; i++)
+				{
+					c[i] = values[i] ? '1' : '0';
+				}
+				cd.modLocked = new string(c);
+			}
+			return cd.modLocked;
+		}
+		catch
+		{
+			return null;
+		}
+	}
+
+	private static string FilePath()
+	{
+		return Path.Combine(Application.persistentDataPath, "modoptions.txt");
+	}
+
+	public static void Load()
+	{
+		loaded = true;
+		try
+		{
+			string path = FilePath();
+			if (!File.Exists(path))
+			{
+				return;
+			}
+			string[] lines = File.ReadAllLines(path);
+			for (int l = 0; l < lines.Length; l++)
+			{
+				int eq = lines[l].IndexOf('=');
+				if (eq < 1)
+				{
+					continue;
+				}
+				string key = lines[l].Substring(0, eq).Trim();
+				string val = lines[l].Substring(eq + 1).Trim();
+				for (int i = 0; i < Count; i++)
+				{
+					if (keys[i] == key)
+					{
+						values[i] = val != "0";
+					}
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[MODOPT] load failed: " + ex.Message);
+		}
+	}
+
+	public static void Save()
+	{
+		try
+		{
+			List<string> lines = new List<string>();
+			for (int i = 0; i < Count; i++)
+			{
+				lines.Add(keys[i] + "=" + (values[i] ? "1" : "0"));
+			}
+			File.WriteAllLines(FilePath(), lines.ToArray());
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[MODOPT] save failed: " + ex.Message);
+		}
+	}
+
+	public static void ApplyNights()
+	{
+		try
+		{
+			if (Config.instance == null)
+			{
+				return;
+			}
+			bool on = Get(IDark);
+			Config.instance.visibilityByHour = (float[])(on ? darkTable : stockTable).Clone();
+			Config.instance.nightEncounterMaxRange = on ? 10f : 15f;
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[MODOPT] nights failed: " + ex.Message);
+		}
+	}
+
+	// ---------------------------------------------------------------- pause menu
+
+	private static Button loadBtn;
+	private static Button settingsBtn;
+	private static Button modBtn;
+
+	// Called at the end of PauseMenu.OpenPauseMenu.
+	public static void BuildPauseButtons(PauseMenu pm)
+	{
+		try
+		{
+			if (pm == null || pm.saveButton == null)
+			{
+				return;
+			}
+			if (loadBtn == null || settingsBtn == null || modBtn == null)
+			{
+				loadBtn = Clone(pm.saveButton, "Load Game", new UnityAction(AskLoad));
+				settingsBtn = Clone(pm.saveButton, "Settings", new UnityAction(OpenGameSettings));
+				modBtn = Clone(pm.saveButton, "Mod Options", new UnityAction(OpenPanelFromPause));
+				PlaceAfter(pm.saveButton, new Button[3] { loadBtn, settingsBtn, modBtn });
+			}
+			// No loading from inside the tutorial or the museum (the same places Save is hidden).
+			loadBtn.gameObject.SetActive(pm.saveButton.gameObject.activeSelf);
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[MODOPT] pause buttons failed: " + ex.ToString());
+		}
+	}
+
+	private static Button Clone(Button template, string label, UnityAction action)
+	{
+		GameObject go = (GameObject)UnityEngine.Object.Instantiate(template.gameObject, template.transform.parent);
+		go.name = "Mod " + label;
+		go.SetActive(true);
+		Button b = go.GetComponent<Button>();
+		b.onClick = new Button.ButtonClickedEvent();
+		b.onClick.AddListener(action);
+		Text t = go.GetComponentInChildren<Text>(true);
+		if (t != null)
+		{
+			t.text = label.ToUpper();
+		}
+		else
+		{
+			Debug.LogError("[MODOPT] no Text found on the button to copy, the label could not be set");
+		}
+		return b;
+	}
+
+	// Puts the new buttons right under "anchor" and, when the buttons are not in a layout group,
+	// spaces all the buttons of that list evenly.
+	private static void PlaceAfter(Button anchor, Button[] added)
+	{
+		Transform parent = anchor.transform.parent;
+		int at = anchor.transform.GetSiblingIndex();
+		for (int i = 0; i < added.Length; i++)
+		{
+			added[i].transform.SetSiblingIndex(at + 1 + i);
+		}
+		if (parent.GetComponent<LayoutGroup>() != null)
+		{
+			return;
+		}
+		List<RectTransform> rows = new List<RectTransform>();
+		for (int c = 0; c < parent.childCount; c++)
+		{
+			Transform ch = parent.GetChild(c);
+			if (ch.GetComponent<Button>() != null)
+			{
+				rows.Add(ch.GetComponent<RectTransform>());
+			}
+		}
+		if (rows.Count < 3)
+		{
+			return;
+		}
+		Vector2 first = rows[0].anchoredPosition;
+		float step = rows[1].anchoredPosition.y - first.y;
+		if (Mathf.Abs(step) < 1f)
+		{
+			step = -rows[0].rect.height * 1.1f;
+		}
+		for (int r = 0; r < rows.Count; r++)
+		{
+			rows[r].anchoredPosition = new Vector2(first.x, first.y + step * (float)r);
+		}
+	}
+
+	// ---------------------------------------------------------------- load game from the pause menu
+
+	private static void AskLoad()
+	{
+		// Reuses the pause menu's confirmation panel (action 2 is handled in PauseMenu.OnConfirmation).
+		PauseMenu.instance.OpenConfirmation(2);
+	}
+
+	// Called from PauseMenu.OnConfirmation (action 2): back to the main menu, which then opens the load list.
+	public static void LoadFromPause()
+	{
+		PauseMenu pm = PauseMenu.instance;
+		bool campaign = pm.isStratMap || (EngagementData.instance != null && EngagementData.instance.isCampaignEngagement);
+		pendingLoad = campaign ? 1 : 2;
+		Time.timeScale = 1f;
+		Map.instance.ClearMap();
+		Utilities.ReloadMain();
+	}
+
+	// ---------------------------------------------------------------- game settings from the pause menu
+
+	private static void OpenGameSettings()
+	{
+		try
+		{
+			MenuSystem ms = MenuSystem.instance;
+			if (ms == null || ms.optionsInterface == null)
+			{
+				return;
+			}
+			fromPause = true;
+			PauseMenu.instance.gameObject.SetActive(false);
+			ms.menusystemBackground.gameObject.SetActive(false);
+			ms.gameObject.SetActive(true);
+			ms.mainInterface.SetActive(false);
+			ms.optionsInterface.SetActive(true);
+		}
+		catch (Exception ex)
+		{
+			fromPause = false;
+			Debug.LogError("[MODOPT] settings failed: " + ex.ToString());
+		}
+	}
+
+	// First line of MenuSystem.BackToMain. True = handled here (the options screen was opened from the pause menu).
+	public static bool OnBack()
+	{
+		if (!fromPause)
+		{
+			return false;
+		}
+		fromPause = false;
+		try
+		{
+			MenuSystem ms = MenuSystem.instance;
+			ms.optionsInterface.SetActive(false);
+			ms.mainInterface.SetActive(true);
+			ms.gameObject.SetActive(false);
+			PauseMenu.instance.gameObject.SetActive(true);
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[MODOPT] back failed: " + ex.ToString());
+		}
+		return true;
+	}
+
+	// ---------------------------------------------------------------- main menu
+
+	// Last line of MenuSystem.Start.
+	public static void AfterMenuStart()
+	{
+		try
+		{
+			Load();
+			ApplyNights();
+			BuildMainMenuButton();
+			int p = pendingLoad;
+			pendingLoad = 0;
+			if (p == 1)
+			{
+				MenuSystem.instance.NewCampaign(true);
+			}
+			else if (p == 2)
+			{
+				MenuSystem.instance.OpenMission(false);
+				MenuSystem.instance.LoadSelection();
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[MODOPT] menu start failed: " + ex.ToString());
+		}
+	}
+
+	private static void BuildMainMenuButton()
+	{
+		MenuSystem ms = MenuSystem.instance;
+		if (ms == null || ms.mainInterface == null)
+		{
+			return;
+		}
+		Button[] all = ms.mainInterface.GetComponentsInChildren<Button>(true);
+		if (all.Length == 0)
+		{
+			return;
+		}
+		Button anchor = all[all.Length - 1];
+		for (int i = 0; i < all.Length; i++)
+		{
+			Text t = all[i].GetComponentInChildren<Text>(true);
+			if (t != null && t.text.ToUpper().Contains("OPTION"))
+			{
+				anchor = all[i];
+				break;
+			}
+		}
+		Button mod = Clone(anchor, "Mod Options", new UnityAction(OpenPanelFromMain));
+		PlaceAfter(anchor, new Button[1] { mod });
+	}
+
+	// ---------------------------------------------------------------- the Mod Options panel
+
+	private static readonly Color gold = new Color(0.72f, 0.58f, 0.3f, 1f);
+	private static readonly Color dark = new Color(0.07f, 0.12f, 0.19f, 0.97f);
+	private static readonly Color lit = new Color(0.5f, 0.3f, 0.08f, 0.95f);
+	private const float RowH = 34f;
+
+	private static GameObject panel;
+	private static RectTransform contentRect;
+	private static Font font;
+	private static int fontSize = 16;
+	private static Text[] stateTexts = new Text[18];
+	private static Image[] stateBacks = new Image[18];
+	private static Text[] labelTexts = new Text[18];
+	private static Text noteText;
+
+	private static void OpenPanelFromPause()
+	{
+		OpenPanel(modBtn);
+	}
+
+	private static void OpenPanelFromMain()
+	{
+		Button[] all = MenuSystem.instance.mainInterface.GetComponentsInChildren<Button>(true);
+		for (int i = 0; i < all.Length; i++)
+		{
+			if (all[i].gameObject.name == "Mod Mod Options")
+			{
+				OpenPanel(all[i]);
+				return;
+			}
+		}
+	}
+
+	private static void OpenPanel(Button from)
+	{
+		try
+		{
+			if (panel == null)
+			{
+				Canvas c = from.GetComponentInParent<Canvas>();
+				if (c == null)
+				{
+					Debug.LogError("[MODOPT] no canvas found for the panel");
+					return;
+				}
+				BuildPanel(c.rootCanvas.transform);
+			}
+			Load();
+			UpdateRows();
+			panel.transform.SetAsLastSibling();
+			panel.SetActive(true);
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[MODOPT] open panel failed: " + ex.ToString());
+		}
+	}
+
+	// Called from the first line of PauseMenu.Resume.
+	public static void Close()
+	{
+		if (panel != null)
+		{
+			panel.SetActive(false);
+		}
+	}
+
+	private static void Flip(int i)
+	{
+		if (i < LockedCount && CampaignLock() != null)
+		{
+			return;
+		}
+		values[i] = !values[i];
+		Save();
+		if (i == IDark)
+		{
+			ApplyNights();
+		}
+		UpdateRows();
+	}
+
+	private static void UpdateRows()
+	{
+		bool inCampaign = CampaignLock() != null;
+		for (int i = 0; i < Count; i++)
+		{
+			if (stateTexts[i] == null)
+			{
+				continue;
+			}
+			bool on = Get(i);
+			bool isLocked = inCampaign && i < LockedCount;
+			stateTexts[i].text = on ? "ON" : "OFF";
+			stateTexts[i].color = isLocked ? new Color(0.6f, 0.6f, 0.6f, 1f) : Color.white;
+			stateBacks[i].color = isLocked ? new Color(0.25f, 0.25f, 0.25f, 1f) : (on ? lit : dark);
+			labelTexts[i].text = names[i] + (i < LockedCount ? " *" : string.Empty) + (isLocked ? "  (locked)" : string.Empty);
+			labelTexts[i].color = isLocked ? new Color(0.6f, 0.6f, 0.6f, 1f) : Color.white;
+		}
+		if (noteText != null)
+		{
+			noteText.text = inCampaign
+				? "Settings marked (locked) cannot be changed during a campaign, because changing them can break a save. Change them from the main menu before you start a new campaign."
+				: "Settings marked * are locked once a campaign has started, because changing them can break a save. Everything else can be changed at any time.";
+		}
+	}
+
+	private static void BuildPanel(Transform root)
+	{
+		font = null;
+		fontSize = 16;
+		if (TooltipManager.instance != null && TooltipManager.instance.toolTipText != null)
+		{
+			font = TooltipManager.instance.toolTipText.font;
+			fontSize = TooltipManager.instance.toolTipText.fontSize;
+		}
+		if (font == null)
+		{
+			font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+		}
+		RectTransform dim = NewRect("ModOptionsPanel", root);
+		Stretch(dim, 0f, 0f, 0f, 0f);
+		dim.gameObject.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0.55f);
+		Canvas over = dim.gameObject.AddComponent<Canvas>();
+		over.overrideSorting = true;
+		over.sortingOrder = 500;
+		dim.gameObject.AddComponent<GraphicRaycaster>();
+		panel = dim.gameObject;
+		RectTransform win = NewRect("Window", dim);
+		win.anchorMin = new Vector2(0.5f, 0.5f);
+		win.anchorMax = new Vector2(0.5f, 0.5f);
+		win.pivot = new Vector2(0.5f, 0.5f);
+		win.sizeDelta = new Vector2(760f, 700f);
+		win.gameObject.AddComponent<Image>().color = gold;
+		RectTransform back = NewRect("Back", win);
+		Stretch(back, 2f, 2f, 2f, 2f);
+		Image backImg = back.gameObject.AddComponent<Image>();
+		backImg.color = dark;
+		backImg.raycastTarget = false;
+		RectTransform title = NewRect("Title", win);
+		title.anchorMin = new Vector2(0f, 1f);
+		title.anchorMax = new Vector2(1f, 1f);
+		title.pivot = new Vector2(0.5f, 1f);
+		title.anchoredPosition = new Vector2(0f, -10f);
+		title.sizeDelta = new Vector2(-60f, 32f);
+		NewText(title, fontSize + 6, TextAnchor.MiddleLeft, Color.white).text = "Mod Options";
+		RectTransform closeRt = NewRect("Close", win);
+		closeRt.anchorMin = new Vector2(1f, 1f);
+		closeRt.anchorMax = new Vector2(1f, 1f);
+		closeRt.pivot = new Vector2(1f, 1f);
+		closeRt.anchoredPosition = new Vector2(-8f, -8f);
+		closeRt.sizeDelta = new Vector2(32f, 32f);
+		Image closeBorder = closeRt.gameObject.AddComponent<Image>();
+		closeBorder.color = gold;
+		Button closeBtn = closeRt.gameObject.AddComponent<Button>();
+		closeBtn.targetGraphic = closeBorder;
+		closeBtn.onClick.AddListener(new UnityAction(Close));
+		RectTransform closeBack = NewRect("Back", closeRt);
+		Stretch(closeBack, 2f, 2f, 2f, 2f);
+		Image closeBackImg = closeBack.gameObject.AddComponent<Image>();
+		closeBackImg.color = dark;
+		closeBackImg.raycastTarget = false;
+		RectTransform closeLabel = NewRect("Text", closeRt);
+		Stretch(closeLabel, 0f, 0f, 0f, 0f);
+		NewText(closeLabel, fontSize + 2, TextAnchor.MiddleCenter, Color.white).text = "X";
+		RectTransform note = NewRect("Note", win);
+		note.anchorMin = new Vector2(0f, 1f);
+		note.anchorMax = new Vector2(1f, 1f);
+		note.pivot = new Vector2(0.5f, 1f);
+		note.anchoredPosition = new Vector2(0f, -48f);
+		note.sizeDelta = new Vector2(-30f, 46f);
+		noteText = NewText(note, fontSize - 3, TextAnchor.UpperLeft, new Color(0.8f, 0.83f, 0.87f, 1f));
+		RectTransform scrollRt = NewRect("Scroll", win);
+		Stretch(scrollRt, 12f, 12f, 12f, 104f);
+		ScrollRect scroll = scrollRt.gameObject.AddComponent<ScrollRect>();
+		RectTransform view = NewRect("Viewport", scrollRt);
+		Stretch(view, 0f, 0f, 16f, 0f);
+		view.gameObject.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0f);
+		view.gameObject.AddComponent<RectMask2D>();
+		contentRect = NewRect("Content", view);
+		contentRect.anchorMin = new Vector2(0f, 1f);
+		contentRect.anchorMax = new Vector2(1f, 1f);
+		contentRect.pivot = new Vector2(0.5f, 1f);
+		contentRect.anchoredPosition = Vector2.zero;
+		RectTransform barRt = NewRect("Scrollbar", scrollRt);
+		barRt.anchorMin = new Vector2(1f, 0f);
+		barRt.anchorMax = new Vector2(1f, 1f);
+		barRt.pivot = new Vector2(1f, 1f);
+		barRt.anchoredPosition = Vector2.zero;
+		barRt.sizeDelta = new Vector2(12f, 0f);
+		barRt.gameObject.AddComponent<Image>().color = new Color(0.03f, 0.06f, 0.1f, 1f);
+		RectTransform slide = NewRect("Sliding Area", barRt);
+		Stretch(slide, 0f, 0f, 0f, 0f);
+		RectTransform handle = NewRect("Handle", slide);
+		handle.sizeDelta = Vector2.zero;
+		Image handleImg = handle.gameObject.AddComponent<Image>();
+		handleImg.color = gold;
+		Scrollbar bar = barRt.gameObject.AddComponent<Scrollbar>();
+		bar.direction = Scrollbar.Direction.BottomToTop;
+		bar.handleRect = handle;
+		bar.targetGraphic = handleImg;
+		scroll.content = contentRect;
+		scroll.viewport = view;
+		scroll.horizontal = false;
+		scroll.vertical = true;
+		scroll.movementType = ScrollRect.MovementType.Clamped;
+		scroll.scrollSensitivity = 30f;
+		scroll.verticalScrollbar = bar;
+		scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
+		// Rows: headers and settings in order.
+		int row = 0;
+		row = AddHeader(row, "Campaign features (* locked once a campaign has started)");
+		for (int i = 0; i < 6; i++)
+		{
+			row = AddSetting(row, i);
+		}
+		row = AddHeader(row, "Interface features");
+		for (int i2 = 6; i2 < 11; i2++)
+		{
+			row = AddSetting(row, i2);
+		}
+		row = AddHeader(row, "Notification log: what goes into the log (the pop-ups still appear)");
+		for (int i3 = 11; i3 < 18; i3++)
+		{
+			row = AddSetting(row, i3);
+		}
+		contentRect.sizeDelta = new Vector2(0f, (float)row * RowH);
+		panel.SetActive(false);
+	}
+
+	private static int AddHeader(int row, string text)
+	{
+		RectTransform rt = NewRect("Header", contentRect);
+		rt.anchorMin = new Vector2(0f, 1f);
+		rt.anchorMax = new Vector2(1f, 1f);
+		rt.pivot = new Vector2(0.5f, 1f);
+		rt.anchoredPosition = new Vector2(0f, -(float)row * RowH);
+		rt.sizeDelta = new Vector2(0f, RowH);
+		Text t = NewText(rt, fontSize, TextAnchor.LowerLeft, gold);
+		t.text = text;
+		return row + 1;
+	}
+
+	private static int AddSetting(int row, int index)
+	{
+		RectTransform rt = NewRect("Row " + keys[index], contentRect);
+		rt.anchorMin = new Vector2(0f, 1f);
+		rt.anchorMax = new Vector2(1f, 1f);
+		rt.pivot = new Vector2(0.5f, 1f);
+		rt.anchoredPosition = new Vector2(0f, -(float)row * RowH);
+		rt.sizeDelta = new Vector2(0f, RowH);
+		Image rowBack = rt.gameObject.AddComponent<Image>();
+		rowBack.color = (row % 2 == 0) ? new Color(1f, 1f, 1f, 0.05f) : new Color(1f, 1f, 1f, 0f);
+		Button rowBtn = rt.gameObject.AddComponent<Button>();
+		rowBtn.targetGraphic = rowBack;
+		int captured = index;
+		rowBtn.onClick.AddListener(new UnityAction(delegate { Flip(captured); }));
+		RectTransform lbl = NewRect("Label", rt);
+		Stretch(lbl, 12f, 2f, 90f, 2f);
+		labelTexts[index] = NewText(lbl, fontSize, TextAnchor.MiddleLeft, Color.white);
+		labelTexts[index].horizontalOverflow = HorizontalWrapMode.Overflow;
+		RectTransform st = NewRect("State", rt);
+		st.anchorMin = new Vector2(1f, 0.5f);
+		st.anchorMax = new Vector2(1f, 0.5f);
+		st.pivot = new Vector2(1f, 0.5f);
+		st.anchoredPosition = new Vector2(-6f, 0f);
+		st.sizeDelta = new Vector2(64f, 26f);
+		stateBacks[index] = st.gameObject.AddComponent<Image>();
+		stateBacks[index].color = lit;
+		stateBacks[index].raycastTarget = false;
+		RectTransform stText = NewRect("Text", st);
+		Stretch(stText, 0f, 0f, 0f, 0f);
+		stateTexts[index] = NewText(stText, fontSize, TextAnchor.MiddleCenter, Color.white);
+		return row + 1;
+	}
+
+	private static RectTransform NewRect(string name, Transform parent)
+	{
+		GameObject go = new GameObject(name, typeof(RectTransform));
+		go.transform.SetParent(parent, false);
+		return go.GetComponent<RectTransform>();
+	}
+
+	private static void Stretch(RectTransform rt, float left, float bottom, float right, float top)
+	{
+		rt.anchorMin = Vector2.zero;
+		rt.anchorMax = Vector2.one;
+		rt.offsetMin = new Vector2(left, bottom);
+		rt.offsetMax = new Vector2(-right, -top);
+	}
+
+	private static Text NewText(RectTransform rt, int size, TextAnchor anchor, Color colour)
+	{
+		Text t = rt.gameObject.AddComponent<Text>();
+		t.font = font;
+		t.fontSize = size;
+		t.alignment = anchor;
+		t.color = colour;
+		t.supportRichText = false;
+		t.horizontalOverflow = HorizontalWrapMode.Wrap;
+		t.verticalOverflow = VerticalWrapMode.Truncate;
+		t.raycastTarget = false;
+		return t;
+	}
+}
