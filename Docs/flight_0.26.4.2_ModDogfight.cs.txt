@@ -504,6 +504,7 @@ public class ModDogfight
 				// out of the break: straight on to the enemy that was on the friend's tail
 				u.unitAI.focusedUnit = sup;
 				s.lastTarget = sup;
+				ModDogfight.Hold(s, sup, now, 8f);
 				ModDogfight.SetPhase(u, s, 0, now, 0f, "out of the break, going after " + ModDogfight.Name(sup) + " to cover a wingman");
 			}
 			else if (japanese)
