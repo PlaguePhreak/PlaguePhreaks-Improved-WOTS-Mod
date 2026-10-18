@@ -14,6 +14,9 @@ using UnityEngine;
 // (the game only allowed 10 degrees per second, so a fighter could never get its nose onto a target in time).
 // v0.26.3 adds banking: a plane rolls into a turn at a real roll rate (fighters 90 degrees per second, others 45) and the turn only builds as
 // fast as the bank allows, so turns start and finish smoothly instead of the nose swinging the moment the AI asks.
+// v0.26.4 adds pilot rank (Green, Trained, Veteran, Elite; crews off = everyone Elite) and acrobatics the game never had: a roll-over attack
+// (roll inverted and dive straight down on a plane below), a split-S escape and a defensive barrel roll. During those the class turns the plane
+// itself (UnitAir.ApplyUnitMovement hands over the rotation), then gives the plane back to the game upright.
 // Always on: this is the game's flying now, not an option. Every number is below and can be changed, then Compile and Save Module.
 public static class ModFlight
 {
@@ -53,6 +56,30 @@ public static class ModFlight
 	public const float OtherRollRate = 45f;
 	public const float BankPerTurn = 5f;
 	public const float MaxBank = 80f;
+	// v0.26.4 acrobatics (degrees per second, seconds, units of 10 m)
+	public const float RollOverRate = 150f;
+	public const float PullRate = 70f;
+	public const float BarrelTime = 1.8f;
+	public const float PullOutHeight = 55f;
+	public const float AcroMinHeight = 70f;
+	public const float BulletTravelSpeed = 80f;
+
+	private class AcroState
+	{
+		public int kind;      // 1 roll-over attack, 2 split-S, 3 barrel roll
+		public int phase;     // 0 rolling inverted, 1 pulling, 2 pulling out
+		public float t;
+		public float x;       // nose angle, degrees, positive = down (past 90 the plane is going back the way it came)
+		public float yaw;
+		public float z;       // roll, degrees (barrel roll: how far round)
+		public Unit target;
+	}
+
+	private static Dictionary<int, AcroState> acro = new Dictionary<int, AcroState>();
+	private static Dictionary<int, int> ranks = new Dictionary<int, int>();
+	// What the game's pitch and roll should read after an acrobatic tick (UnitAir copies these into currentPitch / currentRoll).
+	public static float AcroPitch = 0f;
+	public static float AcroRoll = 0f;
 
 	private static bool Applies(UnitAir ua)
 	{
@@ -209,11 +236,23 @@ public static class ModFlight
 		int id = ((UnityEngine.Object)ua).GetInstanceID();
 		float until;
 		float p;
+		string acroText = "";
+		AcroState a;
+		if (acro.TryGetValue(id, out a))
+		{
+			acroText = " acro " + ((a.kind == 1) ? "roll-over-attack" : ((a.kind == 2) ? "split-S" : "barrel-roll"));
+		}
+		string pilot = "";
+		int r;
+		if (ranks.TryGetValue(id, out r))
+		{
+			pilot = " pilot " + RankName(r);
+		}
 		if (aimUntil.TryGetValue(id, out until) && Time.time <= until && aimPitch.TryGetValue(id, out p))
 		{
-			return " aim " + p.ToString("F1");
+			return " aim " + p.ToString("F1") + acroText + pilot;
 		}
-		return "";
+		return acroText + pilot;
 	}
 
 	// Replaces the pitch line of UnitAir.ApplyFlightControls. current = the plane's pitch now, heightGap = the game's own wish (positive = nose down).
@@ -324,6 +363,319 @@ public static class ModFlight
 			failed = true;
 			Debug.LogError((object)("[FLIGHT] bank control failed and stopped: " + ex.Message));
 			return next;
+		}
+	}
+
+	// ---------------- v0.26.4 pilot rank ----------------
+	// 0 Green, 1 Trained, 2 Veteran, 3 Elite. Crews off (Mod Options) = every pilot is Elite so every manoeuvre can be tested and planes are never
+	// locked into simple attacks. Until air crew experience exists the rank comes from nation and year, fixed for each plane by its id.
+	public static int Rank(Unit u)
+	{
+		try
+		{
+			if (u == null || u.unitData == null)
+			{
+				return 3;
+			}
+			if (!ModOptions.Crew)
+			{
+				return 3;
+			}
+			int id = ((UnityEngine.Object)u).GetInstanceID();
+			int r;
+			if (ranks.TryGetValue(id, out r))
+			{
+				return r;
+			}
+			int year = 1942;
+			if (CampaignInterface.instance != null && CampaignInterface.instance.dateTime.Year > 1900)
+			{
+				year = CampaignInterface.instance.dateTime.Year;
+			}
+			// chance in percent of Green, Trained, Veteran (Elite is the rest)
+			int g;
+			int t;
+			int v;
+			if (u.unitData.nationIndex == 3)
+			{
+				if (year <= 1942) { g = 5; t = 25; v = 45; }
+				else if (year == 1943) { g = 15; t = 40; v = 35; }
+				else { g = 40; t = 40; v = 17; }
+			}
+			else
+			{
+				if (year <= 1942) { g = 15; t = 45; v = 30; }
+				else if (year == 1943) { g = 10; t = 35; v = 40; }
+				else { g = 5; t = 25; v = 45; }
+			}
+			int roll = new System.Random(id).Next(0, 100);
+			r = 3;
+			if (roll < g) { r = 0; }
+			else if (roll < g + t) { r = 1; }
+			else if (roll < g + t + v) { r = 2; }
+			ranks[id] = r;
+			Debug.Log((object)("[FLIGHT] " + u.unitData.unitName + " id " + id + " pilot is " + RankName(r) + " (nation " + u.unitData.nationIndex + ", " + year + ")"));
+			return r;
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[FLIGHT] pilot rank failed and stopped: " + ex.Message));
+			return 3;
+		}
+	}
+
+	public static string RankName(int rank)
+	{
+		switch (rank)
+		{
+		case 0: return "Green";
+		case 1: return "Trained";
+		case 2: return "Veteran";
+		default: return "Elite";
+		}
+	}
+
+	// How well the pilot leads his shots: 1 = perfect.
+	public static float LeadScale(Unit u)
+	{
+		int r = Rank(u);
+		if (r == 0)
+		{
+			return 0.6f;
+		}
+		if (r == 1)
+		{
+			return 0.85f;
+		}
+		return 1f;
+	}
+
+	// ---------------- v0.26.4 acrobatics ----------------
+	public static bool AcroActive(UnitAir ua)
+	{
+		return ua != null && acro.ContainsKey(((UnityEngine.Object)ua).GetInstanceID());
+	}
+
+	public static int AcroKind(UnitAir ua)
+	{
+		AcroState a;
+		if (ua != null && acro.TryGetValue(((UnityEngine.Object)ua).GetInstanceID(), out a))
+		{
+			return a.kind;
+		}
+		return 0;
+	}
+
+	private static AcroState NewAcro(UnitAir ua, int kind)
+	{
+		AcroState a = new AcroState();
+		a.kind = kind;
+		Vector3 e = ((Component)ua).transform.eulerAngles;
+		a.x = Wrap(e.x);
+		a.yaw = e.y;
+		a.z = Wrap(e.z);
+		acro[((UnityEngine.Object)ua).GetInstanceID()] = a;
+		return a;
+	}
+
+	private static float Wrap(float angle)
+	{
+		while (angle > 180f)
+		{
+			angle -= 360f;
+		}
+		while (angle < -180f)
+		{
+			angle += 360f;
+		}
+		return angle;
+	}
+
+	// Roll over and dive down on a plane below. False if the plane cannot do it now (already in a manoeuvre, too low).
+	public static bool StartRollAttack(UnitAir ua, Unit target)
+	{
+		try
+		{
+			if (!Applies(ua) || target == null || AcroActive(ua) || ((Component)ua).transform.position.y < AcroMinHeight)
+			{
+				return false;
+			}
+			AcroState a = NewAcro(ua, 1);
+			a.target = target;
+			a.z = Mathf.Clamp(a.z, -30f, 30f);
+			Debug.Log((object)("[FLIGHT] " + ua.unitData.unitName + " id " + ((UnityEngine.Object)ua).GetInstanceID() + " roll-over attack: rolling inverted at " + (((Component)ua).transform.position.y * 10f).ToString("F0") + " m"));
+			return true;
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[FLIGHT] roll-over attack failed and stopped: " + ex.Message));
+			return false;
+		}
+	}
+
+	// Roll inverted and pull through into a dive away (split-S). Needs height.
+	public static bool StartSplitS(UnitAir ua)
+	{
+		try
+		{
+			if (!Applies(ua) || AcroActive(ua) || ((Component)ua).transform.position.y < 75f)
+			{
+				return false;
+			}
+			NewAcro(ua, 2);
+			Debug.Log((object)("[FLIGHT] " + ua.unitData.unitName + " id " + ((UnityEngine.Object)ua).GetInstanceID() + " split-S at " + (((Component)ua).transform.position.y * 10f).ToString("F0") + " m"));
+			return true;
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[FLIGHT] split-S failed and stopped: " + ex.Message));
+			return false;
+		}
+	}
+
+	// A quick full roll while turning. Does nothing if an acrobatic move is already running.
+	public static void StartBarrelRoll(UnitAir ua)
+	{
+		try
+		{
+			if (!Applies(ua) || AcroActive(ua))
+			{
+				return;
+			}
+			AcroState a = NewAcro(ua, 3);
+			a.z = 0f;
+			if (ua.currentTurnRate < 0f)
+			{
+				a.z = 0.001f;
+			}
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[FLIGHT] barrel roll failed and stopped: " + ex.Message));
+		}
+	}
+
+	// Called from UnitAir.ApplyUnitMovement in place of the game's rotation. pitch and roll are the game's own currentPitch and currentRoll.
+	// Returns true when it turned the plane this tick (the game's rotation is then skipped); the caller copies AcroPitch and AcroRoll back.
+	public static bool Acro(UnitAir ua, float dur, float pitch, float roll)
+	{
+		try
+		{
+			if (failed || ua == null)
+			{
+				return false;
+			}
+			int id = ((UnityEngine.Object)ua).GetInstanceID();
+			AcroState a;
+			if (!acro.TryGetValue(id, out a))
+			{
+				return false;
+			}
+			if (!Applies(ua))
+			{
+				acro.Remove(id);
+				return false;
+			}
+			Transform tr = ((Component)ua).transform;
+			float y = tr.position.y;
+			a.t += dur;
+			AcroPitch = pitch;
+			AcroRoll = roll;
+
+			if (a.kind == 3)
+			{
+				// Barrel roll: the normal flight with an extra turn round the nose.
+				float sign = (ua.currentTurnRate < 0f) ? -1f : 1f;
+				a.z += 360f / BarrelTime * dur;
+				if (a.z >= 360f)
+				{
+					acro.Remove(id);
+					return false;
+				}
+				Vector3 e = tr.eulerAngles;
+				e.x = pitch;
+				e.y += ua.currentTurnRate * dur;
+				e.z = roll - sign * a.z;
+				tr.eulerAngles = e;
+				return true;
+			}
+
+			if (y < 35f && a.phase < 2)
+			{
+				a.phase = 2;
+			}
+			if (a.phase == 0)
+			{
+				a.z = Mathf.MoveTowards(a.z, 180f, RollOverRate * dur);
+				if (a.z >= 179.9f)
+				{
+					a.phase = 1;
+				}
+			}
+			if (a.phase == 1)
+			{
+				float goal = 180f;
+				if (a.kind == 1)
+				{
+					Unit t = a.target;
+					if (t == null || t.isDestroyed || a.t > 8f || y < PullOutHeight)
+					{
+						a.phase = 2;
+					}
+					else
+					{
+						Vector3 toNow = t.transform.position - tr.position;
+						float dist = toNow.magnitude;
+						Vector3 to = t.transform.position + t.transform.forward * t.currentActualSpeed * (dist / BulletTravelSpeed) - tr.position;
+						float flat = new Vector2(to.x, to.z).magnitude;
+						goal = Mathf.Clamp(Mathf.Atan2(-to.y, Mathf.Max(flat, 1f)) * 57.29578f, 10f, 120f);
+						if (a.x < 85f)
+						{
+							a.yaw = Mathf.MoveTowardsAngle(a.yaw, Mathf.Atan2(to.x, to.z) * 57.29578f, 45f * dur);
+						}
+						if (Vector3.Dot(tr.forward, to) < 0f && a.x > 20f)
+						{
+							a.phase = 2;
+						}
+					}
+				}
+				if (a.phase == 1)
+				{
+					a.x = Mathf.MoveTowards(a.x, goal, PullRate * dur);
+				}
+			}
+			if (a.phase == 2)
+			{
+				a.x = Mathf.MoveTowards(a.x, 180f, PullRate * dur);
+				if (a.x >= 179.5f)
+				{
+					// Finished upright and level, flying back the way it came.
+					tr.rotation = Quaternion.Euler(0f, a.yaw + 180f, 0f);
+					AcroPitch = 0f;
+					AcroRoll = 0f;
+					ua.currentTurnRate = 0f;
+					ua.wantedTurnRate = 0f;
+					ua.wantedHeight = y;
+					ua.pitchVelocity = 0f;
+					acro.Remove(id);
+					return true;
+				}
+			}
+			tr.rotation = Quaternion.Euler(a.x, a.yaw, a.z);
+			Vector3 now = tr.eulerAngles;
+			AcroPitch = Wrap(now.x);
+			AcroRoll = Wrap(now.z);
+			return true;
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[FLIGHT] acrobatics failed and stopped: " + ex.Message));
+			return false;
 		}
 	}
 }

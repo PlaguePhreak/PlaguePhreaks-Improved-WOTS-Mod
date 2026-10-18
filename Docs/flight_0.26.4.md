@@ -1,0 +1,69 @@
+# v0.26.4 Pilot skill and fighter acrobatics (flight_0.26.4.md)
+
+**Status: written, not compiled, not tested.** Back up the DLL first. Needs 0.26.3 installed. If a compile error appears, send me the exact text. This one needs the Mod Options class (`ModOptions.Crew`, v0.27) to be in your DLL.
+
+## What changes
+1. **Pilot rank.** Every fighter pilot is Green, Trained, Veteran or Elite. Until air crew experience exists the rank comes from nation and year, fixed for each plane: 1942 Japanese pilots are mostly Veteran or Elite and get worse in 1943 and 1944, US pilots start mostly Trained and get better. **With the Crew system switched off in Mod Options, every pilot is Elite**, so all manoeuvres can be tested. The log prints `pilot is Veteran` once per plane and adds `pilot X` to its flight lines.
+2. **What each rank may do.**
+   - **Green:** straight pursuit, notices a plane on its tail after 2 seconds, plain break turn (no dive or climb), under-leads its shots (60% lead), does not climb to set up a pass and turns straight back in after a pass.
+   - **Trained:** notices after 0.8 s, 85% lead, boom and zoom (US) or turn fight (Japanese), zoom climb after a pass.
+   - **Veteran:** instant reaction, the high yo-yo (Japanese), the Thach Weave (US pairs), a **defensive barrel roll** whenever it breaks away, and the **roll-over attack**.
+   - **Elite:** all of the above, a higher chance of the roll-over attack, and the **split-S escape**.
+3. **Roll-over attack (your idea).** A Veteran or Elite fighter at least 200 m above its target, 400 to 1300 m away and with it roughly ahead, rolls inverted (about 1.2 s), then pulls the nose down onto the target (up to a vertical dive), fires when it is lined up, and pulls out upright heading back the way it came when it is close, the target is behind it or it gets down to 550 m. It starts only above 700 m.
+4. **Split-S escape.** An Elite pilot above 750 m with an enemy within 450 m on its tail rolls inverted and pulls straight through into a dive away, finishing level and upright on the opposite heading.
+5. **Barrel roll.** A 1.8 second full roll round the nose while the plane keeps its turn.
+6. **Acrobatics are done in code, not by the game.** The game's own flight code only knows pitch and a bank angle, so during these moves `ModFlight.Acro` turns the plane itself and hands it back upright. It writes `acro roll-over-attack`, `acro split-S` or `acro barrel-roll` on the flight log lines.
+
+## Step 1 - replace ModFlight
+1. Class **ModFlight** > **Edit Class (C#)...**, select all, paste the new `Docs/flight_model_ModFlight.cs.txt`. **Compile**.
+
+## Step 2 - replace ModDogfight
+1. Class **ModDogfight** > **Edit Class (C#)...**, select all, paste `Docs/flight_0.26.4_ModDogfight.cs.txt` (it already contains the 0.26.2 gun run and the 0.26.1 `Energy` change). **Compile**.
+
+## Step 3 - UnitAir.ApplyUnitMovement
+1. Class **UnitAir**, method **`ApplyUnitMovement`** > **Edit Method (C#)...**. At the very end of the method find this block:
+```csharp
+else if (unitAI.currentManeuvre == Maneuvre.None || unitAI.currentManeuvre == Maneuvre.Break_Left || unitAI.currentManeuvre == Maneuvre.Break_Right)
+{
+	Vector3 eulerAngles = ((Component)this).transform.eulerAngles;
+	eulerAngles.x = currentPitch;
+	eulerAngles.y += currentTurnRate * fixedDuration;
+	eulerAngles.z = currentRoll;
+	((Component)this).transform.eulerAngles = eulerAngles;
+}
+```
+(dnSpy may show `base.transform` or `this.unitAI`; the lines are the same.) Replace that whole block with:
+```csharp
+else if (unitAI.currentManeuvre == Maneuvre.None || unitAI.currentManeuvre == Maneuvre.Break_Left || unitAI.currentManeuvre == Maneuvre.Break_Right)
+{
+	if (ModFlight.Acro(this, fixedDuration, currentPitch, currentRoll))
+	{
+		currentPitch = ModFlight.AcroPitch;
+		currentRoll = ModFlight.AcroRoll;
+	}
+	else
+	{
+		Vector3 eulerAngles = ((Component)this).transform.eulerAngles;
+		eulerAngles.x = currentPitch;
+		eulerAngles.y += currentTurnRate * fixedDuration;
+		eulerAngles.z = currentRoll;
+		((Component)this).transform.eulerAngles = eulerAngles;
+	}
+}
+```
+2. **Compile**, then **File > Save Module**.
+
+## Test
+1. First with **Crew system off** in Mod Options (everyone Elite, all moves allowed): Wildcats vs Zeros, ideally with the fighters starting at different heights. Keep `Interval` at 1.
+2. Watch for: a fighter rolling upside down and diving on a plane below it, a Zero rolling away when you get on its tail (split-S), planes doing a quick full roll when they break, and nothing flying into the sea.
+3. Then switch **Crew system on** and fly the same battle: you should see more simple attacks and slower reactions from Green and Trained pilots.
+4. Send me the output_log.txt. I will search for `pilot is`, `roll-over attack`, `split-S`, `acro`, kills, and any `failed and stopped` line.
+5. If a move looks wrong (too fast a roll, too steep, pulls out too low) tell me which and I will change the numbers at the top of `ModFlight` (`RollOverRate`, `PullRate`, `PullOutHeight`, `BarrelTime`).
+
+## Still to come
+- 0.26.5 Bombers and torpedo planes on the new model
+- 0.26.6 Formation flying
+- 0.26.7 Damage affects flight, altitude performance, per-aircraft flight file, flight readout, avoidance
+- 0.26.8 Remove speed limit
+- 0.26.9 Air auto resolve
+- At the end: set the log `Interval` back to 10 or 20.
