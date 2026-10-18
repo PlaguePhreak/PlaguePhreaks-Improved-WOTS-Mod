@@ -119,6 +119,10 @@ public class ModDogfight
 
 	public static float nextLossScan;
 	public static float nextStatus;
+	public static int fireOurs;
+	public static int fireEnemy;
+	public static int fireLogged;
+	public static int noAmmoLogged;
 	public static Dictionary<int, ModDogfight.State> states = new Dictionary<int, ModDogfight.State>();
 
 	public static ModDogfight.State GetState(Unit u)
@@ -757,6 +761,34 @@ public class ModDogfight
 		return true;
 	}
 
+	// 0.26.4.2.4: the game gives every plane about 30 s of trigger time (WeaponParticle.secondsFiring) and refuses to fire at 0. Count the burst
+	// starts per side and log the first 40 with range and aim angle; log once per plane when it is out.
+	public static void CountFire(Unit u, Unit target, float dist, float aim, WeaponParticle wp)
+	{
+		if (wp.secondsFiring <= 0f)
+		{
+			if (ModDogfight.noAmmoLogged < 60)
+			{
+				ModDogfight.noAmmoLogged++;
+				UnityEngine.Debug.Log("[GUN] " + u.unitData.unitName + " id " + u.GetInstanceID() + " (" + (u.faction == Faction.Player ? "ours" : "enemy") + ") is OUT OF AMMO (0 s of fire left)");
+			}
+			return;
+		}
+		if (u.faction == Faction.Player)
+		{
+			ModDogfight.fireOurs++;
+		}
+		else
+		{
+			ModDogfight.fireEnemy++;
+		}
+		if (ModDogfight.fireLogged < 40)
+		{
+			ModDogfight.fireLogged++;
+			UnityEngine.Debug.Log("[GUN] " + u.unitData.unitName + " id " + u.GetInstanceID() + " (" + (u.faction == Faction.Player ? "ours" : "enemy") + ") opens fire on " + Name(target) + " at " + (dist * 10f).ToString("F0") + " m, " + aim.ToString("F1") + " deg off, " + wp.secondsFiring.ToString("F1") + " s of fire left");
+		}
+	}
+
 	// 0.26.4.2.2: every 30 s, one line counting the aircraft on each side by what the AI is doing (to see why a side does not engage)
 	public static void Status(float now)
 	{
@@ -784,6 +816,39 @@ public class ModDogfight
 		{
 			line += kv.Value + " " + kv.Key + "; ";
 		}
+		float ammoOurs = 0f;
+		float ammoEnemy = 0f;
+		int nOurs = 0;
+		int nEnemy = 0;
+		int emptyOurs = 0;
+		int emptyEnemy = 0;
+		for (int j = 0; j < air.Count; j++)
+		{
+			Unit f = air[j];
+			if (f == null || f.isDestroyed || f.isParked || !ModDogfight.IsFighter(f) || f.weaponParticle == null)
+			{
+				continue;
+			}
+			if (f.faction == Faction.Player)
+			{
+				nOurs++;
+				ammoOurs += f.weaponParticle.secondsFiring;
+				if (f.weaponParticle.secondsFiring <= 0f)
+				{
+					emptyOurs++;
+				}
+			}
+			else
+			{
+				nEnemy++;
+				ammoEnemy += f.weaponParticle.secondsFiring;
+				if (f.weaponParticle.secondsFiring <= 0f)
+				{
+					emptyEnemy++;
+				}
+			}
+		}
+		line += "| gun ammo left (average seconds of fire): ours " + (nOurs > 0 ? (ammoOurs / nOurs).ToString("F1") : "-") + " (" + emptyOurs + " empty), enemy " + (nEnemy > 0 ? (ammoEnemy / nEnemy).ToString("F1") : "-") + " (" + emptyEnemy + " empty); bursts started so far: ours " + ModDogfight.fireOurs + ", enemy " + ModDogfight.fireEnemy;
 		UnityEngine.Debug.Log("[STATUS] " + now.ToString("F0") + " s: " + line);
 	}
 
@@ -895,10 +960,15 @@ public class ModDogfight
 		if (inCone && !wp.enabled)
 		{
 			wp.FireAll(true);
+			ModDogfight.CountFire(u, target, dist, aim, wp);
 		}
 		else if (!inCone && wp.enabled)
 		{
 			ModDogfight.StopGuns(u);
+		}
+		else if (!inCone && range > 0f && wp.secondsFiring <= 0f)
+		{
+			ModDogfight.CountFire(u, target, dist, aim, wp);
 		}
 	}
 

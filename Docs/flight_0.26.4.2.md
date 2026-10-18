@@ -39,3 +39,8 @@ Rules now:
 - **One main target per pilot, kept 5 minutes** (`TargetHoldSeconds` 300). It only changes when the target is destroyed, when more than 4 of our aircraft are on it, or when the 5 minutes are up. The game's squad logic can no longer swap it. Wingman cover (and the Thach Weave wingman) are the only short detours (8 s), then the pilot goes back to its main target.
 - **Fight height band:** a fighter never aims higher than 1000 m above the height it started the fight at (`CombatBand`), and never above 6500 m. Stops the whole fight creeping up to the ceiling.
 - **Wingman cover is a 30 s detour** (was 8 s) and the pilot cannot cover again for 60 s after it ends (`CoverSeconds`, `CoverRest`). The Thach Weave wingman counts as a cover too. The detour ends early if the enemy is destroyed.
+
+## 0.26.4.2.4 (why no kills: gun ammo)
+Several battles, 0 kills, only 1 "smoking" plane in about 20 minutes. Found in the game code: every plane has about 30 seconds of trigger time (`WeaponParticle.secondsFiring`, shown as the ammo bar), it only counts down while firing, and the gun refuses to fire at 0. I can't tell from the log whether the planes are firing and missing, or are out of ammo. Added logging only (no behaviour change):
+- `[STATUS]` now also shows the average seconds of fire left per side, how many planes are empty, and how many bursts each side has started.
+- `[GUN] ... opens fire on ... at N m, N deg off, N s of fire left` for the first 40 bursts, and `[GUN] ... is OUT OF AMMO` (first 60).
