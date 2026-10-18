@@ -44,6 +44,10 @@ public class ModDogfight
 		public float threatSince;
 		public float lastBelow;
 		public float nextBelowSample;
+		// wingman cover: the enemy this pilot is going after to save a friend
+		public Unit supportTarget;
+		public float supportUntil;
+		public float nextSupportCheck;
 	}
 
 	// distances and heights in battle code are metres x 0.1
@@ -125,6 +129,27 @@ public class ModDogfight
 			}
 			ModDogfight.State s = ModDogfight.GetState(u);
 			float now = Time.time;
+			// Wingman cover: a Trained or better pilot goes after the enemy sitting on a friend's tail, even if he is being chased himself.
+			if (now >= s.nextSupportCheck)
+			{
+				s.nextSupportCheck = now + 1f;
+				if (s.phase != 5 && ModFlight.Rank(u) >= 1)
+				{
+					Unit attacker = ModDogfight.FindAttackerOfFriend(u);
+					if (attacker != null)
+					{
+						s.supportTarget = attacker;
+						s.supportUntil = now + 8f;
+						if (s.phase != 4 && attacker != target)
+						{
+							ai.focusedUnit = attacker;
+							target = attacker;
+							s.lastTarget = attacker;
+							ModDogfight.SetPhase(u, s, 0, now, 0f, "covering a wingman: going after " + ModDogfight.Name(attacker) + " on his tail");
+						}
+					}
+				}
+			}
 			bool japanese = ModDogfight.IsJapanese(u);
 			bool targetIsFighter = ModDogfight.IsFighter(target);
 			float dist = Vector3.Distance(u.transform.position, target.transform.position);
@@ -154,7 +179,8 @@ public class ModDogfight
 					ModDogfight.StartDefend(u, s, japanese, now);
 				}
 			}
-			if (s.phase != 0 && s.phase != 5)
+			bool covering = s.phase == 4 && s.supportTarget != null && now < s.supportUntil;
+			if (s.phase != 0 && s.phase != 5 && !covering)
 			{
 				ModDogfight.StopGuns(u);
 				ModDogfight.NormalPitch(u);
@@ -383,10 +409,32 @@ public class ModDogfight
 		u.wantedTurnRate = s.turnSign * u.unitData.maxTurnRate * ModDogfight.ControlFactor(u, japanese);
 		ModDogfight.SetHeight(u, s.targetHeight, s);
 		ModDogfight.Energy(u, japanese);
+		// Defending, but a friend is being chased by this enemy: fire if it crosses the nose while breaking.
+		Unit sup = s.supportTarget;
+		if (sup != null && !sup.isDestroyed && now < s.supportUntil && u.weaponParticle != null)
+		{
+			Vector3 toSup = sup.transform.position - u.transform.position;
+			bool lined = toSup.magnitude < 400f * 0.1f && Vector3.Angle(u.transform.forward, toSup) < ModDogfight.GunCone;
+			if (lined && !u.weaponParticle.enabled)
+			{
+				u.weaponParticle.FireAll(true);
+			}
+			else if (!lined && u.weaponParticle.enabled)
+			{
+				ModDogfight.StopGuns(u);
+			}
+		}
 		if (now > s.phaseUntil)
 		{
 			s.defendCooldown = now + 8f;
-			if (japanese)
+			if (sup != null && !sup.isDestroyed && now < s.supportUntil + 4f && u.unitAI != null)
+			{
+				// out of the break: straight on to the enemy that was on the friend's tail
+				u.unitAI.focusedUnit = sup;
+				s.lastTarget = sup;
+				ModDogfight.SetPhase(u, s, 0, now, 0f, "out of the break, going after " + ModDogfight.Name(sup) + " to cover a wingman");
+			}
+			else if (japanese)
 			{
 				ModDogfight.SetPhase(u, s, 0, now, 0f, "back on the attack");
 			}
@@ -559,6 +607,52 @@ public class ModDogfight
 	}
 
 	// A friendly fighter close by that is free to help
+	// The enemy fighter that is on the tail of the nearest friend that needs help. At most two of our fighters go after the same enemy.
+	public static Unit FindAttackerOfFriend(Unit u)
+	{
+		if (EngagementManager.instance == null || EngagementManager.instance.allAirUnits == null)
+		{
+			return null;
+		}
+		List<Unit> air = EngagementManager.instance.allAirUnits;
+		Unit best = null;
+		float bestDist = ModDogfight.WingmanRange;
+		for (int i = 0; i < air.Count; i++)
+		{
+			Unit f = air[i];
+			if (f == null || f == u || f.isDestroyed || f.faction != u.faction || !ModDogfight.IsFighter(f))
+			{
+				continue;
+			}
+			Unit enemy = ModDogfight.FindThreat(f);
+			if (enemy == null)
+			{
+				continue;
+			}
+			float d = Vector3.Distance(enemy.transform.position, u.transform.position);
+			if (d > bestDist)
+			{
+				continue;
+			}
+			int already = 0;
+			for (int j = 0; j < air.Count; j++)
+			{
+				Unit o = air[j];
+				if (o != null && o != u && !o.isDestroyed && o.faction == u.faction && o.unitAI != null && o.unitAI.focusedUnit == enemy)
+				{
+					already++;
+				}
+			}
+			if (already >= 2)
+			{
+				continue;
+			}
+			bestDist = d;
+			best = enemy;
+		}
+		return best;
+	}
+
 	public static Unit FindWingman(Unit u, Unit threat)
 	{
 		List<Unit> air = EngagementManager.instance.allAirUnits;
