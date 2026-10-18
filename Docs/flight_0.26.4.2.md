@@ -31,3 +31,10 @@ Log of a battle over mountains: 7 Wildcats and 1 Zero lost; only 3 had a "SHOT D
 Log with 3 fights (Docs: output_log 5): in the last fight (Corsairs vs Zeros, 650 s) the planes crept higher and higher until 75% were above 7500 m, at the 8000 m limit (average height 5600 m in the first 4 minutes, 7660 m after). Every pass sets up "500 m above the target", and the target itself keeps climbing, so each loop is a little higher. At the ceiling there is no room to dive or zoom and that fight produced no kills at all in 650 s.
 - ModDogfight: `MaxHeight` (the highest wanted height for fighters in a fight) is now 6500 m instead of 8000 m.
 - New `[STATUS]` log line every 30 s: how many aircraft on each side are Attack_Unit, Follow_Unit, Follow_Nav_Points etc. This will show why a side "does not engage".
+
+## 0.26.4.2.3 (target and manoeuvre rules, Aaron 18 Oct)
+Log of Corsairs against Zeros (36 v 24): `[STATUS]` shows every plane was in Attack_Unit all the time (so they did engage), but 540 s gave 0 kills and 1 smoking plane, average height climbed from 5150 m to 6450 m (the ceiling) again, and there were about 430 target switches ("switching from ... to ...").
+Rules now:
+- **One special move every 1 to 2 minutes per pilot** (60 to 120 s; the first one 10 to 60 s into the fight). Yo-yo, lag roll, wingover, low yo-yo, split-S, roll-over, barrel roll, out-of-plane, spiral, extension and Thach Weave all count.
+- **One main target per pilot, kept 5 minutes** (`TargetHoldSeconds` 300). It only changes when the target is destroyed, when more than 4 of our aircraft are on it, or when the 5 minutes are up. The game's squad logic can no longer swap it. Wingman cover (and the Thach Weave wingman) are the only short detours (8 s), then the pilot goes back to its main target.
+- **Fight height band:** a fighter never aims higher than 1000 m above the height it started the fight at (`CombatBand`), and never above 6500 m. Stops the whole fight creeping up to the ceiling.

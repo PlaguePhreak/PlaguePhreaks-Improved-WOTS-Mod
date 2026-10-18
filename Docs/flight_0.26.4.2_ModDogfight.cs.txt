@@ -63,6 +63,12 @@ public class ModDogfight
 		public float lastY;
 		public Unit lastThreat;
 		public bool reported;
+		// 0.26.4.2.3: one main target, kept 5 minutes unless it is destroyed or more than 4 of our aircraft are on it
+		public Unit mainTarget;
+		public float mainUntil;
+		public bool crowded;
+		public float nextCrowdCheck;
+		public float homeY;
 	}
 
 	// distances and heights in battle code are metres x 0.1
@@ -90,6 +96,8 @@ public class ModDogfight
 	// v0.20.6: how often a fighter may look for a better target (seconds), and how long a turning fight
 	// goes on before it looks again
 	public const float RepickSeconds = 15f;
+	public const float TargetHoldSeconds = 300f;
+	public const float CombatBand = 1000f * 0.1f;
 	public const float TurnFightRepick = 25f;
 	// v0.20.7: give up a run that never got the target in front after this long (seconds),
 	// and never zoom higher than this above the target
@@ -119,6 +127,8 @@ public class ModDogfight
 			s.wobble = Random.Range(0f, 100f);
 			s.side = (Random.value < 0.5f) ? -1f : 1f;
 			s.minDist = float.MaxValue;
+			s.homeY = u.transform.position.y;
+			s.nextSpecial = Time.time + Random.Range(10f, 60f);
 			ModDogfight.states[id] = s;
 		}
 		return s;
@@ -185,11 +195,28 @@ public class ModDogfight
 					}
 				}
 			}
-			// 0.26.4.2: keep the target for a while, whatever the game's squad logic picks in between
-			if (s.holdTarget != null && now < s.holdUntil && !s.holdTarget.isDestroyed && s.holdTarget.unitAir != null && !s.holdTarget.unitAir.shootDown && target != s.holdTarget)
+			// 0.26.4.2.3: one main target, kept for 5 minutes, whatever the game's squad logic picks in between. It only changes when the target is
+			// destroyed, when more than 4 of our aircraft are on it, or when the 5 minutes are up. Wingman cover (8 s) is the only short detour.
+			bool coverHold = s.holdTarget != null && now < s.holdUntil && !s.holdTarget.isDestroyed && s.holdTarget.unitAir != null && !s.holdTarget.unitAir.shootDown;
+			if (coverHold)
 			{
-				ai.focusedUnit = s.holdTarget;
-				target = s.holdTarget;
+				if (target != s.holdTarget)
+				{
+					ai.focusedUnit = s.holdTarget;
+					target = s.holdTarget;
+				}
+			}
+			else if (!ModDogfight.CanSwitch(u, s, now))
+			{
+				if (target != s.mainTarget)
+				{
+					ai.focusedUnit = s.mainTarget;
+					target = s.mainTarget;
+				}
+			}
+			else if (target != s.mainTarget)
+			{
+				ModDogfight.SetMain(s, target, now);
 			}
 			bool japanese = ModDogfight.IsJapanese(u);
 			// 0.26.4.1: the game parks (removes) any plane that goes beyond 5000 units (50 km) from the middle of the battle. Turn back well before that.
@@ -210,7 +237,6 @@ public class ModDogfight
 			if (target != s.lastTarget)
 			{
 				s.lastTarget = target;
-				ModDogfight.Hold(s, target, now, Random.Range(12f, 20f));
 				ModDogfight.StartAttack(u, target, s, japanese, targetIsFighter, dist, now);
 			}
 			// someone on my tail?
@@ -565,7 +591,7 @@ public class ModDogfight
 			s.targetHeight = u.transform.position.y - ModDogfight.SplitSDrop;
 			how = "breaking and diving away";
 			// Thach Weave: turn towards a wingman, who turns in on the attacker
-			Unit wing = (rank >= 2 && Random.value < 0.5f) ? ModDogfight.FindWingman(u, threat) : null;
+			Unit wing = (rank >= 2 && ModDogfight.SpecialReady(s, now) && Random.value < 0.5f) ? ModDogfight.FindWingman(u, threat) : null;
 			if (wing != null)
 			{
 				float wa = Utilities.GetSignedAngleToPosition(u.transform.forward, u.transform.position, wing.transform.position);
@@ -573,6 +599,8 @@ public class ModDogfight
 				wing.unitAI.focusedUnit = threat;
 				ModDogfight.State ws = ModDogfight.GetState(wing);
 				ws.lastTarget = threat;
+				ModDogfight.Hold(ws, threat, now, 8f);
+				ModDogfight.UseSpecial(s, now);
 				ModDogfight.SetPhase(wing, ws, 0, now, 0f, null);
 				how = "Thach Weave, turning towards " + wing.unitData.unitName + " who turns in on the attacker";
 			}
@@ -614,6 +642,40 @@ public class ModDogfight
 			how = how + ", barrel roll";
 		}
 		ModDogfight.SetPhase(u, s, 4, now, Random.Range(4f, 6f), ModDogfight.Name(threat) + " on her tail at " + (Vector3.Distance(u.transform.position, threat.transform.position) * 10f).ToString("F0") + " m, " + how);
+	}
+
+	public static void SetMain(ModDogfight.State s, Unit target, float now)
+	{
+		s.mainTarget = target;
+		s.mainUntil = now + ModDogfight.TargetHoldSeconds;
+		s.crowded = false;
+		s.nextCrowdCheck = now + 1f;
+	}
+
+	// True when this pilot may change target: no main target, it is destroyed, the hold time is up, or more than 4 of our aircraft are on it
+	public static bool CanSwitch(Unit u, ModDogfight.State s, float now)
+	{
+		Unit m = s.mainTarget;
+		if (m == null || m.isDestroyed || m.unitAir == null || m.unitAir.shootDown || now >= s.mainUntil)
+		{
+			return true;
+		}
+		if (now >= s.nextCrowdCheck)
+		{
+			s.nextCrowdCheck = now + 1f;
+			int n = 0;
+			List<Unit> air = EngagementManager.instance.allAirUnits;
+			for (int i = 0; i < air.Count; i++)
+			{
+				Unit f = air[i];
+				if (f != null && f != u && !f.isDestroyed && f.faction == u.faction && f.unitAI != null && f.unitAI.focusedUnit == m)
+				{
+					n++;
+				}
+			}
+			s.crowded = n > 4;
+		}
+		return s.crowded;
 	}
 
 	public static void Hold(ModDogfight.State s, Unit target, float now, float seconds)
@@ -760,7 +822,7 @@ public class ModDogfight
 	// Returns true if the target changed.
 	public static bool Repick(Unit u, ModDogfight.State s, float now)
 	{
-		if (now < s.nextRepick || EngagementAI.instance == null || u.unitAI == null)
+		if (now < s.nextRepick || EngagementAI.instance == null || u.unitAI == null || !ModDogfight.CanSwitch(u, s, now))
 		{
 			return false;
 		}
@@ -778,7 +840,7 @@ public class ModDogfight
 		}
 		u.unitAI.focusedUnit = pick;
 		s.lastTarget = pick;
-		ModDogfight.Hold(s, pick, now, Random.Range(12f, 20f));
+		ModDogfight.SetMain(s, pick, now);
 		UnityEngine.Debug.Log("[DOGFIGHT] " + u.unitData.unitName + " id " + u.GetInstanceID() + " (" + (u.faction == Faction.Player ? "ours" : "enemy") + "): switching from " + ModDogfight.Name(old) + " to " + ModDogfight.Name(pick) + " id " + pick.GetInstanceID());
 		return true;
 	}
@@ -814,7 +876,7 @@ public class ModDogfight
 		float down = Mathf.Atan2(-d.y, Mathf.Max(flat.magnitude, 1f)) * Mathf.Rad2Deg;
 		float aim = Vector3.Angle(u.transform.forward, d);
 		ModFlight.Aim(u.unitAir, down);
-		u.wantedHeight = Mathf.Clamp(pos.y - down, ModDogfight.MinHeight, ModDogfight.MaxHeight);
+		u.wantedHeight = Mathf.Clamp(pos.y - down, ModDogfight.MinHeight, ModDogfight.Ceiling(u));
 		WeaponParticle wp = u.weaponParticle;
 		if (wp == null)
 		{
@@ -885,7 +947,7 @@ public class ModDogfight
 
 	public static void UseSpecial(ModDogfight.State s, float now)
 	{
-		s.nextSpecial = now + Random.Range(40f, 80f);
+		s.nextSpecial = now + Random.Range(60f, 120f);
 	}
 
 	// The enemy fighter that is on the tail of the nearest friend that needs help. At most two of our fighters go after the same enemy.
@@ -973,10 +1035,18 @@ public class ModDogfight
 		u.wantedTurnRate = Mathf.Clamp(angle + wob, -max, max) * scale;
 	}
 
+	// 0.26.4.2.3: a fighter never aims higher than 1000 m above the height it started the fight at (every pass sets up 500 m above the
+	// target, and with both sides doing it everyone crept up to the ceiling)
+	public static float Ceiling(Unit u)
+	{
+		ModDogfight.State s = ModDogfight.GetState(u);
+		return Mathf.Min(ModDogfight.MaxHeight, s.homeY + ModDogfight.CombatBand);
+	}
+
 	public static void SetHeight(Unit u, float h, ModDogfight.State s)
 	{
 		float wob = Mathf.Sin((Time.time + s.wobble) * 0.4f) * 30f * 0.1f;
-		u.wantedHeight = Mathf.Clamp(h + wob, ModDogfight.MinHeight, ModDogfight.MaxHeight);
+		u.wantedHeight = Mathf.Clamp(h + wob, ModDogfight.MinHeight, ModDogfight.Ceiling(u));
 	}
 
 	// Diving builds speed past level top speed, climbing costs it
