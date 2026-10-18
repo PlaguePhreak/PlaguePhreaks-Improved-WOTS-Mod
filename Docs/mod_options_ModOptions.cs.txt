@@ -333,50 +333,106 @@ public static class ModOptions
 
 	// ---------------------------------------------------------------- game settings from the pause menu
 
+	private static List<GameObject> savedObjs;
+	private static List<bool> savedStates;
+	private static Canvas savedCanvas;
+	private static int savedOrder;
+
 	private static void OpenGameSettings()
 	{
+		MenuSystem ms = MenuSystem.instance;
+		if (ms == null || ms.optionsInterface == null || fromPause)
+		{
+			return;
+		}
 		try
 		{
-			MenuSystem ms = MenuSystem.instance;
-			if (ms == null || ms.optionsInterface == null)
+			// Remember what is switched on, so Back can put everything exactly as it was.
+			savedObjs = new List<GameObject>();
+			savedStates = new List<bool>();
+			Transform[] all = ms.GetComponentsInChildren<Transform>(true);
+			for (int i = 0; i < all.Length; i++)
 			{
-				return;
+				savedObjs.Add(all[i].gameObject);
+				savedStates.Add(all[i].gameObject.activeSelf);
 			}
+			savedObjs.Add(PauseMenu.instance.gameObject);
+			savedStates.Add(PauseMenu.instance.gameObject.activeSelf);
 			fromPause = true;
 			PauseMenu.instance.gameObject.SetActive(false);
-			ms.menusystemBackground.gameObject.SetActive(false);
-			ms.gameObject.SetActive(true);
-			ms.mainInterface.SetActive(false);
-			ms.optionsInterface.SetActive(true);
+			// Switch on the parents of the options screen.
+			Transform node = ms.optionsInterface.transform;
+			Transform top = node;
 			string path = string.Empty;
-			Transform t = ms.optionsInterface.transform;
-			while (t != null)
+			while (node != null)
 			{
-				if (!t.gameObject.activeSelf)
+				if (!node.gameObject.activeSelf)
 				{
-					t.gameObject.SetActive(true);
+					node.gameObject.SetActive(true);
 				}
-				path = t.name + "/" + path;
-				t = t.parent;
+				path = node.name + "/" + path;
+				if (node.parent == ms.transform)
+				{
+					top = node;
+				}
+				node = node.parent;
 			}
-			Canvas c = ms.optionsInterface.GetComponentInParent<Canvas>();
-			if (c != null && c.rootCanvas.sortingOrder < 100)
+			// Switch off everything else inside the menu system (load lists, main menu, credits, overlays).
+			for (int c = 0; c < ms.transform.childCount; c++)
 			{
-				c.rootCanvas.sortingOrder = 100;
+				Transform child = ms.transform.GetChild(c);
+				if (child != top)
+				{
+					child.gameObject.SetActive(false);
+				}
+			}
+			ms.optionsInterface.SetActive(true);
+			ms.gameObject.SetActive(true);
+			savedCanvas = ms.optionsInterface.GetComponentInParent<Canvas>();
+			if (savedCanvas != null)
+			{
+				savedCanvas = savedCanvas.rootCanvas;
+				savedOrder = savedCanvas.sortingOrder;
+				if (savedOrder < 100)
+				{
+					savedCanvas.sortingOrder = 100;
+				}
 			}
 			Debug.Log("[MODOPT] options path " + path + " visible " + ms.optionsInterface.activeInHierarchy);
 			if (!ms.optionsInterface.activeInHierarchy)
 			{
-				fromPause = false;
-				PauseMenu.instance.gameObject.SetActive(true);
+				RestoreScreens();
 			}
 		}
 		catch (Exception ex)
 		{
-			fromPause = false;
-			PauseMenu.instance.gameObject.SetActive(true);
 			Debug.LogError("[MODOPT] settings failed: " + ex.ToString());
+			RestoreScreens();
 		}
+	}
+
+	// Puts every screen back the way it was before Settings was opened.
+	private static void RestoreScreens()
+	{
+		fromPause = false;
+		if (savedObjs != null)
+		{
+			for (int i = 0; i < savedObjs.Count; i++)
+			{
+				if (savedObjs[i] != null)
+				{
+					savedObjs[i].SetActive(savedStates[i]);
+				}
+			}
+		}
+		if (savedCanvas != null)
+		{
+			savedCanvas.sortingOrder = savedOrder;
+		}
+		savedObjs = null;
+		savedStates = null;
+		savedCanvas = null;
+		PauseMenu.instance.gameObject.SetActive(true);
 	}
 
 	// First line of MenuSystem.BackToMain. True = handled here (the options screen was opened from the pause menu).
@@ -386,17 +442,13 @@ public static class ModOptions
 		{
 			return false;
 		}
-		fromPause = false;
 		try
 		{
-			MenuSystem ms = MenuSystem.instance;
-			ms.optionsInterface.SetActive(false);
-			ms.mainInterface.SetActive(true);
-			ms.gameObject.SetActive(false);
-			PauseMenu.instance.gameObject.SetActive(true);
+			RestoreScreens();
 		}
 		catch (Exception ex)
 		{
+			fromPause = false;
 			Debug.LogError("[MODOPT] back failed: " + ex.ToString());
 		}
 		return true;
