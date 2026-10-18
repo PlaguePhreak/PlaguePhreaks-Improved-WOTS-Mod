@@ -7,7 +7,7 @@
 - Planes cannot dive past a speed limit (fighters 125% of top speed, dive bombers 105%, other bombers 115%).
 - A plane that gets too slow stalls: the nose drops until it has flying speed again. A `[FLIGHT] ... stalling` line is written.
 - Turns get slower at high speed (heavy controls) and when nearly stalled. This replaces the Zero-only heavy controls rule.
-- One switch, `ModFlight.Enabled`. `false` flies exactly like the original game.
+- No switch: this is how planes fly from now on. (If the code ever throws an error it stops itself and logs `[FLIGHT] flight core failed`, so one bug cannot break a battle.)
 
 **Why these numbers (from your two logs):** the game gave no speed change with pitch; the dive bombers reached only 9 of 12.6 speed in their dives, with pitch up to about 50 degrees. With this, a Val in a long dive should get close to 105% of top speed.
 
@@ -34,17 +34,15 @@ ModFlight.End(this, duration);
 1. Class **ModDogfight**, method **`Energy`** > **Edit Method (C#)...**.
 2. As the first line inside the method add:
 ```csharp
-if (ModFlight.Enabled)
-{
-	return;
-}
+return;
 ```
+(The old fighter speed and heavy-controls rule is now done by the flight core. If the compiler warns about unreachable code, that is fine.)
 3. **Compile**, then **File > Save Module**.
 
 ## Test
 1. Fly an air battle with fighters (a Wildcat vs Zero fight) and bombers (dive bombers and torpedo bombers).
 2. Send `output_log.txt`. I will check: speed in dives vs top speed, stall lines, and that the turn rates changed as expected.
-3. If anything looks wrong in the game, set `Enabled = false` in `ModFlight`, **Compile**, **Save Module** to get the old flying back.
+3. If anything looks wrong, send me the log. To go back to the old flying, restore your DLL backup.
 
 ## Next versions (each one only after the previous passes a test)
 - 0.26.2 Idle flight mode and bank-based turning

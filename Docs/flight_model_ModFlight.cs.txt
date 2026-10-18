@@ -10,11 +10,11 @@ using UnityEngine;
 //   Stall:       below a minimum speed (35% of top speed for fighters, 45% for others) a plane cannot hold its climb. It lets the nose drop
 //                until it has flying speed again.
 //   Turn limit:  the turn rate is capped by speed. Above corner speed (heavy controls) and below it (nearly stalled) turns are slower.
-// Every number is below and can be changed, then Compile and Save Module.
+// Always on: this is the game's flying now, not an option. Every number is below and can be changed, then Compile and Save Module.
 public static class ModFlight
 {
-	// Master switch for the whole flight core. Set to false to fly exactly like the original game.
-	public static bool Enabled = true;
+	// Not a player switch. Only set if the core throws an error, so one bug cannot spam the log or break a battle (the plane then flies the original way).
+	private static bool failed = false;
 
 	// Gravity along the nose in game units per second squared (9.81 m/s2, 10 m per game unit). EnergyScale makes it stronger or weaker.
 	public const float Gravity = 0.981f;
@@ -33,7 +33,7 @@ public static class ModFlight
 
 	private static bool Applies(UnitAir ua)
 	{
-		if (!Enabled || ua == null || ua.unitData == null || ua.isDestroyed || ua.shootDown || ua.isParked)
+		if (failed || ua == null || ua.unitData == null || ua.isDestroyed || ua.shootDown || ua.isParked)
 		{
 			return false;
 		}
@@ -48,7 +48,7 @@ public static class ModFlight
 	// Call as the first line of UnitAir.UpdateMovementData.
 	public static void Begin(UnitAir ua)
 	{
-		if (!Enabled)
+		if (failed)
 		{
 			return;
 		}
@@ -158,8 +158,8 @@ public static class ModFlight
 		}
 		catch (Exception ex)
 		{
-			Enabled = false;
-			Debug.LogError((object)("[FLIGHT] flight core failed and was switched off: " + ex.Message));
+			failed = true;
+			Debug.LogError((object)("[FLIGHT] flight core failed and stopped: " + ex.Message));
 		}
 	}
 }

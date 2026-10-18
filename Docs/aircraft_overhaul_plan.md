@@ -8,7 +8,7 @@ Replace the way aircraft fly in battle with a believable flight model, then rebu
 ## Decisions so far (Aaron)
 1. Log first, so each change can be checked against measured numbers. Then the AI uses the new movement.
 2. Fighters first.
-3. The on/off switch for new flight tied to the pause menu / Mod Options rework (v0.27).
+3. No on/off switch: the new flight replaces the old flying outright (decided 18 Oct, replaces the earlier switch idea). The old movement is kept only as an automatic fallback if the new code throws an error.
 4. Full draft agreed before any code changes.
 5. Idea from the first log: aircraft with nothing to do should be in an "idle flight" mode (see addition A).
 
@@ -49,7 +49,7 @@ Replace only the movement layer (`UnitAir.UpdateMovementData`, `ApplyFlightContr
 2. **Energy.** Diving gains speed, climbing loses it. Thrust, drag and a per-aircraft dive speed limit.
 3. **Pitch control.** The AI can ask for a nose angle or a target point, so aiming works (fixes the v0.20.9 failure).
 4. **Uses the numbers planes already have** (`maxSpeed`, `acceleration`, `turnRate`, `maxTurnRate`, `dive`, `climb`, `speedPenaltyAtMaxTurn`), so all 115 added aircraft work from day one. Extra per-aircraft numbers (stall speed, dive limit) are optional later.
-5. **Old movement stays as a fallback** behind a switch until the new one is proven.
+5. **No switch.** The old movement is replaced. Restoring the DLL backup is the way back.
 
 ## Proposed additions (accept or cut each one)
 **A. Idle flight mode (Recommend, your idea).** A real "Idle" state for planes with no task: they hold altitude and a steady speed, fly circuits or follow the leader, instead of reading as Level_Bomb. Implementation note: do not renumber the `AIAttack` enum (values could be stored in saves), so add `Idle` at the end or use a separate flag. The logger already treats non-attacking planes as Idle.
@@ -62,12 +62,12 @@ Replace only the movement layer (`UnitAir.UpdateMovementData`, `ApplyFlightContr
 **H. Altitude performance (Optional).** Top speed and climb change with height (thinner air). Makes high or low altitude matter.
 **I. Per-aircraft flight file (Optional).** An Override file listing extra flight numbers for any plane (stall speed, dive limit, climb rate). Missing values fall back to defaults.
 **J. Flight debug readout (Optional).** A key that shows the log values for the selected plane on screen, using the Stage 0 logger code.
-**K. Settings switch (Recommend).** A Mod Options entry "New aircraft flight" (on/off), plus fine switches while testing. Stage 0 uses a plain `Enabled` flag until Mod Options is tested.
+**K. ~~Settings switch~~ (dropped by Aaron).** The new flight is not optional.
 **L. Collision and ship avoidance (Optional, late).** Planes pull off before flying into ships or terrain, using the same raycasts as `CheckNavigation`.
 **Not in this overhaul:** carrier launch and landing in battle, campaign-map range and timers (v0.25.3), weather and wind.
 
 ## Stages with how we know each one works
-Rules for every stage: new behaviour is behind a switch (default off until tested), writes `[FLIGHT]` lines, and is compared against the Stage 0 log.
+Rules for every stage: new behaviour writes `[FLIGHT]` lines, and is compared against the Stage 0 log.
 - **Stage 0, Measure (written, being tested).** `ModFlightLog`. Done when we have logs with fighter, dive bomber, torpedo bomber and level bomber runs, and a table of real numbers per aircraft type.
 - **Stage 1, Bank, speed and idle state.** Turn rate from bank and speed, speed lost in turns, plus the Idle flight state (A). Done when logged turn rates sit within about 20% of today's per-type values and planes visibly bank into turns.
 - **Stage 2, Energy and limits (B, C).** Pitch changes speed, stall speed, dive limit. Done when a dive gains speed and a climb loses it in the log, and no plane exceeds its limit.
@@ -75,11 +75,11 @@ Rules for every stage: new behaviour is behind a switch (default off until teste
 - **Stage 4, Bombers and torpedo planes.** Dive, level, torpedo and rocket approaches re-tuned; `Maneuvre` special cases replaced one at a time (Roll_Over and Level_Out first, Kamikaze last).
 - **Stage 5, Formation flying (G).**
 - **Stage 6, Damage, skill, data and balance (D, E, I, H as accepted).** Balance pass over all aircraft.
-- **Stage 7, Switch and cleanup (K).** Mod Options entry, then remove the old movement only after a long clean test period.
+- **Stage 7, Cleanup.** Remove dead old-movement code once everything has had a long clean test period.
 
 ## Risks
 - I cannot compile or run anything, so every stage needs your dnSpy build, a test battle and the log back.
-- `PerformManeuvre`, `CustomAirAttack` and aircraft data were tuned for the old movement, so each stage changes the feel. Hence the switch.
+- `PerformManeuvre`, `CustomAirAttack` and aircraft data were tuned for the old movement, so each stage changes the feel. Hence small stages with a test after each.
 - v0.20.9 is the warning: small stages, one switch each.
 
 ## Questions for you

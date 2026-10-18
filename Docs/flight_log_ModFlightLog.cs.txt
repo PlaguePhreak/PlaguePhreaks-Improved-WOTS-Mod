@@ -58,7 +58,7 @@ public static class ModFlightLog
 				+ " roll " + roll.ToString("F1")
 				+ " turn " + ua.currentTurnRate.ToString("F1") + "/" + ua.wantedTurnRate.ToString("F1")
 				+ " penalty " + ua.currentSpeedPenalty.ToString("F2")
-				+ " " + maneuvre + " " + action + " " + attack + (ModFlight.Enabled ? " [core on]" : " [core off]")
+				+ " " + maneuvre + " " + action + " " + attack
 				+ (ua.isDestroyed ? " DESTROYED" : "")));
 		}
 		catch (Exception ex)
