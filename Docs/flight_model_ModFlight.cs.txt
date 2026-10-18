@@ -12,6 +12,8 @@ using UnityEngine;
 //   Turn limit:  the turn rate is capped by speed. Above corner speed (heavy controls) and below it (nearly stalled) turns are slower.
 // v0.26.2 adds pitch control: while a fighter lines up a shot, the nose is pulled to the angle it needs at a real pull rate
 // (the game only allowed 10 degrees per second, so a fighter could never get its nose onto a target in time).
+// v0.26.3 adds banking: a plane rolls into a turn at a real roll rate (fighters 90 degrees per second, others 45) and the turn only builds as
+// fast as the bank allows, so turns start and finish smoothly instead of the nose swinging the moment the AI asks.
 // Always on: this is the game's flying now, not an option. Every number is below and can be changed, then Compile and Save Module.
 public static class ModFlight
 {
@@ -43,6 +45,11 @@ public static class ModFlight
 	public const float OtherEasyRate = 12f;
 	public const float MaxAimDown = 60f;
 	public const float MaxAimUp = 50f;
+	// v0.26.3 banking. Roll rate in degrees per second. The game's bank is 5 degrees per degree-per-second of turn rate, kept here.
+	public const float FighterRollRate = 90f;
+	public const float OtherRollRate = 45f;
+	public const float BankPerTurn = 5f;
+	public const float MaxBank = 80f;
 
 	private static bool Applies(UnitAir ua)
 	{
@@ -247,6 +254,59 @@ public static class ModFlight
 			failed = true;
 			Debug.LogError((object)("[FLIGHT] pitch control failed and stopped: " + ex.Message));
 			return Mathf.SmoothDampAngle(current, heightGap, ref ua.pitchVelocity, 1f, 10f, duration);
+		}
+	}
+
+	// v0.26.3. Replaces the roll line of UnitAir.ApplyFlightControls. Rolls toward the bank the wanted turn needs, at a real roll rate.
+	public static float Roll(UnitAir ua, float currentRoll, float currentTurnRate, float wantedTurnRate, float duration)
+	{
+		try
+		{
+			if (failed || ua.unitData == null)
+			{
+				return Mathf.MoveTowards(currentRoll, currentTurnRate * -BankPerTurn, 40f * duration);
+			}
+			bool fighter = ua.unitData.unitSubtype == UnitSubType.Fighter;
+			float target = Mathf.Clamp(wantedTurnRate * -BankPerTurn, -MaxBank, MaxBank);
+			return Mathf.MoveTowards(currentRoll, target, (fighter ? FighterRollRate : OtherRollRate) * duration);
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[FLIGHT] roll control failed and stopped: " + ex.Message));
+			return Mathf.MoveTowards(currentRoll, currentTurnRate * -BankPerTurn, 40f * duration);
+		}
+	}
+
+	// v0.26.3. Replaces the turn rate line of UnitAir.ApplyFlightControls. The turn rate still moves toward the wish at the plane's own rate,
+	// but cannot be faster than the current bank supports (plus 1 degree per second so a level plane can start rolling into a turn).
+	public static float TurnRate(UnitAir ua, float current, float wanted, float currentRoll, float duration)
+	{
+		float next = Mathf.MoveTowards(current, wanted, duration * ua.unitData.turnRate * Time.timeScale);
+		try
+		{
+			if (failed)
+			{
+				return next;
+			}
+			float supported = -currentRoll / BankPerTurn;
+			float sign = Mathf.Sign(next);
+			float allowed = 1f;
+			if (sign * supported > 0f)
+			{
+				allowed = Mathf.Abs(supported) + 1f;
+			}
+			if (Mathf.Abs(next) > allowed && Mathf.Abs(next) > Mathf.Abs(current))
+			{
+				next = sign * allowed;
+			}
+			return next;
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[FLIGHT] bank control failed and stopped: " + ex.Message));
+			return next;
 		}
 	}
 }
