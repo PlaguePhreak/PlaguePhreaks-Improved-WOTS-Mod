@@ -20,6 +20,9 @@ Your second log (no errors) showed a bug: after a **split-S** the plane never ga
 ## Update 18 Oct (third round: Wildcats outnumbered)
 Third log (Crew on, Wildcats against A6M2 Zeros and A8K1s, no errors from our code). The Wildcats were not stuck: Japanese fighters were aiming on 94% of their attack lines, the Wildcats only 34%, because the Wildcats were outnumbered about 2.5 to 1 and kept breaking away. There were 750 "on her tail" reactions (about 400 from A6M2s, 235 from A8K1s) and 623 "clear, climbing back to attack" restarts, against only 95 dives. A defence was triggered by any enemy within 600 m for even half a second, then a new one started 3 seconds after the last. Now a plane only counts as a threat inside **400 m** and a pilot does not react again for **8 seconds** after a defence or acrobatic move. Re-paste the `ModDogfight` class (`Docs/flight_0.26.4_ModDogfight.cs.txt`). The two `IndexOutOfRangeException` lines in the log come from `WeaponAAA.InitialiseAAA` (an anti-aircraft gun set up on some unit), not from the flight code; I will look at them separately.
 
+## Update 18 Oct (fourth round: crew switch)
+Your last log printed `pilot is Trained` although the save's Mod Options show Crew OFF. `ModOptions.Get` takes the campaign's locked copy only when it can see the running campaign; in a battle it may not, and then falls back to the main-menu setting. So the battle may have read the main-menu value (probably ON). `ModFlight` now writes one line `[FLIGHT] Mod Options crew system reads ON/OFF, campaign '...'` at the first pilot check, so the next log tells us for certain. Quick fix to test now: set **Crew system OFF in Mod Options from the main menu too** (not only in the save), then fly the battle again. Re-paste `ModFlight` (the class `Docs/flight_model_ModFlight.cs.txt`).
+
 ## Step 1 - replace ModFlight
 1. Class **ModFlight** > **Edit Class (C#)...**, select all, paste the new `Docs/flight_model_ModFlight.cs.txt`. **Compile**.
 

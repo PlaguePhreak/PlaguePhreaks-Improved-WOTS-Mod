@@ -79,6 +79,8 @@ public static class ModFlight
 
 	private static Dictionary<int, AcroState> acro = new Dictionary<int, AcroState>();
 	private static Dictionary<int, int> ranks = new Dictionary<int, int>();
+	private static bool crewLogged = false;
+	private static bool lastCrew = false;
 	// What the game's pitch and roll should read after an acrobatic tick (UnitAir copies these into currentPitch / currentRoll).
 	public static float AcroPitch = 0f;
 	public static float AcroRoll = 0f;
@@ -379,7 +381,19 @@ public static class ModFlight
 			{
 				return 3;
 			}
-			if (!ModOptions.Crew)
+			bool crewOn = ModOptions.Crew;
+			if (!crewLogged || crewOn != lastCrew)
+			{
+				crewLogged = true;
+				lastCrew = crewOn;
+				string camp = "no campaign seen";
+				if (CampaignManager.instance != null && CampaignManager.instance.campaignData != null)
+				{
+					camp = "campaign '" + CampaignManager.instance.campaignData.campaignID + "'";
+				}
+				Debug.Log((object)("[FLIGHT] Mod Options crew system reads " + (crewOn ? "ON (pilot ranks used)" : "OFF (every pilot Elite)") + ", " + camp));
+			}
+			if (!crewOn)
 			{
 				return 3;
 			}
