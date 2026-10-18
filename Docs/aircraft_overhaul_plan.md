@@ -89,6 +89,8 @@ Rules for every stage: new behaviour writes `[FLIGHT]` lines, and is compared ag
 
 
 ## 0.26.8 Remove speed limit: overspeed break-up and shed wings (requested by Aaron, 18 Oct; research done, nothing built)
+
+**Credits for the changelog:** "Aircraft parts breaking off from damage was inspired by Avaricles' work. Fuel fires (0.26.7.1) was inspired by Kiko's Fuel fires."
 **What Aaron wants:** planes may dive past the 125 to 130% speed they can handle. Past that point the wings get a chance to break off, and the plane can snap apart. Also: could the models be changed live (a wing shot off falls away, a wing snaps off in a fast dive)?
 
 **Why it is number 8:** it needs the 0.26.1 energy model (tested) and the damage work in 0.26.7 (damage that changes how a plane flies), and the mesh work below needs a short test first. It replaces the hard 125% dive cap (and the 105% and 115% caps) from 0.26.1.
