@@ -80,7 +80,7 @@ Rules for every stage: new behaviour writes `[FLIGHT]` lines, and is compared ag
 - **Stage 3, Pitch control for fighters.** `wantedPitch`, and the gun run (`ModDogfight`, `DogfightApproach`, `IsInFiringCone`) uses it. Done when a diving Wildcat gets shots on a Zero (the v0.20.9 failure) and kill counts stay sane.
 - **Stage 4, Bombers and torpedo planes.** Dive, level, torpedo and rocket approaches re-tuned; `Maneuvre` special cases replaced one at a time (Roll_Over and Level_Out first, Kamikaze last).
 - **Stage 5, Formation flying (G).**
-- **Stage 4b (0.26.4), Fighter manoeuvres by skill (E, F).** The ladder above, one rung per test.
+- **Stage 4b (0.26.4), Fighter manoeuvres by skill (E, F).** The ladder above, one rung per test. Aaron (18 Oct) asked for a full roll to inverted and a 90 degree dive onto a plane below (split-S / roll-over attack). The game already has this for dive bombers (`Maneuvre.Roll_Over` rolls to 180 degrees, then `Dive_Bomb` flips the nose down while inverted, `UnitAir.ManeuverUpdate` around line 523), so fighters can reuse it for a Veteran/Elite rung: roll over when the target is below and close, then pull through and fire.
 - **Stage 6, Damage, data and balance (D, I, H as accepted).** Balance pass over all aircraft.
 - **0.26.8 Remove speed limit and break-up (see its section).**
 - **0.26.9 Air auto resolve (see its section).**

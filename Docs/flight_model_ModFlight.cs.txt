@@ -36,6 +36,9 @@ public static class ModFlight
 	private static Dictionary<int, float> lastStallLog = new Dictionary<int, float>();
 	private static Dictionary<int, float> aimPitch = new Dictionary<int, float>();
 	private static Dictionary<int, float> aimUntil = new Dictionary<int, float>();
+	// v0.26.3: the turn the pilot is easing toward, so the AI's sudden left/right wishes become smooth stick movements.
+	private static Dictionary<int, float> smoothTurn = new Dictionary<int, float>();
+	public const float StickTime = 0.35f;
 	private static HashSet<int> stalled = new HashSet<int>();
 
 	// Pull rates in degrees per second.
@@ -267,7 +270,12 @@ public static class ModFlight
 				return Mathf.MoveTowards(currentRoll, currentTurnRate * -BankPerTurn, 40f * duration);
 			}
 			bool fighter = ua.unitData.unitSubtype == UnitSubType.Fighter;
-			float target = Mathf.Clamp(wantedTurnRate * -BankPerTurn, -MaxBank, MaxBank);
+			float eased = wantedTurnRate;
+			if (!smoothTurn.TryGetValue(((UnityEngine.Object)ua).GetInstanceID(), out eased))
+			{
+				eased = wantedTurnRate;
+			}
+			float target = Mathf.Clamp(eased * -BankPerTurn, -MaxBank, MaxBank);
 			return Mathf.MoveTowards(currentRoll, target, (fighter ? FighterRollRate : OtherRollRate) * duration);
 		}
 		catch (Exception ex)
@@ -289,6 +297,15 @@ public static class ModFlight
 			{
 				return next;
 			}
+			int id = ((UnityEngine.Object)ua).GetInstanceID();
+			float eased;
+			if (!smoothTurn.TryGetValue(id, out eased))
+			{
+				eased = current;
+			}
+			eased = Mathf.Lerp(eased, wanted, 1f - Mathf.Exp(-duration / StickTime));
+			smoothTurn[id] = eased;
+			next = Mathf.MoveTowards(current, eased, duration * ua.unitData.turnRate * Time.timeScale);
 			float supported = -currentRoll / BankPerTurn;
 			float sign = Mathf.Sign(next);
 			float allowed = 1f;
