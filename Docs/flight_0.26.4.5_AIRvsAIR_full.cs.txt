@@ -1,0 +1,81 @@
+public void AIRvsAIR(Unit attacker)
+{
+	if (attacker.unitData.unitSubtype == UnitSubType.Fighter)
+	{
+		List<Unit> list = playerAir;
+		if (attacker.faction == Faction.Player)
+		{
+			list = otherAir;
+		}
+		List<Unit> meAndMyFollowers = GetMeAndMyFollowers(attacker);
+		Unit flightTarget = null;
+		for (int i = 0; i < meAndMyFollowers.Count; i++)
+		{
+			Unit u = meAndMyFollowers[i];
+			if (UnityEngine.Random.value < 0.05f)
+			{
+				if (u.unitAI.focusedUnit != null)
+				{
+					u.unitAIAir.BreakAwayFromUnit();
+				}
+				continue;
+			}
+			Unit best = null;
+			if (flightTarget != null && !flightTarget.isDestroyed && !flightTarget.isParked)
+			{
+				int onIt = 0;
+				for (int m = 0; m < i; m++)
+				{
+					if (meAndMyFollowers[m].unitAI.focusedUnit == flightTarget)
+					{
+						onIt++;
+					}
+				}
+				if (onIt < 2)
+				{
+					best = flightTarget;
+				}
+				else
+				{
+					float bestD = 40f;
+					for (int e = 0; e < list.Count; e++)
+					{
+						Unit en = list[e];
+						if (en == null || en.isDestroyed || en.isParked || !en.detected || en == flightTarget)
+						{
+							continue;
+						}
+						float d = Vector3.Distance(flightTarget.transform.position, en.transform.position);
+						if (d < bestD)
+						{
+							bestD = d;
+							best = en;
+						}
+					}
+				}
+			}
+			if (best == null)
+			{
+				best = GetBestDogfightTarget(u, list);
+			}
+			if (best != null)
+			{
+				u.unitAI.focusedUnit = best;
+				if (flightTarget == null)
+				{
+					flightTarget = best;
+				}
+				AttackUnit(u);
+			}
+		}
+		if (list.Count <= 0)
+		{
+			ChangeAIAction(attacker, AIAction.Retreat);
+			FormUpUnits(attacker, GetMeAndMyFollowers(attacker), Config.instance.formationAirList[2], 10f, 2);
+		}
+	}
+	else if (playerSea.Count == 0)
+	{
+		ChangeAIAction(attacker, AIAction.Retreat);
+	}
+}

@@ -1,0 +1,70 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+// v0.26 Stage 0: flight logging only. Changes nothing in the game. About once a second per aircraft it writes one line to
+// output_log.txt with the plane's real speed, height, nose angle, bank and turn rate, tagged [FLIGHT]. Used to measure how every
+// plane type flies today, and later to check the new flight model (Stage 1 onwards) against these numbers.
+public static class ModFlightLog
+{
+	// Set to false to switch the logging off (Compile, Save Module).
+	public static bool Enabled = true;
+
+	// Seconds between lines for one aircraft (10 keeps the log small; 1 is for a close look at a dive or dogfight. REMINDER: set back to 10 or 20 when the 0.26 series is finished).
+	public const float Interval = 1f;
+
+	private static Dictionary<int, float> lastLogged = new Dictionary<int, float>();
+
+	public static void Log(UnitAir ua)
+	{
+		if (!Enabled)
+		{
+			return;
+		}
+		try
+		{
+			if (ua.isDestroyed && ua.currentActualSpeed <= 0f)
+			{
+				return;
+			}
+			int id = ((UnityEngine.Object)ua).GetInstanceID();
+			float now = Time.time;
+			float last;
+			if (lastLogged.TryGetValue(id, out last) && now - last < Interval)
+			{
+				return;
+			}
+			lastLogged[id] = now;
+			Transform t = ((Component)ua).transform;
+			float pitch = t.eulerAngles.x;
+			if (pitch > 180f)
+			{
+				pitch -= 360f;
+			}
+			float roll = t.eulerAngles.z;
+			if (roll > 180f)
+			{
+				roll -= 360f;
+			}
+			string side = (ua.faction == Faction.Player) ? "ours" : "enemy";
+			string maneuvre = (ua.unitAI != null) ? ua.unitAI.currentManeuvre.ToString() : "?";
+			// aiAttack stays at its first value (Level_Bomb) until an attack is given, so only show it while really attacking.
+			string action = (ua.unitAI != null) ? ua.unitAI.currentAIAction.ToString() : "?";
+			string attack = (ua.unitAIAir != null && ua.unitAI.currentAIAction == AIAction.Attack_Unit) ? ua.unitAIAir.aiAttack.ToString() : "Idle";
+			Debug.Log((object)("[FLIGHT] " + ua.unitData.unitName + " id " + id + " (" + side + ", " + now.ToString("F0") + " s)"
+				+ " speed " + ua.currentActualSpeed.ToString("F1") + "/" + ua.wantedSpeed.ToString("F1") + " (max " + ua.unitData.maxSpeed.ToString("F1") + ")"
+				+ " height " + (t.position.y * 10f).ToString("F0") + "/" + (ua.wantedHeight * 10f).ToString("F0") + " m"
+				+ " pitch " + pitch.ToString("F1")
+				+ " roll " + roll.ToString("F1")
+				+ " turn " + ua.currentTurnRate.ToString("F1") + "/" + ua.wantedTurnRate.ToString("F1")
+				+ " penalty " + ua.currentSpeedPenalty.ToString("F2")
+				+ " " + maneuvre + " " + action + " " + attack + ModFlight.AimText(ua)
+				+ (ua.isDestroyed ? " DESTROYED" : "")));
+		}
+		catch (Exception ex)
+		{
+			Enabled = false;
+			Debug.LogError((object)("[FLIGHT] logging failed and was switched off: " + ex.Message));
+		}
+	}
+}
