@@ -10,6 +10,22 @@ The mod is in alpha, so every version is 0.x. Version numbers group the work in 
 Numbering: a major change gets a whole number (v0.25 = new map locations); the minor changes under it are v0.25.1, v0.25.2 and so on. What used to be called v0.24.3 to v0.24.6 is now v0.25 to v0.25.3.
 NOTE: the in-game logbook (ModGuide class, What's New page) still uses the old numbers and must be updated to match.
 
+v0.28 - Air combat update: the rest of the 0.26 roadmap (pending test)
+-----------------------------------------------------------
+* Credits: fuel fires are Kiko's idea, parts falling off a damaged plane is Avaricles' idea.
+* All 135 aircraft have a flight row, toughness, gun damage, armour and gunner values. The stock Hellcat, Corsair, Dauntless and Helldiver follow the new rows.
+* Fighters carrying bombs fly worse and drop them when an enemy fighter is near, when attacked, or when leaving (waits while a friendly ship is below). Log [BOMBS].
+* Aircraft collide: scrape, bad hit or head-on loss. Pilots see it coming and break away. Log [COLLIDE].
+* New manoeuvres: Immelmann, pitchback, high-g barrel roll, barrel roll attack, scissors, decoy, recover, combat spread. Wired into the sandwich and defensive split.
+* Formation flying: followers keep a slot off the leader, the leader slows for the slowest follower, escorts fly 400 m above bombers.
+* Damage affects flight: engine, wing, fuel leak and fire, tail. Planes leave the battle when out of ammo, at bingo fuel or when too damaged. Altitude performance curves. F10 in battle shows a flight readout.
+* Per-aircraft flight file: unit/air/<key>/<key>_flight.txt overrides that aircraft's flight row.
+* The hard speed limit is gone. Planes that stay far above their structural speed lose their wings and parts fall off.
+* Air auto resolve: an air meeting can be auto resolved from a window that shows the percent chance of victory.
+* Fixes from the last log: Wildcats regain energy (recover move), bomber chasing capped, [BATTLE] energy now shows the last 60 s and the whole battle separately.
+* ModFlightLog Interval is back to 10 seconds.
+* dnSpy: add 5 classes (ModAirDamage, ModAirCollide, ModAirFormation, ModAirResolve, ModAirReadoutUI), edit 5 (ModAirFlight, ModAirStats, ModFlight, ModDogfight, ModFlightLog), plus 3 one-line hooks. Steps: Docs/flight_0.28.md. Compiled but not run in the game.
+
 v0.24.2 - New aircraft from RamZ's catalogue and TTE (pending test)
 -----------------------------------------------------------
 * 22 more aircraft from the TTE mod, used with credit to the TTE team (P-39D, P-38E, J2F, PBY, PBM, A-20G, B-24D, B-25J, Kittyhawk, Beaufighter, Beaufort, Sunderland, A5M4, A6M2-N, Ki-43, Ki-45, Ki-49, J1N1, E14Y, H6K, H8K2, G3M2). 115 new aircraft in total.

@@ -78,6 +78,8 @@ public static class ModGuide
 
 	private static string[] bodies = new string[]
 	{
+		"<color=#E0B030><b>Version 0.28</b></color>\n" +
+		"Air combat update: damage changes how a plane flies, fuel fires (Kiko's idea) and parts falling off (Avaricles' idea), aircraft collisions, bombs dropped by fighters, new manoeuvres, formation flying, wing break-up in a too fast dive, and an air auto resolve window with the chance of victory. F10 in battle shows a flight readout.\n\n" +
 		"<color=#E0B030><b>Version 0.24 to 0.24.2</b></color>\n" +
 		"84 new warships and 93 new aircraft from RamZ's Unit Catalog (Japan, USA and Australia), and 20 more warships and 22 aircraft from the TTE team. See the pages CUSTOM SHIPS and CUSTOM AIRCRAFT. Costs and dates are estimates.\n\n" +
 		"<color=#E0B030><b>Version 0.23 to 0.23.2</b></color>\n" +
@@ -342,6 +344,7 @@ public static class ModGuide
 		"Torpedo tracks, smoke, lookout and radar rings, enemy last-seen markers. Buttons above the map toolbar, or F11 for all.\n\n" +
 		"<color=#E0B030><b>Keys</b></color>\n" +
 		"F11 campaign map: fuel overlay. F11 battle: minimap layers. F2 battle: message log tab.\n" +
+		"F10 battle: flight readout for the selected aircraft (speed, energy, engine, wing, fuel, bombs, current move).\n" +
 		"Testers: F9 reveal enemies (map), F4 create a survivor event (map), F3 developer view (battle).",
 
 		"<color=#E0B030><b>Custom ships</b></color>\n" +
