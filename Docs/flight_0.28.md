@@ -61,23 +61,9 @@ Not changed on purpose: the pilot rank mix (Zeros 74% Veteran or Elite, Wildcats
 
 `ModAirStats` replaces the stock-only table from 0.26.4.6; it now has all 135 rows and a `RowFor(key)` method that `ModAirResolve` uses. `ModAirToughness`, `ModAirArmour`, `ModGunnerDamage` and `ModFixedGunDamage` from 0.26.4.6 keep working as before.
 
-## Install, in this order (updated: the classes depend on each other, so everything compiles in ONE go)
+## Install: one class at a time, in order (replaces the ALL_IN_ONE method)
 
-Do NOT add or edit the classes one at a time: they use each other, so a single class alone gives "does not contain a definition" errors.
-
-1. Close any open Add Class / Edit Class window.
-2. In dnSpy, right-click the existing `ModFlight` class > **Edit Class**.
-3. Select all the code in the window, delete it, and paste the whole file `ALL_IN_ONE_all_10_classes.cs.txt` (it holds all 10 classes).
-4. Press **Compile**. Not tested in dnSpy yet: if you get "already defined" or any other error, take a screenshot and send it to me. Do not save a half-compiled result.
-5. When it compiles with no errors, do the 3 hooks one by one (Edit Method; text is in `3_hooks/hooks.txt`):
-   - **`DamageableAir.ApplySmallCalibreDamageToAir`**: after the line `float num3 = modDamage / num;` add `ModAirDamage.OnDamage(parentUnit, num2, hitPoint, num3);`
-   - **`EngagementPanel.AutoResolve()`**: as the very first lines add `if (ModAirResolve.Open()) { return; }`
-   - **`CampaignManager`**, about line 1304: replace `this.campaignData.canAutoResolve = false;` with `this.campaignData.canAutoResolve = ModAirResolve.CanResolve(mobileMapObject, mobileMapObject2);`
-6. File > Save Module. Start a 1v1 Wildcat vs Zero custom battle and check the log.
-
-The single files in `1_add_new_classes` and `2_replace_existing_classes` are the same code, kept for reading; you do not need them for the install.
-
-If a hook will not compile, drop it: the rest still works, you only lose damage effects, the resolve window and the auto-resolve button on the campaign map.
+The merged-file method does not work: dnSpy adds copies named `ModAirFlight__0` and so on instead of replacing the classes. Use the folder `v0.28.1_step_by_step` and its `README_START_HERE.md`: edit the 11 classes one by one (Edit Class), in the order given there, compile each, then Save Module. The three hooks are unchanged and already in your DLL.
 
 ## Per-aircraft flight file
 
