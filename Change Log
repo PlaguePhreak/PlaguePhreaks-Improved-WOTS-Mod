@@ -10,6 +10,14 @@ The mod is in alpha, so every version is 0.x. Version numbers group the work in 
 Numbering: a major change gets a whole number (v0.25 = new map locations); the minor changes under it are v0.25.1, v0.25.2 and so on. What used to be called v0.24.3 to v0.24.6 is now v0.25 to v0.25.3.
 NOTE: the in-game logbook (ModGuide class, What's New page) still uses the old numbers and must be updated to match.
 
+v0.28.1 - Fixes from the first 0.28 test log (pending test)
+-----------------------------------------------------------
+* Friendly planes no longer crash into each other head-on: they always see each other coming and only die in a head-on above 200 m/s. Avoidance looks 2 s ahead.
+* Fighters defend sooner: an enemy on the tail inside 250 m counts as a threat, a close threat is noticed twice as fast, and a new defence can start 4 s after the last. No more extending in a straight line with an enemy behind.
+* Parts falling off pick real wing and tail pieces (not the rear flap or the wing root fitting). Credit: Avaricles.
+* The flight readout is on F8 now (F10 is the game's hide-UI key). One last [FLIGHT] log line per destroyed plane.
+* Install: paste the new ALL_IN_ONE file into ModFlight (Edit Class). No new hooks. Steps: Docs/flight_0.28.md.
+
 v0.28 - Air combat update: the rest of the 0.26 roadmap (pending test)
 -----------------------------------------------------------
 * Credits: fuel fires are Kiko's idea, parts falling off a damaged plane is Avaricles' idea.
@@ -18,7 +26,7 @@ v0.28 - Air combat update: the rest of the 0.26 roadmap (pending test)
 * Aircraft collide: scrape, bad hit or head-on loss. Pilots see it coming and break away. Log [COLLIDE].
 * New manoeuvres: Immelmann, pitchback, high-g barrel roll, barrel roll attack, scissors, decoy, recover, combat spread. Wired into the sandwich and defensive split.
 * Formation flying: followers keep a slot off the leader, the leader slows for the slowest follower, escorts fly 400 m above bombers.
-* Damage affects flight: engine, wing, fuel leak and fire, tail. Planes leave the battle when out of ammo, at bingo fuel or when too damaged. Altitude performance curves. F10 in battle shows a flight readout.
+* Damage affects flight: engine, wing, fuel leak and fire, tail. Planes leave the battle when out of ammo, at bingo fuel or when too damaged. Altitude performance curves. F8 in battle shows a flight readout.
 * Per-aircraft flight file: unit/air/<key>/<key>_flight.txt overrides that aircraft's flight row.
 * The hard speed limit is gone. Planes that stay far above their structural speed lose their wings and parts fall off.
 * Air auto resolve: an air meeting can be auto resolved from a window that shows the percent chance of victory.

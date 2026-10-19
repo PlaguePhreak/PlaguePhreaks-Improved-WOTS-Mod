@@ -4,6 +4,21 @@ Status: **written and compiled against the real game types, NOT run in the game.
 
 Credits: **fuel fires are Kiko's idea, parts falling off a damaged plane is Avaricles' idea.** They are also named in the code comments, the Change Log and the in-game book.
 
+## v0.28.1 fixes from the first test log (read this first if you already installed 0.28)
+
+Update: no new hooks. Close nothing else, just repeat step 2 to 4 of the install: right-click `ModFlight` > Edit Class, delete everything, paste the new `ALL_IN_ONE_all_10_classes.cs.txt`, Compile, Save Module.
+
+| Fix | What changed |
+|---|---|
+| Friendly collisions | Planes of the same side always see each other coming, and two friendlies only both die in a head-on above 200 m/s (hostile planes still 90 m/s). Avoidance looks 2.0 s ahead (was 1.5). `ModAirCollide`: `FriendlyCrashSpeed`, `AvoidHorizon`. |
+| Defending sooner | An enemy fighter on the tail inside 250 m counts as a threat even if its AI is aimed at someone else. A threat inside 200 m is noticed in half the time, and a new defence can start 4 s after the last (was 15 s). `ModDogfight`: `TailCloseRange`, `TailHotRange`, `DefendRepeat`. |
+| No straight extend with an enemy behind | The "energy fight ... extending away" move is replaced by a defence when a fighter is on the tail. The first log lost 4 Wildcats extending in front of faster Zeros. |
+| Part names | A wing loss now throws off a real wing piece (`L_WingMain`, outer flap, aileron) and a tail loss an elevator, rudder or fin, picked at random so left and right both go. `RearFlap` and `L_WingAttach` are no longer chosen. |
+| Readout key | **F8** now (F10 is the game's hide-UI button). |
+| Log noise | A destroyed plane gets one last [FLIGHT] line instead of one per interval. |
+
+Not changed on purpose: the pilot rank mix (Zeros 74% Veteran or Elite, Wildcats 39%): please check whether it is set by the campaign before I touch it.
+
 ## What is in it
 
 | Roadmap item | What it does |
@@ -17,7 +32,7 @@ Credits: **fuel fires are Kiko's idea, parts falling off a damaged plane is Avar
 | Damage affects flight (0.26.7) | Engine, wing, fuel, tail hit shares. Power, turn, roll, stall and control scale per plane. Fuel leak and fire. Bingo fuel exit. Ammo exit. |
 | Altitude curves | Power full to the critical altitude, then falls per km (floor 35%). Stall speed rises with altitude. |
 | Per-aircraft flight file | `unit/air/<key>/<key>_flight.txt` overrides row fields (JSON). See below. |
-| Flight readout | F10 in battle shows the selected aircraft: speed, energy, engine, wing, fuel, bombs, collisions, current move. |
+| Flight readout | F8 in battle shows the selected aircraft: speed, energy, engine, wing, fuel, bombs, collisions, current move. |
 | Speed limit removed (0.26.8) | The hard clamp is gone. Past 1.04 x structural speed the wings can break off and parts fall. A sanity cap of 1.4 x dive speed remains for safety. |
 | Air auto resolve (0.26.9) | The Auto Resolve button on an air meeting opens a window with the percent chance of victory. Resolve plays out the fight. |
 | `ModFlightLog` | `Interval` is back at 10 seconds. |
@@ -57,7 +72,7 @@ Do NOT add or edit the classes one at a time: they use each other, so a single c
 5. When it compiles with no errors, do the 3 hooks one by one (Edit Method; text is in `3_hooks/hooks.txt`):
    - **`DamageableAir.ApplySmallCalibreDamageToAir`**: after the line `float num3 = modDamage / num;` add `ModAirDamage.OnDamage(parentUnit, num2, hitPoint, num3);`
    - **`EngagementPanel.AutoResolve()`**: as the very first lines add `if (ModAirResolve.Open()) { return; }`
-   - **`CampaignManager`**, about line 1304: replace `campaignData.canAutoResolve = false;` with `campaignData.canAutoResolve = ModAirResolve.CanResolve(mobileMapObject, mobileMapObject2);`
+   - **`CampaignManager`**, about line 1304: replace `this.campaignData.canAutoResolve = false;` with `this.campaignData.canAutoResolve = ModAirResolve.CanResolve(mobileMapObject, mobileMapObject2);`
 6. File > Save Module. Start a 1v1 Wildcat vs Zero custom battle and check the log.
 
 The single files in `1_add_new_classes` and `2_replace_existing_classes` are the same code, kept for reading; you do not need them for the install.
@@ -97,12 +112,12 @@ The file is looked up in the Override folder first, then the game folder. Missin
 1. **Re-test the 0.27.1 base:** 1v1 Wildcat vs Zero, then 4v4, then a larger fight. Check the `[BATTLE]` lines (two energy figures) and that Wildcats now regain energy.
 2. **Bombs, collisions, new manoeuvres, formation:** look for `[BOMBS]`, `[COLLIDE]`, `[ACRO]` and `[FORMATION]` lines.
 3. **Bomber and escort altitude:** the fight should not collapse to 1 to 2 km.
-4. **Damage effects and overspeed break-up:** F10 readout; a long vertical dive with a Wildcat should only just reach break-up.
+4. **Damage effects and overspeed break-up:** F8 readout; a long vertical dive with a Wildcat should only just reach break-up.
 5. **Auto-resolve window and log polish.**
 
 ## Assumptions and what is not proven
 
-* None of this has run in the game. The code compiles against the real game types in a test harness; the F10 readout and the resolve window are IMGUI and were never drawn.
+* None of this has run in the game. The code compiles against the real game types in a test harness; the F8 readout and the resolve window are IMGUI and were never drawn.
 * Part shedding hides renderers whose names contain wing, aileron, flap, tail, rudder, elevator, stab or fin. The real mesh names are unknown. The `[PARTS]` line logs the mesh names it found, so if nothing falls off, the log tells us what to match.
 * Altitude power loss, stall scaling and compressibility are my assumptions, not table values.
 * Escort geometry is a height rule only, not a full escort station.
