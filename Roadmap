@@ -250,7 +250,7 @@ Numbering: a major change gets a whole number (v0.25 = new map locations), and t
 - **Later (rules popup fix)** The "Ship Orders" rules page (modrules1.txt) says light carriers take 30 days, but the game code gives them 42 days like fleet carriers. Change the text to 42 (or the build time to 30). Left as is for now.
 
 ## v0.26 Aircraft overhaul (flight model and air combat; details in Docs/aircraft_overhaul_plan.md)
-Done and tested so far: 0.26.1 flight core, 0.26.2 pitch control, 0.26.3 banking, 0.26.4 pilot rank and acrobatics, 0.26.4.2 manoeuvre pool part 1. Written, not confirmed installed: 0.26.4.5 keep squads together.
+Done and tested so far: 0.26.1 flight core, 0.26.2 pitch control, 0.26.3 banking, 0.26.4 pilot rank and acrobatics, 0.26.4.2 manoeuvre pool part 1, 0.26.4.5 keep squads together, 0.26.4.6 shooting fix and the hand-set aircraft table, 0.26.4.7 and 0.26.4.8 American pilots stay in the fight and team work, 0.26.5 bombers and torpedo planes on the new model, 0.26.5.1 to 0.26.5.7 (bomber attack fix in `EngagementAI.AttackUnit`, US toughness x1.3, A7M Sam rebalance and speed cap, wider US fire cone, `[GUNSTAT]` log). Not yet tested: fighters dropping bombs (`[BOMBS]`).
 - **0.26.X Shooting fix (next):** fighters rarely fire and hit, so battles end with no kills. Longer bursts inside about 250 m, wider aim cone, short hold-fire delay, a `[HIT]` log line, and planes must stop firing after a burst instead of emptying their ammo (also stops the "shots fired, no hits" log spam).
 - **0.26.X Out of ammo means leave (requested by Aaron):** planes with no gun ammo left break off and leave the battle instead of staying in the fight (the ammo and bingo exit idea in 0.26.7, pulled forward).
 - **0.26.X Aircraft collisions (requested by Aaron):** planes can hit each other (mid-air collisions between aircraft), and both are damaged or destroyed. Builds on the collision and ship avoidance item in 0.26.7.
@@ -258,7 +258,7 @@ Done and tested so far: 0.26.1 flight core, 0.26.2 pitch control, 0.26.3 banking
 - **0.26.X Yaw (requested by Aaron):** look at giving planes yaw (rudder, sideslip) on top of pitch and roll, for more freedom in a dogfight.
 - **0.26.X Fighters drop their bombs (requested by Aaron):** fighters carrying bombs drop them when a dogfight starts so they can move more freely.
 - 0.26.4.3 Immelmann, pitchback, high-g barrel roll, barrel roll attack. 0.26.4.4 team moves (combat spread, defensive split, sandwich, scissors, decoy).
-- 0.26.5 bombers and torpedo planes on the new model. 0.26.6 formation flying.
+- 0.26.6 formation flying.
 - 0.26.7 damage affects flight, altitude performance, per-aircraft flight file, flight readout, avoidance, ammo and bingo exit. Ideas to credit: fuel fires (Kiko), parts falling off (Avaricles).
 - 0.26.8 remove the speed limit: overspeed wing break-up, shed wings (mesh probe first).
 - 0.26.9 air auto resolve: window with a % chance of victory for any air meeting.
