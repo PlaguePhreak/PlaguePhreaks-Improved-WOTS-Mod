@@ -249,6 +249,19 @@ Numbering: a major change gets a whole number (v0.25 = new map locations), and t
 - **v0.25.4** Rename the campaigns (planned, to decide when we reach this stage): with so many new locations the old campaign names no longer fit. Ideas: the US campaign becomes something like "Counterattack on the Australian Front", the Japanese campaign something like "Defending Japanese Interests in the Southwestern Pacific". Exact names to be decided later.
 - **Later (rules popup fix)** The "Ship Orders" rules page (modrules1.txt) says light carriers take 30 days, but the game code gives them 42 days like fleet carriers. Change the text to 42 (or the build time to 30). Left as is for now.
 
+## v0.26 Aircraft overhaul (flight model and air combat; details in Docs/aircraft_overhaul_plan.md)
+Done and tested so far: 0.26.1 flight core, 0.26.2 pitch control, 0.26.3 banking, 0.26.4 pilot rank and acrobatics, 0.26.4.2 manoeuvre pool part 1. Written, not confirmed installed: 0.26.4.5 keep squads together.
+- **0.26.X Shooting fix (next):** fighters rarely fire and hit, so battles end with no kills. Longer bursts inside about 250 m, wider aim cone, short hold-fire delay, a `[HIT]` log line, and planes must stop firing after a burst instead of emptying their ammo (also stops the "shots fired, no hits" log spam).
+- **0.26.X Newer aircraft toughness and damage:** the 115 added aircraft have no entry in `DamageableAir.ModAirToughness`, so they use the default (10 + displacement weight / 300) and the gun damage in their data files. Rework them to match the stock types.
+- **0.26.X Yaw (requested by Aaron):** look at giving planes yaw (rudder, sideslip) on top of pitch and roll, for more freedom in a dogfight.
+- **0.26.X Fighters drop their bombs (requested by Aaron):** fighters carrying bombs drop them when a dogfight starts so they can move more freely.
+- 0.26.4.3 Immelmann, pitchback, high-g barrel roll, barrel roll attack. 0.26.4.4 team moves (combat spread, defensive split, sandwich, scissors, decoy).
+- 0.26.5 bombers and torpedo planes on the new model. 0.26.6 formation flying.
+- 0.26.7 damage affects flight, altitude performance, per-aircraft flight file, flight readout, avoidance, ammo and bingo exit. Ideas to credit: fuel fires (Kiko), parts falling off (Avaricles).
+- 0.26.8 remove the speed limit: overspeed wing break-up, shed wings (mesh probe first).
+- 0.26.9 air auto resolve: window with a % chance of victory for any air meeting.
+- At the end: set the `ModFlightLog` `Interval` back to 10 or 20.
+
 ## Economy rework (planned)
 Goal: command points (CP) should come mostly from holding and upgrading bases, not from sinking ships. Players are pushed to raise port and air base levels.
 
