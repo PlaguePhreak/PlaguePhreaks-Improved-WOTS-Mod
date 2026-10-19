@@ -33,7 +33,7 @@ Credits: **fuel fires are Kiko's idea, parts falling off a damaged plane is Avar
 
 | File | dnSpy action | Where |
 |---|---|---|
-| `flight_0.28_ModAirDamage.cs.txt` | **Add Class** | new |
+| `flight_0.28_ModAirDamage.cs.txt` | part of the one-go install | new |
 | `flight_0.28_ModAirCollide.cs.txt` | **Add Class** | new |
 | `flight_0.28_ModAirFormation.cs.txt` | **Add Class** | new |
 | `flight_0.28_ModAirResolve.cs.txt` | **Add Class** | new |
@@ -46,24 +46,23 @@ Credits: **fuel fires are Kiko's idea, parts falling off a damaged plane is Avar
 
 `ModAirStats` replaces the stock-only table from 0.26.4.6; it now has all 135 rows and a `RowFor(key)` method that `ModAirResolve` uses. `ModAirToughness`, `ModAirArmour`, `ModGunnerDamage` and `ModFixedGunDamage` from 0.26.4.6 keep working as before.
 
-## Install, in this order
+## Install, in this order (updated: the classes depend on each other, so everything compiles in ONE go)
 
-Do the new classes first, then the edits, then the three hooks, then compile once.
+Do NOT add or edit the classes one at a time: they use each other, so a single class alone gives "does not contain a definition" errors.
 
-1. In dnSpy, right-click `Assembly-CSharp` > Add Class (C#) for each of the five new classes above. Paste the whole file.
-2. Right-click each of the five existing classes > Edit Class, select all, paste the new file.
-3. **Hook 1: `DamageableAir.ApplySmallCalibreDamageToAir`.** Right-click the method > Edit Method. After the line `float num3 = modDamage / num;` add:
-   `ModAirDamage.OnDamage(parentUnit, num2, hitPoint, num3);`
-4. **Hook 2: `EngagementPanel.AutoResolve()`.** Edit Method. As the very first lines add:
-   `if (ModAirResolve.Open())` `{` `return;` `}`
-5. **Hook 3: `CampaignManager`**, about line 1304 (the part that decides `canAutoResolve`). Replace `campaignData.canAutoResolve = false;` with:
-   `campaignData.canAutoResolve = ModAirResolve.CanResolve(mobileMapObject, mobileMapObject2);`
-   The old scout-versus-fighter `if` just after it may still set it to true; leave it.
-6. The 0.27 hooks (UnitAir calls to `ModFlight`, `UnitAIAir` calling `ModDogfight.Fly`, `PrefabBuilder` using `ModAirFlight.Converge`, `AAAParticleCollisions` calling `ModDogfight.AirHit`) stay exactly as they were.
-7. Compile (Ctrl+Shift+S). If dnSpy reports an error in a hook, check the variable names `parentUnit`, `num2`, `hitPoint`, `num3` against the method; the names come from the decompiled version of v1.09a.
-8. Save Module. Start a 1v1 Wildcat vs Zero custom battle.
+1. Close any open Add Class / Edit Class window.
+2. In dnSpy, right-click the existing `ModFlight` class > **Edit Class**.
+3. Select all the code in the window, delete it, and paste the whole file `ALL_IN_ONE_all_10_classes.cs.txt` (it holds all 10 classes).
+4. Press **Compile**. Not tested in dnSpy yet: if you get "already defined" or any other error, take a screenshot and send it to me. Do not save a half-compiled result.
+5. When it compiles with no errors, do the 3 hooks one by one (Edit Method; text is in `3_hooks/hooks.txt`):
+   - **`DamageableAir.ApplySmallCalibreDamageToAir`**: after the line `float num3 = modDamage / num;` add `ModAirDamage.OnDamage(parentUnit, num2, hitPoint, num3);`
+   - **`EngagementPanel.AutoResolve()`**: as the very first lines add `if (ModAirResolve.Open()) { return; }`
+   - **`CampaignManager`**, about line 1304: replace `campaignData.canAutoResolve = false;` with `campaignData.canAutoResolve = ModAirResolve.CanResolve(mobileMapObject, mobileMapObject2);`
+6. File > Save Module. Start a 1v1 Wildcat vs Zero custom battle and check the log.
 
-If the game gets an error you cannot fix: remove the three hook lines. The rest still compiles and the 0.27 flight keeps working; you only lose the damage effects, the resolve window and the new campaign button state.
+The single files in `1_add_new_classes` and `2_replace_existing_classes` are the same code, kept for reading; you do not need them for the install.
+
+If a hook will not compile, drop it: the rest still works, you only lose damage effects, the resolve window and the auto-resolve button on the campaign map.
 
 ## Per-aircraft flight file
 
