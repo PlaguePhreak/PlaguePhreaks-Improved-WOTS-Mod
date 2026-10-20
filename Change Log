@@ -10,6 +10,11 @@ The mod is in alpha, so every version is 0.x. Version numbers group the work in 
 Numbering: a major change gets a whole number (v0.25 = new map locations); the minor changes under it are v0.25.1, v0.25.2 and so on. What used to be called v0.24.3 to v0.24.6 is now v0.25 to v0.25.3.
 NOTE: the in-game logbook (ModGuide class, What's New page) still uses the old numbers and must be updated to match.
 
+v0.28.3 - Chasing fighters catch up (pending test)
+-----------------------------------------------------------
+* A turn fighter (Zero, Sam and others) used to match its target's speed in a gun run, so it trailed a little behind and never closed. It now flies flat out until 300 m behind the target, then 15% faster than it.
+* Install: Edit Class ModDogfight only (steps in v0.28.1_step_by_step/README_START_HERE.md).
+
 v0.28.2 - Out-of-fuel planes ditch, slower fuel leaks (pending test)
 -----------------------------------------------------------
 * A plane with an empty tank (engine quit) now glides down and is lost when it reaches the sea. Before, it hung at the same height in the fight for minutes (seen in the third test log). Credit for the fuel system idea: Kiko.
