@@ -10,6 +10,11 @@ The mod is in alpha, so every version is 0.x. Version numbers group the work in 
 Numbering: a major change gets a whole number (v0.25 = new map locations); the minor changes under it are v0.25.1, v0.25.2 and so on. What used to be called v0.24.3 to v0.24.6 is now v0.25 to v0.25.3.
 NOTE: the in-game logbook (ModGuide class, What's New page) still uses the old numbers and must be updated to match.
 
+v0.28.4 - Fuel lasts (pending test)
+-----------------------------------------------------------
+* Fuel was burned about 8 times too fast at high time compression (a full tank gone in 3.5 minutes in the 1v1 test at x8). Fuel, fuel leaks and the break-up chance now run on battle clock seconds, so a fighter has about 26 minutes of full-power fuel at any time compression (about 87 minutes at cruise).
+* Install: Edit Class ModAirDamage only.
+
 v0.28.3 - Chasing fighters catch up (pending test)
 -----------------------------------------------------------
 * A turn fighter (Zero, Sam and others) used to match its target's speed in a gun run, so it trailed a little behind and never closed. It now flies flat out until 300 m behind the target, then 15% faster than it.
