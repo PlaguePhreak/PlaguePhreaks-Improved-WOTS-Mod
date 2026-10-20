@@ -114,3 +114,6 @@ The file is looked up in the Override folder first, then the game folder. Missin
 ## Merge note
 
 PR 26 is for Aaron to merge. This update's files are on branch `claude/project-thread-pzq2e0`.
+
+## 0.28.5 (formation yield, player controls, chase power)
+Install: `v0.28.5_update` folder (README_START_HERE.md): new class ModPlayerOverride, edited ModAirFlight, ModAirFormation, ModDogfight, ModAirCollide, ModFlight, and four one-line hooks (CombatInterface.TurnSlider, HeightSlider, SpeedSlider: `ModPlayerOverride.Take(this.currentUnit);` as the first line; ModAAEvade.Apply: `if (ModPlayerOverride.OnHelm(parentUnit)) { return; }` before the state lookup). Review of the log behind it: Docs/0.28.5_log_review_20Oct.md.

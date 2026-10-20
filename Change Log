@@ -10,6 +10,14 @@ The mod is in alpha, so every version is 0.x. Version numbers group the work in 
 Numbering: a major change gets a whole number (v0.25 = new map locations); the minor changes under it are v0.25.1, v0.25.2 and so on. What used to be called v0.24.3 to v0.24.6 is now v0.25 to v0.25.3.
 NOTE: the in-game logbook (ModGuide class, What's New page) still uses the old numbers and must be updated to match.
 
+v0.28.5 - Formation yields, player controls win, chasers catch up (pending test)
+-----------------------------------------------------------
+* A follower in a formation no longer breaks out when a flight mate is on a collision course: it shifts its slot 50 m sideways and 20 m up or down for 2.5 s and comes back. Two other friends no longer both break at once: one gives way. Only a real collision course still breaks both. Enemies are avoided as before.
+* Player controls override the AI: moving a turn, height or speed slider (or the keys) on your own plane or ship takes it off its route, formation, attack, evasion or break. A plane flown by hand is not steered by the collision avoidance, and a ship you steer is not taken over by the AA evasion for 30 s after your last slider move.
+* Chase power: a fighter chasing a target farther than 300 m that it is not gaining on (less than 12% faster) runs emergency power: about +10% top speed for up to 240 s per sortie, rested at 0.15 s per second, 1.8 times the fuel burn. The 1v1 log had the chaser 3 km behind an equally fast target for 7 minutes.
+* New log lines: [PLAYER], [CHASE], "gives way to flight mate" in [FORMATION]; the [BATTLE] line gains chase boosts, flights yielded and taken by the player.
+* Install: v0.28.5_update folder (new class ModPlayerOverride, 5 edited classes, 4 one-line hooks in CombatInterface and ModAAEvade).
+
 v0.28.4 - Fuel lasts (pending test)
 -----------------------------------------------------------
 * Fuel was burned about 8 times too fast at high time compression (a full tank gone in 3.5 minutes in the 1v1 test at x8). Fuel, fuel leaks and the break-up chance now run on battle clock seconds, so a fighter has about 26 minutes of full-power fuel at any time compression (about 87 minutes at cruise).
