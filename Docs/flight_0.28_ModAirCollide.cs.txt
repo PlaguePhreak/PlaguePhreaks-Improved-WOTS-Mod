@@ -1,0 +1,483 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+// v0.28 NEW CLASS. Mid-air collisions and collision avoidance between aircraft.
+// The game has no plane against plane contact (aircraft pass through each other), so this class does it: each tick every flying plane checks the
+// planes near it. Two planes whose paths come closer than their sizes during this tick have collided.
+//   Size:     collision radius = RadiusScale x the longer of length and wingspan (from UnitData, metres), so a Zero is about 4 m and a B-25 about 9 m.
+//   Result:   by the speed the planes closed at. Under 25 m/s (a scrape): wing or tail damage and a lost part. 25 to 90 m/s: a bad collision, each plane
+//             is lost with a 50% chance (the lighter plane is more likely to go), the other loses a wing. Over 90 m/s (head-on): both are lost.
+//   Friends:  count too. Followers that hold their place in a formation are left alone while the planes close slowly (a game formation can be tight).
+//   Avoid:    a pilot who sees a collision coming within 1.5 seconds breaks away (a turn away from the other plane and a small climb or dive). The
+//             chance that the pilot sees it depends on rank (Green 55%, Trained 80%, Veteran 92%, Elite 98%). A fighter in a gun run presses on until
+//             the last moment, so a close pass can still end in a collision. This is also the 0.26.7 "avoidance".
+// Counts are in [BATTLE] lines (collisions so far) and every collision is logged as [COLLIDE].
+public static class ModAirCollide
+{
+	public const bool On = true;
+	public const bool AvoidOn = true;
+	public const float RadiusScale = 0.42f;      // x the longer of length and wingspan, in metres
+	public const float MinRadius = 3f;           // metres
+	public const float ScrapSpeed = 25f;         // m/s closing speed: under this a scrape
+	public const float CrashSpeed = 90f;         // m/s closing speed: over this both planes are lost
+	public const float AvoidHorizon = 2.0f;      // seconds (v0.28.1: 1.5 before)
+	public const float FriendlyCrashSpeed = 200f; // m/s: two planes of the SAME side only both die in a head-on above this (v0.28.1: the first test lost 4 planes in friendly head-ons at 98 to 167 m/s)
+	public const float AvoidMargin = 3f;         // avoid when the closest approach is under this x the sum of the radii
+	public const float AvoidHold = 0.9f;         // seconds a break lasts
+	public const float PairRest = 4f;            // seconds before the same two planes can collide again
+	public const float CellSize = 40f;           // game units (400 m)
+	public const float MinHeight = 1.5f;         // game units (15 m): take-off and landing are not checked
+	public static int collisions;
+	public static int scrapes;
+	public static int logged;
+	public static int avoided;
+	public static int avoidLogged;
+	public static int yieldLogged;
+	public const float YieldSide = 5f;           // v0.28.5: game units (50 m) a follower shifts its slot sideways to give way to a flight mate
+	public const float YieldHeight = 2f;         // game units (20 m) up or down
+	public const float FastClosing = 100f;       // v0.28.6: m/s closing speed above which both friends break, no right of way
+	private static bool failed;
+
+	private class Plane
+	{
+		public UnitAir ua;
+		public Unit u;
+		public int id;
+		public Vector3 pos;
+		public Vector3 vel;        // game units per second
+		public float radius;       // game units
+		public bool cruising;
+	}
+
+	private static int builtFrame = -1;
+	private static List<Plane> planes = new List<Plane>();
+	private static Dictionary<long, List<Plane>> grid = new Dictionary<long, List<Plane>>();
+	private static List<List<Plane>> listPool = new List<List<Plane>>();
+	private static Dictionary<long, float> pairUntil = new Dictionary<long, float>();
+	private static Dictionary<int, float> avoidUntil = new Dictionary<int, float>();
+	private static Dictionary<int, float> avoidTurn = new Dictionary<int, float>();
+	private static Dictionary<int, float> avoidHeight = new Dictionary<int, float>();
+	private static Dictionary<int, float> nextAvoid = new Dictionary<int, float>();
+	private static Dictionary<long, float> seenPair = new Dictionary<long, float>();
+	private static Dictionary<int, Plane> byId = new Dictionary<int, Plane>();
+
+	private static long Cell(int cx, int cz)
+	{
+		return ((long)cx << 32) ^ (long)(uint)cz;
+	}
+
+	// Builds the list of flying planes and the grid, once per frame.
+	private static void Build()
+	{
+		if (builtFrame == Time.frameCount)
+		{
+			return;
+		}
+		builtFrame = Time.frameCount;
+		foreach (KeyValuePair<long, List<Plane>> kv in grid)
+		{
+			kv.Value.Clear();
+			listPool.Add(kv.Value);
+		}
+		grid.Clear();
+		planes.Clear();
+		byId.Clear();
+		if (EngagementManager.instance == null || EngagementManager.instance.allAirUnits == null)
+		{
+			return;
+		}
+		List<Unit> air = EngagementManager.instance.allAirUnits;
+		for (int i = 0; i < air.Count; i++)
+		{
+			Unit u = air[i];
+			if (u == null || u.isDestroyed || u.isParked || u.unitAir == null || u.unitAir.shootDown || u.unitData == null || u.unitAI == null)
+			{
+				continue;
+			}
+			if (u.transform.position.y < MinHeight || u.unitAI.currentManeuvre == Maneuvre.Shot_Down)
+			{
+				continue;
+			}
+			Plane p = new Plane();
+			p.ua = u.unitAir;
+			p.u = u;
+			p.id = u.GetInstanceID();
+			p.pos = u.transform.position;
+			p.vel = u.transform.forward * u.currentActualSpeed;
+			p.radius = Mathf.Max(MinRadius, RadiusScale * Mathf.Max(u.unitData.length, u.unitData.width)) * 0.1f;
+			AIAction a = u.unitAI.currentAIAction;
+			p.cruising = a == AIAction.Follow_Unit || a == AIAction.Follow_Nav_Points || a == AIAction.Nav_Done || a == AIAction.Nothing;
+			planes.Add(p);
+			byId[p.id] = p;
+			long key = Cell(Mathf.FloorToInt(p.pos.x / CellSize), Mathf.FloorToInt(p.pos.z / CellSize));
+			List<Plane> cell;
+			if (!grid.TryGetValue(key, out cell))
+			{
+				if (listPool.Count > 0)
+				{
+					cell = listPool[listPool.Count - 1];
+					listPool.RemoveAt(listPool.Count - 1);
+				}
+				else
+				{
+					cell = new List<Plane>();
+				}
+				grid[key] = cell;
+			}
+			cell.Add(p);
+		}
+	}
+
+	private static Plane Find(int id)
+	{
+		Plane p;
+		return byId.TryGetValue(id, out p) ? p : null;
+	}
+
+	private static long PairKey(int a, int b)
+	{
+		return (a < b) ? (((long)a << 32) ^ (long)(uint)b) : (((long)b << 32) ^ (long)(uint)a);
+	}
+
+	// Closest approach of two moving points: time (seconds, clamped to 0..horizon) and the separation vector then.
+	private static float Closest(Plane a, Plane b, float horizon, out Vector3 sepAt)
+	{
+		Vector3 p = b.pos - a.pos;
+		Vector3 v = b.vel - a.vel;
+		float vv = v.sqrMagnitude;
+		float t = 0f;
+		if (vv > 0.0001f)
+		{
+			t = Mathf.Clamp(-Vector3.Dot(p, v) / vv, 0f, horizon);
+		}
+		sepAt = p + v * t;
+		return t;
+	}
+
+	// ---------------- collisions: called by ModFlight.End for every flying plane ----------------
+	public static void Check(UnitAir ua, float dt)
+	{
+		if (!On || failed || ua == null || dt <= 0f)
+		{
+			return;
+		}
+		try
+		{
+			Build();
+			int myId = ((UnityEngine.Object)ua).GetInstanceID();
+			Plane me = Find(myId);
+			if (me == null)
+			{
+				return;
+			}
+			int cx = Mathf.FloorToInt(me.pos.x / CellSize);
+			int cz = Mathf.FloorToInt(me.pos.z / CellSize);
+			float horizon = Mathf.Max(dt, 0.04f);
+			for (int dx = -1; dx <= 1; dx++)
+			{
+				for (int dz = -1; dz <= 1; dz++)
+				{
+					List<Plane> cell;
+					if (!grid.TryGetValue(Cell(cx + dx, cz + dz), out cell))
+					{
+						continue;
+					}
+					for (int i = 0; i < cell.Count; i++)
+					{
+						Plane o = cell[i];
+						// each pair is looked at by the plane with the smaller id only
+						if (o.id <= myId || o.u.isDestroyed || o.ua.shootDown || me.u.isDestroyed || me.ua.shootDown)
+						{
+							continue;
+						}
+						Vector3 sep;
+						Closest(me, o, horizon, out sep);
+						float reach = me.radius + o.radius;
+						if (sep.sqrMagnitude > reach * reach)
+						{
+							continue;
+						}
+						float closing = (o.vel - me.vel).magnitude * 10f;
+						if (me.cruising && o.cruising && closing < ScrapSpeed)
+						{
+							continue;
+						}
+						long key = PairKey(me.id, o.id);
+						float until;
+						if (pairUntil.TryGetValue(key, out until) && Time.time < until)
+						{
+							continue;
+						}
+						pairUntil[key] = Time.time + PairRest;
+						Collide(me, o, closing, sep.magnitude * 10f);
+					}
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[COLLIDE] collision check failed and stopped: " + ex.Message + " " + ex.StackTrace));
+		}
+	}
+
+	private static float Mass(Plane p)
+	{
+		return Mathf.Max(500f, (float)p.u.unitData.displacement_weight);
+	}
+
+	private static void Collide(Plane a, Plane b, float closing, float missM)
+	{
+		float ma = Mass(a);
+		float mb = Mass(b);
+		float baseKill;
+		string kind;
+		bool friends = Side(a.u) == Side(b.u);
+		if (closing >= (friends ? FriendlyCrashSpeed : CrashSpeed))
+		{
+			baseKill = 1f;
+			kind = "head-on crash";
+		}
+		else if (closing >= ScrapSpeed)
+		{
+			baseKill = 0.5f;
+			kind = "bad collision";
+		}
+		else
+		{
+			baseKill = 0f;
+			kind = "scrape";
+			scrapes++;
+		}
+		// the lighter plane is more likely to be the one lost
+		float pa = Mathf.Clamp01(baseKill + (mb / ma - 1f) * 0.2f * (baseKill > 0f && baseKill < 1f ? 1f : 0f));
+		float pb = Mathf.Clamp01(baseKill + (ma / mb - 1f) * 0.2f * (baseKill > 0f && baseKill < 1f ? 1f : 0f));
+		bool killA = UnityEngine.Random.value < pa;
+		bool killB = UnityEngine.Random.value < pb;
+		float rel = Mathf.Clamp01(0.2f + closing / 150f);
+		ModAirDamage.CollisionHit(a.ua, rel, killA, "collided with " + b.u.unitData.unitName + " (" + kind + ")");
+		ModAirDamage.CollisionHit(b.ua, rel, killB, "collided with " + a.u.unitData.unitName + " (" + kind + ")");
+		collisions++;
+		if (logged < 80)
+		{
+			logged++;
+			Debug.Log((object)("[COLLIDE] " + a.u.unitData.unitName + " id " + a.id + " (" + Side(a.u) + ") and " + b.u.unitData.unitName + " id " + b.id + " (" + Side(b.u) + ") " + kind + " at " + (a.pos.y * 10f).ToString("F0") + " m, closing " + closing.ToString("F0") + " m/s, " + (a.cruising && b.cruising ? "both cruising" : "in the fight") + ": " + a.u.unitData.unitName + (killA ? " LOST" : " damaged") + ", " + b.u.unitData.unitName + (killB ? " LOST" : " damaged")));
+		}
+	}
+
+	// v0.28.5: two planes of one flight in formation: one follows the other, or both follow the same leader.
+	private static bool SameFlight(Unit a, Unit b)
+	{
+		if (a == null || b == null || a.faction != b.faction || a.unitAI == null || b.unitAI == null)
+		{
+			return false;
+		}
+		Unit fa = (a.unitAI.currentAIAction == AIAction.Follow_Unit) ? a.unitAI.followingUnit : null;
+		Unit fb = (b.unitAI.currentAIAction == AIAction.Follow_Unit) ? b.unitAI.followingUnit : null;
+		return fa == b || fb == a || (fa != null && fa == fb);
+	}
+
+	// v0.28.6: can this plane give way? If it cannot (hand-flown, in an acrobatic or scripted manoeuvre, already dodging someone else, or near the
+	// sea), the other plane must not hold course and wait for it.
+	private static bool CanGiveWay(Unit o)
+	{
+		if (o == null || o.unitAir == null || o.unitAI == null || ModPlayerOverride.IsManual(o) || ModFlight.AcroActive(o.unitAir))
+		{
+			return false;
+		}
+		Maneuvre m = o.unitAI.currentManeuvre;
+		if (m != Maneuvre.None && m != Maneuvre.Break_Left && m != Maneuvre.Break_Right)
+		{
+			return false;
+		}
+		float busy;
+		if (avoidUntil.TryGetValue(((UnityEngine.Object)o.unitAir).GetInstanceID(), out busy) && Time.time < busy)
+		{
+			return false;
+		}
+		return o.transform.position.y >= MinHeight * 2f;
+	}
+
+	private static string Side(Unit u)
+	{
+		return (u.faction == Faction.Player) ? "ours" : "enemy";
+	}
+
+	// ---------------- avoidance: called by ModFlight.Begin for every flying plane ----------------
+	// Replaces the plane's wanted turn rate and height for AvoidHold seconds when another plane is on a collision course.
+	public static void Avoid(UnitAir ua)
+	{
+		if (!On || !AvoidOn || failed || ua == null || ua.unitAI == null || ua.isDestroyed || ua.shootDown)
+		{
+			return;
+		}
+		// v0.28.5: a plane the player flies by hand is not steered by the avoidance (it can still scrape or crash, ModAirCollide.Check)
+		if (ModPlayerOverride.IsManual(ua.unitAI.parentUnit))
+		{
+			return;
+		}
+		try
+		{
+			int id = ((UnityEngine.Object)ua).GetInstanceID();
+			float now = Time.time;
+			float until;
+			if (avoidUntil.TryGetValue(id, out until) && now < until)
+			{
+				ua.wantedTurnRate = avoidTurn[id];
+				ua.wantedHeight = Mathf.Max(avoidHeight[id], 2f);
+				return;
+			}
+			float nxt;
+			if (nextAvoid.TryGetValue(id, out nxt) && now < nxt)
+			{
+				return;
+			}
+			// scripted manoeuvres (dive bombing, shot down, acrobatics) are not interrupted
+			Maneuvre m = ua.unitAI.currentManeuvre;
+			if ((m != Maneuvre.None && m != Maneuvre.Break_Left && m != Maneuvre.Break_Right) || ModFlight.AcroActive(ua) || ((Component)ua).transform.position.y < MinHeight * 2f)
+			{
+				return;
+			}
+			nextAvoid[id] = now + 0.15f;
+			Build();
+			Plane me = Find(id);
+			if (me == null)
+			{
+				return;
+			}
+			int cx = Mathf.FloorToInt(me.pos.x / CellSize);
+			int cz = Mathf.FloorToInt(me.pos.z / CellSize);
+			Plane worst = null;
+			float worstT = 99f;
+			Vector3 worstSep = Vector3.zero;
+			for (int dx = -1; dx <= 1; dx++)
+			{
+				for (int dz = -1; dz <= 1; dz++)
+				{
+					List<Plane> cell;
+					if (!grid.TryGetValue(Cell(cx + dx, cz + dz), out cell))
+					{
+						continue;
+					}
+					for (int i = 0; i < cell.Count; i++)
+					{
+						Plane o = cell[i];
+						if (o.id == id)
+						{
+							continue;
+						}
+						Vector3 sep;
+						float t = Closest(me, o, AvoidHorizon, out sep);
+						float reach = (me.radius + o.radius) * AvoidMargin;
+						// only planes it is closing on, which will pass close and soon
+						if (t <= 0.02f && Vector3.Dot(o.pos - me.pos, o.vel - me.vel) >= 0f)
+						{
+							continue;
+						}
+						if (sep.sqrMagnitude < reach * reach && t < worstT)
+						{
+							// formation keeping at a slow closing speed is not a danger
+							float closing = (o.vel - me.vel).magnitude * 10f;
+							if (me.cruising && o.cruising && closing < ScrapSpeed)
+							{
+								continue;
+							}
+							worst = o;
+							worstT = t;
+							worstSep = sep;
+						}
+					}
+				}
+			}
+			if (worst == null)
+			{
+				return;
+			}
+			// does the pilot see it? Decided once per conflict.
+			int rank = ModFlight.Rank(ua.unitAI.parentUnit);
+			float see = (rank == 0) ? 0.55f : ((rank == 1) ? 0.8f : ((rank == 2) ? 0.92f : 0.98f));
+			// v0.28.1: a pilot always sees a friend coming (they fly in formation and know where each other are)
+			if (Side(worst.u) == Side(ua.unitAI.parentUnit))
+			{
+				see = 1f;
+			}
+			long key = PairKey(id, worst.id);
+			float seenUntil;
+			if (!seenPair.TryGetValue(key, out seenUntil) || now > seenUntil)
+			{
+				seenPair[key] = now + 2.5f;
+				if (UnityEngine.Random.value > see)
+				{
+					nextAvoid[id] = now + 2.5f;
+					return;
+				}
+			}
+			else if (nextAvoid[id] > now + 1f)
+			{
+				return;
+			}
+			// break away: turn so the other plane ends up further off to the side, and change height away from it
+			Vector3 right = ((Component)ua).transform.right;
+			float side = Vector3.Dot(worstSep, right);
+			float turnSign = (side > 0f) ? -1f : 1f;
+			if (Mathf.Abs(side) < 0.05f)
+			{
+				turnSign = (id % 2 == 0) ? 1f : -1f;
+			}
+			// v0.28.5: flight mates in formation do not break out of it. The follower gives way by shifting its slot (ModAirFormation.Yield), the leader and the
+			// other mates hold course. Only a real collision (the paths pass inside the two radii within a second) still gets the hard break.
+			Unit meUnit = ua.unitAI.parentUnit;
+			// v0.28.6: two planes closing faster than FastClosing both break, whoever has the right of way (the multi-battle log lost 5 planes in friendly collisions at 150 to 184 m/s)
+			bool real = (worstSep.magnitude < (me.radius + worst.radius) && worstT < 1f) || (worst.vel - me.vel).magnitude * 10f > FastClosing;
+			bool friends = Side(worst.u) == Side(meUnit);
+			// Two friends used to break away from each other at the same moment (every log showed pairs of [AVOID] lines in the same second, up to four times
+			// running), which throws both out of the fight. Now only one gives way (the plane with the higher id, an arbitrary but fixed right of way) unless the
+			// paths really cross.
+			if (friends && !real && !SameFlight(meUnit, worst.u) && id > worst.id && CanGiveWay(worst.u))
+			{
+				nextAvoid[id] = now + 0.3f;
+				return;
+			}
+			if (SameFlight(meUnit, worst.u) && !real)
+			{
+				if (meUnit.unitAI.currentAIAction == AIAction.Follow_Unit)
+				{
+					float shift = turnSign * YieldSide;
+					float rise = ((worstSep.y > 0f) ? -1f : 1f) * YieldHeight;
+					ModAirFormation.Yield(id, shift, rise);
+					if (yieldLogged < 20)
+					{
+						yieldLogged++;
+						Debug.Log((object)("[FORMATION] " + ua.unitData.unitName + " id " + id + " (" + Side(meUnit) + ") gives way to flight mate " + worst.u.unitData.unitName + " id " + worst.id + ": slot shifted " + (Mathf.Abs(shift) * 10f).ToString("F0") + " m " + (shift > 0f ? "right" : "left") + ", " + (Mathf.Abs(rise) * 10f).ToString("F0") + " m " + (rise > 0f ? "up" : "down") + " (would pass within " + (worstSep.magnitude * 10f).ToString("F0") + " m in " + worstT.ToString("F1") + " s)"));
+					}
+				}
+				nextAvoid[id] = now + 0.5f;
+				return;
+			}
+			float limit = ModFlight.TurnLimitNow(ua.unitAI.parentUnit);
+			float hAway = (worstSep.y > 0f) ? -1f : 1f;
+			avoidTurn[id] = turnSign * Mathf.Max(8f, limit * 0.9f);
+			avoidHeight[id] = ((Component)ua).transform.position.y + hAway * 2.5f;
+			avoidUntil[id] = now + AvoidHold;
+			ua.wantedTurnRate = avoidTurn[id];
+			ua.wantedHeight = Mathf.Max(avoidHeight[id], 2f);
+			avoided++;
+			if (avoidLogged < 60)
+			{
+				avoidLogged++;
+				Debug.Log((object)("[AVOID] " + ua.unitData.unitName + " id " + id + " (" + Side(ua.unitAI.parentUnit) + ") breaks away from " + worst.u.unitData.unitName + " id " + worst.id + " (" + Side(worst.u) + "): would pass within " + (worstSep.magnitude * 10f).ToString("F0") + " m in " + worstT.ToString("F1") + " s"));
+			}
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[AVOID] avoidance failed and stopped: " + ex.Message + " " + ex.StackTrace));
+		}
+	}
+
+	public static string Counts()
+	{
+		return "collisions " + collisions + " (scrapes " + scrapes + "), avoided " + avoided;
+	}
+}

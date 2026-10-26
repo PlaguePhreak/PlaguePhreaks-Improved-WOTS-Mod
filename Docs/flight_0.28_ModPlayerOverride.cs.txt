@@ -1,0 +1,134 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+// v0.28.5 NEW CLASS. The player's own controls win over the AI.
+// Before: a player ship or plane that was on a nav route, in a formation, attacking, evading, or in a break, copied the sliders back
+// (CombatInterface.TurnSlider/HeightSlider/SpeedSlider put the old values back while it is "Follow_Unit"/"Follow_Nav_Points" or in a manoeuvre)
+// or had the slider value overwritten by the AI on the next tick (Attack_Unit, ship collision evasion, the mod's own dogfight AI and avoidance).
+// Now, when the player moves a turn, height or speed slider (or uses the keys that move them) on one of his own units, the unit is taken off
+// whatever the AI was doing (route, formation, attack, evade, break) and flies the slider values. It stays under his hand until he gives it a
+// new order (a waypoint, a follow, an attack). While a plane is under hand the mod's collision avoidance does not move it either: it still
+// scrapes or crashes if the player flies it into another plane (ModAirCollide.Check), the player is the pilot.
+// Called from CombatInterface.TurnSlider, HeightSlider and SpeedSlider as their first line (see the hooks file).
+public static class ModPlayerOverride
+{
+	public const bool On = true;
+	public const float HandSeconds = 30f;      // after the last slider move the unit still counts as steered by hand (aircraft avoidance, ship AA evasion stay off)
+	public const float SettleSeconds = 1.0f;   // sliders the game sets itself right after a unit is picked or a battle starts are not the player
+	public static int taken;
+	public static int logged;
+	private static bool failed;
+	private static Dictionary<int, float> handUntil = new Dictionary<int, float>();
+	private static Unit lastCurrent;
+	private static float switchedAt = -99f;
+
+	// Is this unit flown by the player's hand right now (his unit, nothing else in charge)?
+	public static bool IsManual(Unit u)
+	{
+		if (!On || failed || u == null || u.faction != Faction.Player || u.unitAI == null)
+		{
+			return false;
+		}
+		AIAction a = u.unitAI.currentAIAction;
+		if (a != AIAction.Nothing && a != AIAction.Nav_Done)
+		{
+			return false;
+		}
+		float until;
+		if (handUntil.TryGetValue(u.GetInstanceID(), out until) && Time.unscaledTime < until)
+		{
+			return true;
+		}
+		// v0.28.6: merely being the selected unit no longer counts as hand-flown (the avoidance would never steer the plane you were looking at)
+		return false;
+	}
+
+	// Did the player move this unit's sliders in the last HandSeconds? ModAAEvade.Apply returns at once for such a ship (hook), so the AA evasion
+	// does not take her rudder and throttle back.
+	public static bool OnHelm(Unit u)
+	{
+		float until;
+		return On && !failed && u != null && u.faction == Faction.Player && handUntil.TryGetValue(u.GetInstanceID(), out until) && Time.unscaledTime < until;
+	}
+
+	// First line of the three slider handlers. Does nothing unless the player really moved a slider of one of his own units.
+	public static void Take(Unit u)
+	{
+		if (!On || failed || u == null)
+		{
+			return;
+		}
+		try
+		{
+			float now = Time.unscaledTime;
+			if (u != lastCurrent)
+			{
+				lastCurrent = u;
+				switchedAt = now;
+			}
+			if (u.lockSliderInput || u.faction != Faction.Player || u.isDestroyed || u.unitAI == null || now - switchedAt < SettleSeconds)
+			{
+				return;
+			}
+			UnitAI ai = u.unitAI;
+			if (ai.retreating)
+			{
+				return;
+			}
+			Maneuvre m = ai.currentManeuvre;
+			// scripted dives and crashes are not interrupted
+			if (m == Maneuvre.Shot_Down || m == Maneuvre.Kamikaze || m == Maneuvre.Dive_Bomb || m == Maneuvre.DiveBomb_Dive)
+			{
+				return;
+			}
+			handUntil[u.GetInstanceID()] = now + HandSeconds;
+			// a ship in the middle of an AA evasion, an unstick or a keep-clear (ModAAEvade) lets go of the rudder and the throttle, and is not put back to the old values
+			if (u.unitSea != null)
+			{
+				ModAAEvade.State st;
+				if (ModAAEvade.states.TryGetValue(u.GetInstanceID(), out st))
+				{
+					if (st.mode != 0)
+					{
+						st.restoreManual = false;
+						ModAAEvade.Stop(ai, u, st, "the player has the helm");
+					}
+					st.unstickUntil = 0f;
+					st.unsticking = false;
+					st.clearUntil = 0f;
+				}
+			}
+			AIAction a = ai.currentAIAction;
+			bool ordered = a != AIAction.Nothing && a != AIAction.Nav_Done;
+			bool breaking = m == Maneuvre.Break_Left || m == Maneuvre.Break_Right;
+			if (!ordered && !breaking)
+			{
+				return;
+			}
+			if (breaking)
+			{
+				ai.currentManeuvre = Maneuvre.None;
+			}
+			if (ordered)
+			{
+				ai.navPoints.Clear();
+				ai.followingUnit = null;
+				ai.directFollow = false;
+				ai.previousAIAction = AIAction.Nothing;
+				EngagementAI.instance.ChangeAIAction(u, AIAction.Nothing);
+			}
+			taken++;
+			if (logged < 30)
+			{
+				logged++;
+				Debug.Log((object)("[PLAYER] " + u.unitData.unitName + " id " + u.GetInstanceID() + ": controls moved while it was " + a + (breaking ? " / " + m : "") + ", the player's sliders now fly it"));
+			}
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[PLAYER] player override failed and stopped: " + ex.Message + " " + ex.StackTrace));
+		}
+	}
+}

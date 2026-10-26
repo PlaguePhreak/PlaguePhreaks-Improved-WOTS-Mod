@@ -10,6 +10,14 @@ The mod is in alpha, so every version is 0.x. Version numbers group the work in 
 Numbering: a major change gets a whole number (v0.25 = new map locations); the minor changes under it are v0.25.1, v0.25.2 and so on. What used to be called v0.24.3 to v0.24.6 is now v0.25 to v0.25.3.
 NOTE: the in-game logbook (ModGuide class, What's New page) still uses the old numbers and must be updated to match.
 
+v0.28.6 - Fixes from the full review (pending test)
+-----------------------------------------------------------
+* Time compression no longer speeds up the flight physics: speed, pitch, roll, turn and the collision look-ahead run on battle seconds at x2 to x10 (fuel already did since 0.28.4). Nothing changes at x1.
+* Friends on a collision course: the plane with the right of way only holds course if the other can give way; two friends closing above 100 m/s both break.
+* The fighter you have selected stops firing at the end of a burst again (it used to fire until out of ammunition).
+* Scissors is not cut short by a new defence and reverses every 2.8 to 3.6 s. Chase power only when the target is flying away and the chaser is near top speed. Being the selected unit alone no longer counts as hand-flown.
+* Install: v0.28.6_update folder (Edit Class ModFlight, ModAirDamage, ModAirCollide, ModDogfight, ModPlayerOverride; no hooks). Review behind it: Docs/full_review_0.28.5_23Oct.md.
+
 v0.28.5 - Formation yields, player controls win, chasers catch up (pending test)
 -----------------------------------------------------------
 * A follower in a formation no longer breaks out when a flight mate is on a collision course: it shifts its slot 50 m sideways and 20 m up or down for 2.5 s and comes back. Two other friends no longer both break at once: one gives way. Only a real collision course still breaks both. Enemies are avoided as before.

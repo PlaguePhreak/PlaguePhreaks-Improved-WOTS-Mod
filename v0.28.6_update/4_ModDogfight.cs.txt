@@ -1,0 +1,2387 @@
+using System.Collections.Generic;
+using UnityEngine;
+
+// v0.28 (on top of everything below; the energy decisions of v0.27 are unchanged in spirit):
+//   Recover (phase 6, move 6): a fighter that has been below 80% of its corner speed for 4 s with nobody on its tail unloads (nose slightly down, full
+//             throttle, a gentle turn towards the target) until it is above corner speed again, then judges the fight again.
+//   Bombers:  only a share of a side's fighters (HunterShare) may chase bombers while enemy fighters are near; the rest are sent to the nearest
+//             enemy fighter. A slashing pass that ends below the pass floor (PassFloor) is followed by a climb back toward the cruise altitude.
+//   Moves:    Immelmann (after a boom-and-zoom pass or as an escape from a plane below), pitchback (the attacker that overshot underneath),
+//             barrel roll attack (fast closing pass on a bomber or a straight-flying fighter), high-g barrel roll (close attacker), scissors (phase 6,
+//             move 7: reversing turns at low speed against an attacker that turns worse), decoy (phase 6, move 8: an Elite flies bait while the flight
+//             climbs above when outnumbered). Combat spread (flight abreast before contact) is flown by ModAirFormation.
+//   Damage:   ModAirDamage.WantsOut makes a damaged, burning, leaking, bingo-fuel plane leave the battle like one that is out of ammunition.
+//             Bombs are dropped by ModAirDamage.Jettison (see JettisonBombs): when enemy fighters come within 3000 m, when attacked, when leaving.
+//   Overspeed: a Trained or better pilot throttles back and pulls out before the airframe limit (OverspeedGuard).
+// v0.20.4 / v0.20.6 / v0.20.7 / v0.20.9: fighter manoeuvres. The game's dogfight is pure pursuit at the target's height, so fighters look like they
+// are on rails. This flies everything around the gun pass, following real WW2 doctrine:
+//   US fighters (boom and zoom): climb above the enemy, dive in for one firing pass, zoom climb away, repeat.
+//     Never turn-fight a Zero. Under attack: break towards the threat and dive away. A wingman nearby turns in on the
+//     attacker (the Thach Weave).
+//   Japanese fighters (turn fighting): stay in the turning fight. If they are about to overshoot, pull up into a
+//     high yo-yo and drop back behind. Under attack: a hard climbing break turn. The Zero gets heavy controls at high
+//     speed, so it turns poorly in a fast dive.
+//   Against bombers, both sides make slashing passes from above and to the side, then pull away from the gunners.
+// v0.20.9: this class now flies the gun run too, aiming the nose up and down as well as left and right.
+// Planes dive faster than their level top speed and lose speed in a zoom climb (a simple energy model).
+// v0.26.4: pilot skill (ModFlight.Rank: 0 Green, 1 Trained, 2 Veteran, 3 Elite; crews off = everyone Elite) decides what a fighter may do.
+//   Green: straight pursuit, slow to react to a plane on its tail, plain break turn, under-leads its shots, no climbing to set up a pass.
+//   Trained: adds boom and zoom / turn fighting and the zoom climb after a pass, faster reactions.
+//   Veteran: adds the high yo-yo, the Thach Weave, a defensive barrel roll and the roll-over attack (roll inverted, dive on a plane below).
+//   Elite: adds the split-S escape (roll inverted and dive away from a plane on its tail) and fires without leading errors.
+// v0.27 ENERGY FIGHTING. Every decision now starts from energy (ModFlight.EnergyOf: E = height + speed^2 / 2g, in metres) and from how well the two
+// planes turn (ModAirFlight sustained turn rate). About once a second a fighter compares itself with its target and picks a mode (State.mode):
+//   Boom (1):    its energy is higher than the target's by more than a limit. It dives on it, fires, and zooms back up with the speed it kept.
+//                If it is not high enough yet it climbs first (phase 1) instead of closing in.
+//   Turn (2):    its energy is lower or about equal, but it turns better. It stays in the fight with flaps out, at the turn rate its spare thrust
+//                can pay for (sustained), using the full instantaneous rate only for a snap shot at close range.
+//   Flee (3):    lower energy and the worse turner, or slow and the worse turner. It breaks off (phase 6, extend: nose down, full throttle, away
+//                from the target, until it is above corner speed again), then climbs (phase 6, climb) until the numbers are better.
+//   Neutral (0): Green pilots do not judge energy: straight pursuit as before.
+// Doctrine only moves the limits: Americans call a smaller lead enough to dive and want a clearer turning advantage before they turn-fight;
+// Japanese need a bigger lead to dive, accept a bigger deficit and a small turning advantage. The old phases stay as states, only the moves between
+// them are decided by energy (Decide, Resume). A fighter never aims above the ceiling (cruise altitude + 1000 m), and idle fighters climb back to
+// cruise altitude in ModFlight.
+public class ModDogfight
+{
+	public class State
+	{
+		public int phase;           // 0 attack (game's gun run), 1 position (get above and to the side), 2 zoom / extend, 3 high yo-yo, 4 defend, 5 roll-over attack / split-S
+		public float phaseUntil;
+		public float phaseStart;
+		public float attackStart;
+		public float turnSign;
+		public float targetHeight;
+		public float side;          // which side of the target to set up on
+		public float nextThreatCheck;
+		public float defendCooldown;
+		public Unit threat;
+		public Unit lastTarget;
+		public float wobble;
+		public float nextRepick;
+		// v0.20.7: the target has been in front of us during this run (a pass can only end after that)
+		public bool sawAhead;
+		// v0.20.9: closest the fighter has been to its target during this run (a pass ends once it is past it)
+		public float minDist;
+		// v0.26.4
+		public float acroCooldown;
+		public float nextAcroCheck;
+		public float threatSince;
+		public float lastBelow;
+		public float nextBelowSample;
+		// wingman cover: the enemy this pilot is going after to save a friend
+		public Unit supportTarget;
+		public float supportUntil;
+		public float nextSupportCheck;
+		// 0.26.4.1: special moves (yo-yo, barrel roll, split-S, roll-over) are rare: one at most every 25 to 50 seconds per pilot
+		public float nextSpecial;
+		public float lastZoneLog;
+		// 0.26.4.2: steering moves (phase 6), defence variants, target hold, loss reporting
+		public int move;            // 1 low yo-yo, 2 lag displacement roll, 3 wingover, 4 extend, 5 climb, 6 recover, 7 scissors, 8 decoy
+		public float nextMoveCheck;
+		public float defTurn = 1f;  // share of full turn rate while defending
+		public float defSpeed;      // wanted speed (share of top speed) while defending, 0 = leave alone
+		public Unit holdTarget;
+		public float holdUntil;
+		public Unit self;
+		public string label;
+		public float lastY;
+		public Unit lastThreat;
+		public bool reported;
+		// 0.26.4.2.3: one main target, kept 5 minutes unless it is destroyed or more than 4 of our aircraft are on it
+		public Unit mainTarget;
+		public float mainUntil;
+		public bool crowded;
+		public float nextCrowdCheck;
+		public float homeY;
+		public float coverCooldown;  // no new wingman cover before this time
+		// 0.26.4.8 sandwich: -1 or +1 = come in on that side of the target (to my left or right), 0 = no partner
+		public float sandwich;
+		public float nextSandwich;
+		// v0.27 energy fighting
+		public int mode;               // 0 neutral, 1 boom and zoom, 2 turn fight, 3 flee (extend and climb)
+		public float modeUntil;        // the mode is not changed before this time
+		public float nextDecide;
+		public bool rich;              // energy lead big enough to dive on the target
+		public float energyDiff;       // my energy minus the target's, metres
+		// v0.28
+		public float slowSince;        // when the plane first dropped below RecoverBelow x corner speed (0 = not slow)
+		public float nextRecover;      // no new recover move before this time
+		public float nextHunt;         // next check of the bomber hunter share
+		public float nextTeam;         // next check for the decoy role
+		public float nextAcroTry;      // next check for an acrobatic attack
+		public float nextBombCheck;
+		public float scissorFlip;      // when the scissors next reverse
+		public int scissorFlips;
+	}
+
+	// distances and heights in battle code are metres x 0.1
+	// 0.26.4.1: fighters turn back when this far from the middle of the battle (the game removes planes at 5000 units)
+	public const float ZoneTurnBack = 4300f;
+	public const float ThreatRange = 250f * 0.1f;
+	// 0.26.4.8: wait 15 s (was 8) after a break before the next one, so fighters get back to attacking
+	public const float DefendRest = 15f;
+	public const float ChaseOvertakeShare = 1.12f;     // v0.28.5: emergency power is used while we are less than 12% faster than the target and farther than CatchUpRange
+	public const float CatchUpRange = 300f * 0.1f;     // v0.28.3: beyond this a turn fighter chases at full speed (was: the target's speed)
+	public const float TailCloseRange = 250f * 0.1f;   // v0.28.1: an enemy this close behind is a threat even if its AI is aimed at someone else
+	public const float DefendRepeat = 4f;              // v0.28.1: with an enemy this close (TailHotRange) a new defence may start this soon after the last, not after DefendRest
+	public const float TailHotRange = 200f * 0.1f;
+	// 0.26.4.8 team work: sandwich (two fighters on one enemy come in from opposite sides) and defensive split
+	public const float SandwichFriendRange = 1500f * 0.1f;
+	public const float SandwichOffset = 300f * 0.1f;
+	public const float SplitRange = 800f * 0.1f;
+	public static int teamLogged;
+	// 0.26.5: fighters that carry bombs drop them when a dogfight starts, so they can fly freely
+	public const float BombDropRange = 1500f * 0.1f;
+	public const float BombMinHeight = 300f * 0.1f;
+	public static HashSet<int> bombChecked = new HashSet<int>();
+	public static int bombLogged;
+	public const float OvershootRange = 120f * 0.1f;
+	public const float USHeightAdvantage = 500f * 0.1f;
+	// 0.26.4.7: American pilots stay in the fight. They only climb to set up when the enemy is still far (USClimbRange), only a share of passes
+	// end in a zoom climb (USHitRunChance), after a zoom only a share set up another high pass (USReclimbChance), and after a break they go
+	// straight back on the attack instead of climbing.
+	public const float USClimbRange = 2000f * 0.1f;
+	public const float USHitRunChance = 0.35f;
+	public const float USReclimbChance = 0.3f;
+	public const float BomberHeightAdvantage = 400f * 0.1f;
+	public const float SetupOffset = 800f * 0.1f;
+	public const float ZoomHeight = 500f * 0.1f;
+	public const float YoYoHeight = 150f * 0.1f;
+	public const float SplitSDrop = 400f * 0.1f;
+	public const float MinHeight = 200f * 0.1f;
+	public const float MaxHeight = 6500f * 0.1f;
+	public const float WingmanRange = 1500f * 0.1f;
+	// dive speed limits (share of level top speed) and the Zero's heavy controls at high speed
+	public const float USDiveSpeed = 1.2f;
+	public const float JapanDiveSpeed = 1.1f;
+	public const float HeavyControlsSpeed = 1.05f;
+	public const float HeavyControlsTurn = 0.55f;
+	// how long a US fighter stays in one gun run before zooming away (seconds)
+	public const float USPassTime = 8f;
+	public const float BomberPassTime = 6f;
+	// v0.20.6: how often a fighter may look for a better target (seconds), and how long a turning fight
+	// goes on before it looks again
+	public const float RepickSeconds = 15f;
+	public const float TargetHoldSeconds = 300f;
+	// wingman cover: stays on the enemy for this long, then may not help a wingman again for CoverRest seconds
+	public const float CoverSeconds = 30f;
+	public const float CoverRest = 60f;
+	public const float CombatBand = 1000f * 0.1f;
+	public const float TurnFightRepick = 25f;
+	// v0.20.7: give up a run that never got the target in front after this long (seconds),
+	// and never zoom higher than this above the target
+	public const float RunGiveUp = 30f;
+	// v0.20.9: a pass is over once the fighter got within this range and is now this much further away again
+	public const float PassCloseRange = 600f * 0.1f;
+	public const float PassOpening = 150f * 0.1f;
+	public const float MaxAbove = 1000f * 0.1f;
+	// ---- v0.27 energy decisions (energies in metres of specific energy, distances in game units = metres x 0.1)
+	public const int ModeNeutral = 0;
+	public const int ModeBoom = 1;
+	public const int ModeTurn = 2;
+	public const int ModeFlee = 3;
+	// An energy lead of EnergyHigh over the target is "rich" (dive on it); a deficit of EnergyLow makes the fighter "poor". The shifts are doctrine.
+	public const float EnergyHigh = 150f;
+	public const float EnergyLow = 150f;
+	public const float USRichShift = -60f;
+	public const float JPRichShift = 60f;
+	public const float USPoorShift = 0f;
+	public const float JPPoorShift = 60f;
+	// Sustained turn rate ratio (mine / target's) that makes me the better turner, and the doctrine shifts of it.
+	public const float TurnEdge = 1.08f;
+	public const float USTurnEdgeShift = 0.04f;
+	public const float JPTurnEdgeShift = -0.05f;
+	public const float ModeHold = 4f;
+	// Turn fight: flaps out inside this range; a snap shot may use the full instantaneous turn inside this range and cone.
+	public const float FlapRange = 1000f * 0.1f;
+	public const float SnapShotRange = 400f * 0.1f;
+	public const float SnapShotCone = 30f;
+	// Fleeing: extend until the speed is this multiple of corner speed, for at most ExtendMax seconds, then climb for ClimbMax seconds.
+	public const float ExtendSpeedShare = 1.15f;
+	public const float ExtendMax = 20f;
+	public const float ClimbMax = 25f;
+	public const float PositionSeconds = 45f;
+	// 0.27.1: a climbing fighter that is more than CruiseSlack below its cruise altitude keeps climbing (up to ClimbStep at a time) instead of diving as
+	// soon as it has a small energy lead.
+	public const float CruiseSlack = 1000f * 0.1f;
+	public const float ClimbStep = 800f * 0.1f;
+	// Pull-out guard: the load factor assumed for pulling out of a dive, and the clearance kept (metres).
+	public const float PullOutG = 4f;
+	public const float PullOutMargin = 100f;
+	// ---- v0.28
+	// Recover: below RecoverBelow x corner speed for RecoverAfter seconds with nobody on the tail (and not close in front of the target): unload and accelerate.
+	public const float RecoverBelow = 0.8f;
+	public const float RecoverAfter = 4f;
+	public const float RecoverUntil = 1.05f;
+	public const float RecoverMax = 14f;
+	public const float RecoverRest = 10f;
+	public const float RecoverMinRange = 300f * 0.1f;
+	// Bombers: at most this share of a side's fighters chase bombers while enemy fighters are within HuntRange; a pass that ends below the floor is
+	// followed by a climb back (only when enemy fighters are near).
+	public const float HunterShare = 0.35f;
+	public const float HuntRange = 4000f * 0.1f;
+	public const float USPassFloor = 1500f * 0.1f;
+	public const float JPPassFloor = 1000f * 0.1f;
+	// Bombs: dropped when enemy fighters are this close.
+	public const float BombEarlyRange = 3000f * 0.1f;
+	// Overspeed: a Trained or better pilot eases off at this share of the structural speed.
+	public const float OverspeedGuard = 0.95f;
+	public static int overspeedLogged;
+	// Scissors, decoy
+	public const float ScissorsRange = 400f * 0.1f;
+	public const float ScissorsSeconds = 9f;
+	public const float DecoySeconds = 12f;
+	public const float DecoyFriendRange = 1500f * 0.1f;
+	public const float DecoyEnemyRange = 3000f * 0.1f;
+	// counters for the [BATTLE] line
+	public static int recoverCount;
+	public static int scissorsCount;
+	public static int scissorsWon;
+	public static int decoyCount;
+	public static int decoyDrew;
+	public static int huntRedirects;
+	public static int lowPassClimbs;
+	public static HashSet<int> leaveLogged = new HashSet<int>();
+	public static int modeLogged;
+	public static int pulloutLogged;
+	public static int lostOurs;
+	public static int lostEnemy;
+	public static int leftOurs;
+	public static int leftEnemy;
+	public static float nextBattle;
+	// v0.20.9: our own gun run. The game pitches a plane only by the height difference it is chasing (up to its dive
+	// angle), and only fires when the target is within 5 degrees of the nose, so diving fighters never fired.
+	// The gun run now points the nose at where the target will be (lead), up and down as well as left and right.
+	public const float BulletSpeed = 800f * 0.1f;
+	public const float GunCone = 8f;
+	// 0.26.5.4: American pilots may open fire a little wider (their planes are slower and rarely get a tight aim), Japanese keep GunCone
+	public const float USGunCone = 11f;
+	public static float ConeFor(Unit u)
+	{
+		return ModDogfight.IsJapanese(u) ? ModDogfight.GunCone : ModDogfight.USGunCone;
+	}
+	// 0.26.4.6: a burst opens inside GunCone, keeps going until the nose is more than StopCone off or the target is past FireRange x 1.25,
+	// lasts at most MaxBurst seconds, then the guns rest BurstRest seconds. FireRange caps the range at 250 m (25 units).
+	public const float StopCone = 14f;
+	public const float FireRange = 25f;
+	public const float MaxBurst = 2.5f;
+	public const float BurstRest = 2f;
+	public const float AimDive = 45f;
+
+	public static float nextLossScan;
+	public static float nextStatus;
+	public static int fireOurs;
+	public static int fireEnemy;
+	public static int fireLogged;
+	public static int noAmmoLogged;
+	public static int burstLogged;
+	// 0.26.5.6 diagnostic: how often a fighter in the gun run was in range, in the cone, or both ([GUNSTAT] every 60 s). Index 0 = American, 1 = Japanese.
+	private static int[] gsCalls = new int[2];
+	private static int[] gsRange = new int[2];
+	private static int[] gsCone = new int[2];
+	private static int[] gsBoth = new int[2];
+	private static float gsDistSum0;
+	private static float gsDistSum1;
+	private static float gsNext;
+
+	public static void CountGunRun(Unit u, float dist, float range, float aim)
+	{
+		int s = ModDogfight.IsJapanese(u) ? 1 : 0;
+		ModDogfight.gsCalls[s]++;
+		bool inRange = dist < range;
+		bool inCone = aim < ModDogfight.ConeFor(u);
+		if (inRange)
+		{
+			ModDogfight.gsRange[s]++;
+		}
+		if (inCone)
+		{
+			ModDogfight.gsCone[s]++;
+		}
+		if (inRange && inCone)
+		{
+			ModDogfight.gsBoth[s]++;
+		}
+		if (s == 0)
+		{
+			ModDogfight.gsDistSum0 += dist * 10f;
+		}
+		else
+		{
+			ModDogfight.gsDistSum1 += dist * 10f;
+		}
+		if (Time.time >= ModDogfight.gsNext)
+		{
+			ModDogfight.gsNext = Time.time + 60f;
+			UnityEngine.Debug.Log("[GUNSTAT] gun-run samples (US / Japanese): total " + ModDogfight.gsCalls[0] + " / " + ModDogfight.gsCalls[1] + ", in range " + ModDogfight.gsRange[0] + " / " + ModDogfight.gsRange[1] + ", in cone " + ModDogfight.gsCone[0] + " / " + ModDogfight.gsCone[1] + ", both " + ModDogfight.gsBoth[0] + " / " + ModDogfight.gsBoth[1] + ", average distance " + (ModDogfight.gsCalls[0] > 0 ? (ModDogfight.gsDistSum0 / (float)ModDogfight.gsCalls[0]).ToString("F0") : "-") + " m / " + (ModDogfight.gsCalls[1] > 0 ? (ModDogfight.gsDistSum1 / (float)ModDogfight.gsCalls[1]).ToString("F0") : "-") + " m");
+		}
+	}
+	public static int hitOurs;
+	public static int hitEnemy;
+	public static int hitLogged;
+	public static Dictionary<int, float> burstStart = new Dictionary<int, float>();
+	public static Dictionary<int, float> burstRest = new Dictionary<int, float>();
+	public static HashSet<int> emptyDone = new HashSet<int>();
+	public static Dictionary<int, ModDogfight.State> states = new Dictionary<int, ModDogfight.State>();
+
+	public static ModDogfight.State GetState(Unit u)
+	{
+		int id = u.GetInstanceID();
+		ModDogfight.State s;
+		if (!ModDogfight.states.TryGetValue(id, out s))
+		{
+			s = new ModDogfight.State();
+			s.wobble = UnityEngine.Random.Range(0f, 100f);
+			s.side = (UnityEngine.Random.value < 0.5f) ? -1f : 1f;
+			s.minDist = float.MaxValue;
+			s.homeY = Mathf.Max(u.transform.position.y, ModFlight.CruiseHeight(u));
+			s.nextSpecial = Time.time + UnityEngine.Random.Range(10f, 60f);
+			ModDogfight.states[id] = s;
+		}
+		return s;
+	}
+
+	public static bool IsJapanese(Unit u)
+	{
+		return u.unitData != null && u.unitData.nationIndex == 3;
+	}
+
+	public static bool IsFighter(Unit u)
+	{
+		return u != null && u.unitData != null && u.unitData.unitSubtype == UnitSubType.Fighter;
+	}
+
+	// First line of UnitAIAir.DogfightApproach. Returns true when this class has flown the aircraft this tick
+	// (the game's pursuit and firing are then skipped); false lets the game fly the gun run as usual.
+	public static bool Fly(UnitAIAir ai)
+	{
+		try
+		{
+			Unit u = ai.parentUnit;
+			Unit target = ai.focusedUnit;
+			if (!ModDogfight.IsFighter(u) || u.unitAir == null || target == null || target.isDestroyed || target.unitAir == null || target.unitAir.shootDown || u.isDestroyed)
+			{
+				return false;
+			}
+			ModDogfight.State s = ModDogfight.GetState(u);
+			float now = Time.time;
+			// 0.26.4.2.1: mountains. Less than 200 m of air under the plane or ahead of it (50 units out): climb, whatever the manoeuvre.
+			float groundAhead = ModFlight.GroundAhead(u.transform.position, u.transform.forward, 50f);
+			if (groundAhead > 0f && !ModFlight.AcroActive(u.unitAir) && u.transform.position.y - groundAhead < 20f)
+			{
+				ModDogfight.NormalPitch(u);
+				ModDogfight.StopGuns(u);
+				u.wantedHeight = Mathf.Min(u.transform.position.y + 60f, ModDogfight.MaxHeight);
+				u.wantedSpeed = u.unitData.maxSpeed;
+				return true;
+			}
+			// 0.27: pull-out guard. A fast dive needs room to pull out (the pull rate shrinks at speed): if the plane would reach the sea or the ground
+			// before it can level out, it stops what it is doing and pulls up now.
+			if (!ModFlight.AcroActive(u.unitAir) && ModDogfight.NeedsPullOut(u))
+			{
+				ModDogfight.StopGuns(u);
+				ModDogfight.NormalPitch(u);
+				u.wantedTurnRate = 0f;
+				u.wantedSpeed = u.unitData.maxSpeed;
+				u.wantedHeight = Mathf.Min(u.transform.position.y + 80f, ModDogfight.MaxHeight);
+				if (ModDogfight.pulloutLogged < 60)
+				{
+					ModDogfight.pulloutLogged++;
+					UnityEngine.Debug.Log("[ENERGY] " + u.unitData.unitName + " id " + u.GetInstanceID() + " (" + (u.faction == Faction.Player ? "ours" : "enemy") + ") breaks off to pull out of a dive: " + (u.transform.position.y * 10f).ToString("F0") + " m up, speed " + (u.currentSpeed * 36f).ToString("F0") + " km/h, nose " + (Mathf.Asin(Mathf.Clamp(-u.transform.forward.y, -1f, 1f)) * Mathf.Rad2Deg).ToString("F0") + " deg down");
+				}
+				return true;
+			}
+			// 0.28: overspeed guard. A Trained or better pilot watches the airspeed against the structural limit and eases off before the wings come off.
+			        // 0.26.4.6: out of ammo means leave. Guns off, full speed straight away from the target; the game removes planes that leave the battle area.
+			if (!ModFlight.AcroActive(u.unitAir) && ModFlight.Rank(u) >= 1 && ModAirDamage.OverspeedRatio(u) >= ModDogfight.OverspeedGuard)
+			{
+				ModDogfight.StopGuns(u);
+				u.wantedTurnRate = 0f;
+				u.wantedSpeed = u.unitData.maxSpeed * 0.4f;
+				u.wantedHeight = Mathf.Min(u.transform.position.y + 100f, ModDogfight.MaxHeight);
+				if (ModDogfight.overspeedLogged < 40)
+				{
+					ModDogfight.overspeedLogged++;
+					UnityEngine.Debug.Log("[ENERGY] " + u.unitData.unitName + " id " + u.GetInstanceID() + " (" + (u.faction == Faction.Player ? "ours" : "enemy") + ") is at " + (ModAirDamage.OverspeedRatio(u) * 100f).ToString("F0") + "% of its structural speed (" + (u.currentSpeed * 36f).ToString("F0") + " km/h): throttle closed, easing out of the dive");
+				}
+				return true;
+			}
+			// v0.28.2: out of fuel means the engine has quit. The first 0.28 log had planes hanging at the same height for minutes with a dead engine,
+			// still in the fight. Now they glide down at their best glide speed and ditch (ModAirDamage.Tick).
+			if (ModAirDamage.FuelOf(u) <= 0f)
+			{
+				ModDogfight.StopGuns(u);
+				ModDogfight.NormalPitch(u);
+				u.wantedTurnRate = 0f;
+				u.wantedSpeed = u.unitData.maxSpeed * 0.5f;
+				u.wantedHeight = 5f;
+				return true;
+			}
+			string leaveWhy = null;
+			if (!ModFlight.AcroActive(u.unitAir))
+			{
+				if (u.weaponParticle != null && u.weaponParticle.secondsFiring <= 0f)
+				{
+					leaveWhy = "OUT OF AMMO";
+				}
+				else
+				{
+					string damageWhy;
+					if (ModAirDamage.WantsOut(u, out damageWhy))
+					{
+						leaveWhy = damageWhy;
+					}
+				}
+			}
+			if (leaveWhy != null)
+			{
+				ModDogfight.JettisonBombs(u, "leaving the battle");
+				if (ModDogfight.leaveLogged.Add(u.GetInstanceID()))
+				{
+					ModDogfight.emptyDone.Add(u.GetInstanceID());
+					UnityEngine.Debug.Log("[GUN] " + u.unitData.unitName + " id " + u.GetInstanceID() + " (" + (u.faction == Faction.Player ? "ours" : "enemy") + ") leaves the battle: " + leaveWhy);
+				}
+				ModDogfight.StopGuns(u);
+				ModDogfight.NormalPitch(u);
+				Vector3 here = u.transform.position;
+				Vector3 awayDir = here - target.transform.position;
+				awayDir.y = 0f;
+				if (awayDir.sqrMagnitude < 1f)
+				{
+					awayDir = -u.transform.forward;
+				}
+				Vector3 awayPoint = here + awayDir.normalized * 1000f;
+				Vector3 fwdFlat = u.transform.forward;
+				fwdFlat.y = 0f;
+				float turn = Utilities.GetSignedAngleToPosition(fwdFlat, here, new Vector3(awayPoint.x, here.y, awayPoint.z));
+				u.wantedTurnRate = Mathf.Clamp(turn, -u.unitData.maxTurnRate, u.unitData.maxTurnRate);
+				u.wantedSpeed = u.unitData.maxSpeed;
+				u.wantedHeight = Mathf.Clamp(here.y, ModDogfight.MinHeight, ModDogfight.MaxHeight);
+				return true;
+			}
+			s.self = u;
+			s.label = u.unitData.unitName + " id " + u.GetInstanceID() + " (" + (u.faction == Faction.Player ? "ours" : "enemy") + ")";
+			s.lastY = u.transform.position.y;
+			ModDogfight.ScanLosses(now);
+			ModDogfight.Status(now);
+			// Wingman cover: a Trained or better pilot goes after the enemy sitting on a friend's tail, even if he is being chased himself.
+			if (now >= s.nextSupportCheck)
+			{
+				s.nextSupportCheck = now + 1f;
+				if (s.phase != 5 && now >= s.coverCooldown && ModFlight.Rank(u) >= 1)
+				{
+					Unit attacker = ModDogfight.FindAttackerOfFriend(u);
+					if (attacker != null)
+					{
+						s.supportTarget = attacker;
+						s.supportUntil = now + ModDogfight.CoverSeconds;
+						s.coverCooldown = now + ModDogfight.CoverSeconds + ModDogfight.CoverRest;
+						if (s.phase != 4 && attacker != target)
+						{
+							ai.focusedUnit = attacker;
+							target = attacker;
+							s.lastTarget = attacker;
+							ModDogfight.Hold(s, attacker, now, ModDogfight.CoverSeconds);
+							ModDogfight.SetPhase(u, s, 0, now, 0f, "covering a wingman: going after " + ModDogfight.Name(attacker) + " on his tail");
+						}
+					}
+				}
+			}
+			// 0.26.4.2.3: one main target, kept for 5 minutes, whatever the game's squad logic picks in between. It only changes when the target is
+			// destroyed, when more than 4 of our aircraft are on it, or when the 5 minutes are up. Wingman cover (30 s, then 60 s before the next one) is the only short detour.
+			bool coverHold = s.holdTarget != null && now < s.holdUntil && !s.holdTarget.isDestroyed && s.holdTarget.unitAir != null && !s.holdTarget.unitAir.shootDown;
+			if (coverHold)
+			{
+				if (target != s.holdTarget)
+				{
+					ai.focusedUnit = s.holdTarget;
+					target = s.holdTarget;
+				}
+			}
+			else if (!ModDogfight.CanSwitch(u, s, now))
+			{
+				if (target != s.mainTarget)
+				{
+					ai.focusedUnit = s.mainTarget;
+					target = s.mainTarget;
+				}
+			}
+			else if (target != s.mainTarget)
+			{
+				ModDogfight.SetMain(s, target, now);
+			}
+			bool japanese = ModDogfight.IsJapanese(u);
+			// 0.28: only a share of the fighters may chase bombers while enemy fighters are about (the rest fight the fighters), so the fight does not sink to the bombers' altitude.
+			if (!coverHold && !ModDogfight.IsFighter(target) && now >= s.nextHunt)
+			{
+				s.nextHunt = now + 2f;
+				Unit other = ModDogfight.HuntLimit(u, target);
+				if (other != null)
+				{
+					ModDogfight.huntRedirects++;
+					UnityEngine.Debug.Log("[DOGFIGHT] " + u.unitData.unitName + " id " + u.GetInstanceID() + " (" + (u.faction == Faction.Player ? "ours" : "enemy") + ", " + now.ToString("F0") + " s): enough of our fighters are on bombers (limit " + (ModDogfight.HunterShare * 100f).ToString("F0") + "% while enemy fighters are within " + (ModDogfight.HuntRange * 10f).ToString("F0") + " m), going after " + ModDogfight.Name(other) + " instead of " + ModDogfight.Name(target));
+					ai.focusedUnit = other;
+					target = other;
+					ModDogfight.SetMain(s, other, now);
+				}
+			}
+			// 0.26.4.1: the game parks (removes) any plane that goes beyond 5000 units (50 km) from the middle of the battle. Turn back well before that.
+			if (Utilities.GetXZDistance(Vector3.zero, u.transform.position) > ModDogfight.ZoneTurnBack)
+			{
+				ModDogfight.Steer(u, Vector3.zero, 1f, s, japanese);
+				ModDogfight.SetHeight(u, u.transform.position.y, s);
+				ModDogfight.StopGuns(u);
+				if (now - s.lastZoneLog > 20f)
+				{
+					s.lastZoneLog = now;
+					UnityEngine.Debug.Log("[DOGFIGHT] " + u.unitData.unitName + " id " + u.GetInstanceID() + " is near the edge of the battle area (" + (Utilities.GetXZDistance(Vector3.zero, u.transform.position) * 10f).ToString("F0") + " m from the middle), turning back");
+				}
+				return true;
+			}
+			bool targetIsFighter = ModDogfight.IsFighter(target);
+			float dist = Vector3.Distance(u.transform.position, target.transform.position);
+			if (targetIsFighter && dist < ModDogfight.BombDropRange)
+			{
+				ModDogfight.JettisonBombs(u, "dogfight with " + ModDogfight.Name(target) + " at " + (dist * 10f).ToString("F0") + " m");
+			}
+			else if (now >= s.nextBombCheck)
+			{
+				s.nextBombCheck = now + 1f;
+				if (ModDogfight.EnemyFighterNear(u, ModDogfight.BombEarlyRange))
+				{
+					ModDogfight.JettisonBombs(u, "enemy fighters within " + (ModDogfight.BombEarlyRange * 10f).ToString("F0") + " m");
+				}
+			}
+			if (target != s.lastTarget)
+			{
+				s.lastTarget = target;
+				ModDogfight.StartAttack(u, target, s, japanese, targetIsFighter, dist, now);
+			}
+			// someone on my tail?
+			if (now >= s.nextThreatCheck)
+			{
+				s.nextThreatCheck = now + 0.5f;
+				s.threat = ModDogfight.FindThreat(u);
+				if (s.threat != null)
+				{
+					s.lastThreat = s.threat;
+					ModDogfight.JettisonBombs(u, "attacked by " + ModDogfight.Name(s.threat));
+				}
+				if (s.threat == null)
+				{
+					s.threatSince = 0f;
+				}
+				else if (s.threatSince <= 0f)
+				{
+					s.threatSince = now;
+				}
+				// a less skilled pilot notices a plane on his tail later
+				int fr = ModFlight.Rank(u);
+				float reaction = (fr == 0) ? 2f : ((fr == 1) ? 0.8f : 0f);
+				// v0.28.1: a close threat is noticed sooner, and a new defence need not wait out the whole rest (the test log: Wildcats died 5 to 9 s after a defence with the same Zero still on the tail)
+				bool hot = s.threat != null && Vector3.Distance(s.threat.transform.position, u.transform.position) < ModDogfight.TailHotRange;
+				if (hot)
+				{
+					reaction *= 0.5f;
+				}
+				bool coolOk = now >= s.defendCooldown || (hot && now >= s.defendCooldown - ModDogfight.DefendRest + ModDogfight.DefendRepeat);
+				if (s.threat != null && s.phase != 4 && s.phase != 5 && !(s.phase == 6 && s.move == 7) && coolOk && now - s.threatSince >= reaction)   // v0.28.6: a scissors is not cut short by a new defence
+				{
+					ModDogfight.StartDefend(u, s, japanese, now);
+				}
+			}
+			// 0.27: energy decision, about once a second (not while defending or in an acrobatic move)
+			if (s.phase != 4 && s.phase != 5 && now >= s.nextDecide)
+			{
+				s.nextDecide = now + 1f;
+				ModDogfight.Decide(u, target, s, japanese, targetIsFighter, dist, now);
+			}
+			// 0.28: low on speed for too long with nobody on the tail: unload and accelerate (the 0.27.1 log showed Wildcats 100% below corner speed for 30 s with no way back).
+			ModAirFlight.Row rrec = ModAirFlight.Of(u);
+			bool slowNow = rrec != null && u.currentSpeed < rrec.cornerSpeed * ModDogfight.RecoverBelow;
+			if (!slowNow)
+			{
+				s.slowSince = 0f;
+			}
+			else if (s.slowSince <= 0f)
+			{
+				s.slowSince = now;
+			}
+			if (slowNow && s.phase != 4 && s.phase != 5 && s.phase != 6 && now - s.slowSince >= ModDogfight.RecoverAfter && now >= s.nextRecover && s.threat == null && u.transform.position.y > ModDogfight.MinHeight * 2f && !ModFlight.AcroActive(u.unitAir) && (dist > ModDogfight.RecoverMinRange || Vector3.Angle(u.transform.forward, target.transform.position - u.transform.position) > 60f))
+			{
+				s.move = 6;
+				s.nextRecover = now + ModDogfight.RecoverMax + ModDogfight.RecoverRest;
+				ModDogfight.recoverCount++;
+				ModDogfight.SetPhase(u, s, 6, now, ModDogfight.RecoverMax, "slow for " + (now - s.slowSince).ToString("F0") + " s at " + (u.currentSpeed * 36f).ToString("F0") + " km/h (corner " + (rrec.cornerSpeed * 36f).ToString("F0") + "), nobody on the tail: unloading and accelerating");
+			}
+			// 0.28 team move, decoy: an Elite pilot outnumbered with friends close flies bait while the flight climbs above.
+			if (now >= s.nextTeam && ModFlight.Rank(u) >= 3 && s.threat == null && (s.phase == 0 || s.phase == 1 || s.phase == 2 || s.phase == 3) && ModDogfight.SpecialReady(s, now))
+			{
+				s.nextTeam = now + 3f;
+				ModDogfight.TryDecoy(u, s, japanese, now);
+			}
+			bool covering = s.phase == 4 && s.supportTarget != null && now < s.supportUntil;
+			if (s.phase != 0 && s.phase != 5 && !covering)
+			{
+				ModDogfight.StopGuns(u);
+				ModDogfight.NormalPitch(u);
+			}
+			switch (s.phase)
+			{
+			case 0:
+				return ModDogfight.Attack(ai, u, target, s, japanese, targetIsFighter, dist, now);
+			case 1:
+				return ModDogfight.Position(u, target, s, japanese, targetIsFighter, dist, now);
+			case 2:
+				return ModDogfight.Zoom(u, target, s, japanese, targetIsFighter, dist, now);
+			case 3:
+				return ModDogfight.YoYo(u, target, s, japanese, targetIsFighter, dist, now);
+			case 5:
+				return ModDogfight.RollAttack(u, target, s, japanese, targetIsFighter, dist, now);
+			case 6:
+				return ModDogfight.Move(u, target, s, japanese, dist, now);
+			default:
+				return ModDogfight.Defend(u, target, s, japanese, targetIsFighter, dist, now);
+			}
+		}
+		catch (System.Exception ex)
+		{
+			UnityEngine.Debug.LogError("[DOGFIGHT] fly failed: " + ex.Message);
+			return false;
+		}
+	}
+
+	// A new target: judge the energy, then climb for it, close in on it, or break away.
+	public static void StartAttack(Unit u, Unit target, ModDogfight.State s, bool japanese, bool targetIsFighter, float dist, float now)
+	{
+		s.modeUntil = 0f;
+		s.phase = -1;   // no phase while the first judgement is made, so Decide does not also move the fighter
+		ModDogfight.Decide(u, target, s, japanese, targetIsFighter, dist, now);
+		s.nextDecide = now + 1f;
+		ModDogfight.Resume(u, target, s, japanese, targetIsFighter, dist, now, "new target");
+	}
+
+	// Pick the next phase from the current mode: flee (extend), climb to get the energy for a boom-and-zoom pass, or attack.
+	public static void Resume(Unit u, Unit target, ModDogfight.State s, bool japanese, bool targetIsFighter, float dist, float now, string why)
+	{
+		float adv = u.transform.position.y - target.transform.position.y;
+		float climbRange = targetIsFighter ? ModDogfight.USClimbRange : 1000f * 0.1f;
+		if (s.mode == ModDogfight.ModeFlee)
+		{
+			// v0.28.1: never extend in a straight line with an enemy fighter on the tail (the test log: 4 Wildcats died "extending away" with a faster Zero behind them)
+			Unit chaser = ModDogfight.FindThreat(u);
+			if (chaser != null)
+			{
+				s.threat = chaser;
+				s.lastThreat = chaser;
+				s.defendCooldown = 0f;
+				ModDogfight.StartDefend(u, s, japanese, now);
+				return;
+			}
+			s.move = 4;
+			ModDogfight.SetPhase(u, s, 6, now, ModDogfight.ExtendMax, why + ": energy " + s.energyDiff.ToString("F0") + " m behind " + ModDogfight.Name(target) + " and the worse turner, extending away to regain speed");
+		}
+		else if (s.mode == ModDogfight.ModeBoom && !s.rich && dist > climbRange && ModFlight.Rank(u) >= 1)
+		{
+			ModDogfight.SetPhase(u, s, 1, now, ModDogfight.PositionSeconds, why + ": climbing to get the energy to dive on " + ModDogfight.Name(target) + " (energy " + s.energyDiff.ToString("F0") + " m, " + (adv * 10f).ToString("F0") + " m height advantage)");
+		}
+		else
+		{
+			ModDogfight.SetPhase(u, s, 0, now, 0f, null);
+		}
+	}
+
+	// ---------------- v0.27 energy decision ----------------
+	// True when the fighter has enough over the target to dive on it. Fighters: specific energy (height + speed^2 / 2g) in metres, with the doctrine
+	// shift. Bombers: height above them. diff = my energy minus the target's (bombers: height difference, metres).
+	public static bool IsRich(Unit u, Unit target, bool japanese, bool targetIsFighter, out float diff)
+	{
+		if (!targetIsFighter)
+		{
+			diff = (u.transform.position.y - target.transform.position.y) * 10f;
+			return diff >= ModDogfight.BomberHeightAdvantage * 10f * 0.6f;
+		}
+		diff = ModFlight.EnergyOf(u) - ModFlight.EnergyOf(target);
+		return diff > ModDogfight.EnergyHigh + (japanese ? ModDogfight.JPRichShift : ModDogfight.USRichShift);
+	}
+
+	// The energy comparison:
+	//   E = height + speed^2 / (2 g)                         (ModFlight.EnergyOf, metres)
+	//   rich  = E_me - E_target >  EnergyHigh + doctrine      -> Boom: dive on it, fire, zoom away
+	//   poor  = E_me - E_target < -(EnergyLow + doctrine)     -> Turn if I am the better turner, else Flee
+	//   level (neither)                                       -> Turn if the better turner, Boom if fast enough (above corner speed), else Flee
+	//   better turner = my sustained turn rate / the target's >= TurnEdge + doctrine
+	// The mode is held for ModeHold seconds, so the fighter does not flip every second.
+	public static void Decide(Unit u, Unit target, ModDogfight.State s, bool japanese, bool targetIsFighter, float dist, float now)
+	{
+		int rank = ModFlight.Rank(u);
+		float diff;
+		bool rich = ModDogfight.IsRich(u, target, japanese, targetIsFighter, out diff);
+		s.rich = rich;
+		s.energyDiff = diff;
+		if (now < s.modeUntil)
+		{
+			return;
+		}
+		int mode;
+		string why;
+		ModAirFlight.Row rm = ModAirFlight.Of(u);
+		ModAirFlight.Row rt = ModAirFlight.Of(target);
+		float ratio = 1f;
+		if (rm != null && rt != null && rt.sustainedTurnRate > 0f)
+		{
+			ratio = (rm.sustainedTurnRate * rm.turnScale) / Mathf.Max(0.1f, rt.sustainedTurnRate * rt.turnScale);
+		}
+		if (!targetIsFighter)
+		{
+			mode = ModDogfight.ModeBoom;
+			why = "bombers: slashing passes from above";
+		}
+		else if (rank == 0)
+		{
+			mode = ModDogfight.ModeNeutral;
+			why = "Green pilot, straight pursuit";
+		}
+		else
+		{
+			float poorLimit = ModDogfight.EnergyLow + (japanese ? ModDogfight.JPPoorShift : ModDogfight.USPoorShift);
+			float edge = ModDogfight.TurnEdge + (japanese ? ModDogfight.JPTurnEdgeShift : ModDogfight.USTurnEdgeShift);
+			bool better = ratio >= edge;
+			bool fast = rm != null && u.currentSpeed >= rm.cornerSpeed;
+			// 0.27.1: running only works if the target cannot catch me: my top speed is about the same or better, or I have the height to dive
+			// away (above 2500 m). Otherwise a straight run just gives the faster plane free gun time, so the fighter turns with flaps instead.
+			bool canRun = (rm != null && rt != null && ModDogfight.TopSpeedNow(rm) * 0.97f >= ModDogfight.TopSpeedNow(rt)) || u.transform.position.y > 2500f * 0.1f;
+			if (rich)
+			{
+				mode = ModDogfight.ModeBoom;
+				why = "energy lead, boom and zoom";
+			}
+			else if (diff < -poorLimit)
+			{
+				mode = (better || !canRun) ? ModDogfight.ModeTurn : ModDogfight.ModeFlee;
+				why = better ? "low on energy but the better turner, turn fight with flaps" : (canRun ? "low on energy and the worse turner, disengage" : "low on energy, the worse turner but too slow to run: turn with flaps out");
+			}
+			else if (better)
+			{
+				mode = ModDogfight.ModeTurn;
+				why = "level on energy and the better turner, turn fight";
+			}
+			else if (fast)
+			{
+				mode = ModDogfight.ModeBoom;
+				why = "level on energy, the worse turner but fast: boom and zoom";
+			}
+			else if (canRun)
+			{
+				mode = ModDogfight.ModeFlee;
+				why = "level on energy, slow and the worse turner, extend to regain speed";
+			}
+			else
+			{
+				mode = ModDogfight.ModeTurn;
+				why = "level on energy, slow and the worse turner but cannot outrun it: turn with flaps out";
+			}
+		}
+		if (mode == s.mode)
+		{
+			return;
+		}
+		int old = s.mode;
+		s.mode = mode;
+		s.modeUntil = now + ModDogfight.ModeHold;
+		if (ModDogfight.modeLogged < 200)
+		{
+			ModDogfight.modeLogged++;
+			UnityEngine.Debug.Log("[DOGFIGHT] " + u.unitData.unitName + " id " + u.GetInstanceID() + " (" + (u.faction == Faction.Player ? "ours" : "enemy") + ", " + now.ToString("F0") + " s) vs " + ModDogfight.Name(target) + ": energy " + ModFlight.EnergyOf(u).ToString("F0") + " m against " + ModFlight.EnergyOf(target).ToString("F0") + " m (" + (diff >= 0f ? "+" : "") + diff.ToString("F0") + "), sustained turn " + (rm != null ? rm.sustainedTurnRate.ToString("F1") : "-") + " against " + (rt != null ? rt.sustainedTurnRate.ToString("F1") : "-") + " deg/s, speed " + (u.currentSpeed * 36f).ToString("F0") + " km/h: " + why);
+		}
+		// moves between phases
+		if (mode == ModDogfight.ModeFlee && (s.phase == 0 || s.phase == 1 || s.phase == 2 || s.phase == 3))
+		{
+			ModDogfight.Resume(u, target, s, japanese, targetIsFighter, dist, now, "energy fight");
+		}
+		else if (old == ModDogfight.ModeFlee && s.phase == 6 && (s.move == 4 || s.move == 5))
+		{
+			ModDogfight.Resume(u, target, s, japanese, targetIsFighter, dist, now, "energy recovered");
+		}
+		else if (mode != ModDogfight.ModeBoom && s.phase == 1)
+		{
+			ModDogfight.SetPhase(u, s, 0, now, 0f, "no climb needed: " + why);
+		}
+	}
+
+	// 0.27 pull-out guard: would the plane hit the sea or the ground before it can level out? Pull-out loss = R (1 - cos dive angle), R = v^2 / (g (n - 1)).
+	public static bool NeedsPullOut(Unit u)
+	{
+		Vector3 fwd = u.transform.forward;
+		float dive = Mathf.Asin(Mathf.Clamp(-fwd.y, -1f, 1f)) * Mathf.Rad2Deg;
+		if (dive < 12f)
+		{
+			return false;
+		}
+		float v = u.currentSpeed * 10f;
+		float radius = v * v / (ModAirFlight.G * (ModDogfight.PullOutG - 1f));
+		float loss = radius * (1f - Mathf.Cos(dive * Mathf.Deg2Rad));
+		float clearance = (u.transform.position.y - ModFlight.GroundAhead(u.transform.position, u.transform.forward, 30f)) * 10f;
+		return clearance < loss * 1.2f + ModDogfight.PullOutMargin;
+	}
+
+	// Phase 0: the game's own gun run. Leave it when it is time to break off.
+	public static bool Attack(UnitAIAir ai, Unit u, Unit target, ModDogfight.State s, bool japanese, bool targetIsFighter, float dist, float now)
+	{
+		if (now >= s.nextSandwich)
+		{
+			s.nextSandwich = now + 1f;
+			float before = s.sandwich;
+			s.sandwich = (targetIsFighter && ModFlight.Rank(u) >= 1) ? ModDogfight.SandwichSide(u, target) : 0f;
+			if (before == 0f && s.sandwich != 0f && ModDogfight.teamLogged < 40)
+			{
+				ModDogfight.teamLogged++;
+				UnityEngine.Debug.Log("[TEAM] " + u.unitData.unitName + " id " + u.GetInstanceID() + " (" + (u.faction == Faction.Player ? "ours" : "enemy") + ") sandwich on " + ModDogfight.Name(target) + ": coming in from the " + (s.sandwich > 0f ? "right" : "left") + " while a friend takes the other side");
+			}
+		}
+		ModDogfight.Energy(u, japanese);
+		Vector3 to = target.transform.position - u.transform.position;
+		float ata = Vector3.Angle(u.transform.forward, to);
+		float inRun = now - s.attackStart;
+		if (ata < 45f)
+		{
+			s.sawAhead = true;
+		}
+		if (dist < s.minDist)
+		{
+			s.minDist = dist;
+		}
+		// v0.20.9: the pass is over once the fighter has come in close and is now opening the range again (it has
+		// flown past or through the target), not after a fixed time (that ended dives before they reached gun range)
+		bool passed = s.sawAhead && s.minDist < ModDogfight.PassCloseRange && dist > s.minDist + ModDogfight.PassOpening;
+		// about to fly past the target
+		if (dist < ModDogfight.OvershootRange && ata < 60f)
+		{
+			// 0.27: the move depends on the energy mode, not the nation. A turn fighter trades speed for height (high yo-yo) so as not to overshoot;
+			// a fighter that is not boom-and-zooming slides out to the outside of the turn (lag displacement roll); a boom-and-zoom pass just zooms.
+			bool special = targetIsFighter && ModFlight.Rank(u) >= 2 && ModDogfight.SpecialReady(s, now) && UnityEngine.Random.value < 0.3f;
+			if (special && s.mode == ModDogfight.ModeBoom && ModDogfight.FastEnough(u, 1.4f) && UnityEngine.Random.value < 0.4f && ModFlight.StartImmelmann(u.unitAir))
+			{
+				ModDogfight.UseSpecial(s, now);
+				s.acroCooldown = now + 45f;
+				ModDogfight.SetPhase(u, s, 5, now, 9f, "pass on " + ModDogfight.Name(target) + " done at " + (u.currentSpeed * 36f).ToString("F0") + " km/h, Immelmann: half loop up and back round onto it");
+			}
+			else if (special && s.mode == ModDogfight.ModeTurn)
+			{
+				ModDogfight.UseSpecial(s, now);
+				ModDogfight.SetPhase(u, s, 3, now, 3f, "about to overshoot " + ModDogfight.Name(target) + ", high yo-yo");
+			}
+			else if (special && s.mode != ModDogfight.ModeBoom)
+			{
+				ModDogfight.UseSpecial(s, now);
+				s.move = 2;
+				ModDogfight.SetPhase(u, s, 6, now, 3f, "about to overshoot " + ModDogfight.Name(target) + ", lag displacement roll: easing out to the outside of its turn");
+			}
+			else
+			{
+				ModDogfight.SetPhase(u, s, 2, now, 7f, "passing " + ModDogfight.Name(target) + ", zoom climb away");
+			}
+			return true;
+		}
+		// everyone makes slashing passes against bombers
+		if (!targetIsFighter && (passed || inRun > ModDogfight.RunGiveUp))
+		{
+			// 0.28: a pass that ends below the pass floor, with enemy fighters about, is followed by a climb back toward the cruise altitude (not a 1 km zoom
+			// above a low bomber), so the fight does not sink to the bombers' altitude.
+			float floorY = japanese ? ModDogfight.JPPassFloor : ModDogfight.USPassFloor;
+			float cruiseY = ModFlight.CruiseHeight(u);
+			if (u.transform.position.y < floorY && cruiseY - u.transform.position.y > ModDogfight.CruiseSlack && ModDogfight.EnemyFighterNear(u, ModDogfight.HuntRange))
+			{
+				s.move = 5;
+				ModDogfight.lowPassClimbs++;
+				ModDogfight.SetPhase(u, s, 6, now, ModDogfight.ClimbMax, "slashing pass on " + ModDogfight.Name(target) + " left it at " + (u.transform.position.y * 10f).ToString("F0") + " m, below the pass floor of " + (floorY * 10f).ToString("F0") + " m, with enemy fighters about: climbing back toward " + (cruiseY * 10f).ToString("F0") + " m");
+				return true;
+			}
+			ModDogfight.SetPhase(u, s, 2, now, 7f, "slashing pass on " + ModDogfight.Name(target) + " done, pulling away from the gunners");
+			return true;
+		}
+		// 0.27: against a fighter the energy mode decides. A boom-and-zoom pass ends in a zoom climb with the speed the dive gave. A turn fighter
+		// (and a pilot who does not judge energy) stays in the fight and turns back in on the target.
+		if (targetIsFighter && (passed || inRun > ModDogfight.RunGiveUp))
+		{
+			if (s.mode == ModDogfight.ModeBoom)
+			{
+				ModDogfight.SetPhase(u, s, 2, now, 7f, "pass on " + ModDogfight.Name(target) + " done, zoom climb with the speed kept (energy " + s.energyDiff.ToString("F0") + " m)");
+				return true;
+			}
+			s.attackStart = now;
+			s.sawAhead = false;
+			s.minDist = float.MaxValue;
+			return true;
+		}
+		// a long turning fight: see whether someone else needs attacking more (spreads fighters out)
+		if (inRun > ModDogfight.TurnFightRepick && dist > 300f * 0.1f && ModDogfight.Repick(u, s, now))
+		{
+			s.attackStart = now;
+			s.sawAhead = false;
+			s.minDist = float.MaxValue;
+			return true;
+		}
+		// 0.26.4.2: the pool. Every 2 s a Trained or better pilot looks at the situation; each fitting move has a weight, and one is picked
+		// by weight, so the same situation does not always give the same move. Rare by SpecialReady.
+		if (targetIsFighter && now >= s.nextMoveCheck && ModDogfight.SpecialReady(s, now) && ModFlight.Rank(u) >= 1)
+		{
+			s.nextMoveCheck = now + 2f;
+			ModDogfight.PickMove(u, target, s, dist, ata, now);
+			if (s.phase == 6)
+			{
+				return true;
+			}
+		}
+		// v0.26.4: roll-over attack. Only when the plane it is chasing suddenly ends up well below it and off to the side or behind (it dived, or
+		// this plane overshot and climbed): a Veteran or Elite pilot rolls over and dives on it from above. Never for a target that has been below all along.
+		float below = u.transform.position.y - target.transform.position.y;
+		if (now >= s.nextBelowSample)
+		{
+			s.nextBelowSample = now + 3f;
+			bool wasLevel = s.lastBelow < 100f * 0.1f;
+			s.lastBelow = below;
+			int rank = ModFlight.Rank(u);
+			if (wasLevel && rank >= 2 && s.mode != ModDogfight.ModeFlee && ModDogfight.SpecialReady(s, now) && now >= s.acroCooldown && below >= 150f * 0.1f && below <= 900f * 0.1f && dist >= 300f * 0.1f && dist <= 1100f * 0.1f && u.transform.position.y >= 1000f * 0.1f)
+			{
+				Vector3 fl = u.transform.forward;
+				fl.y = 0f;
+				float side = Mathf.Abs(Utilities.GetSignedAngleToPosition(fl, u.transform.position, new Vector3(target.transform.position.x, u.transform.position.y, target.transform.position.z)));
+				if (side > 75f && UnityEngine.Random.value < ((rank >= 3) ? 0.5f : 0.35f))
+				{
+					if (ModFlight.StartRollAttack(u.unitAir, target))
+					{
+						s.acroCooldown = now + 45f;
+						ModDogfight.UseSpecial(s, now);
+						ModDogfight.SetPhase(u, s, 5, now, 12f, ModDogfight.Name(target) + " dropped " + (below * 10f).ToString("F0") + " m below, rolling over to dive on it from above");
+						return true;
+					}
+				}
+			}
+		}
+		// 0.28 acrobatic attacks, Veteran and better, rare (SpecialReady) and checked every 2 s.
+		if (ModFlight.Rank(u) >= 2 && now >= s.nextAcroTry && now >= s.acroCooldown && ModDogfight.SpecialReady(s, now))
+		{
+			s.nextAcroTry = now + 2f;
+			// pitchback: the plane that was on my tail overshot and is now ahead and below me, close
+			if (targetIsFighter && target == s.lastThreat && ata < 110f && below >= 15f && dist > 20f && dist < 90f && UnityEngine.Random.value < 0.4f && ModFlight.StartPitchback(u.unitAir, target))
+			{
+				s.acroCooldown = now + 45f;
+				ModDogfight.UseSpecial(s, now);
+				ModDogfight.SetPhase(u, s, 5, now, 10f, ModDogfight.Name(target) + " overshot and is " + (below * 10f).ToString("F0") + " m below, pitchback: pulling up steeply to drop back onto it");
+				return true;
+			}
+			// barrel roll attack: closing fast on a bomber or a plane flying straight, so the pass does not overshoot
+			bool straight = !targetIsFighter || Mathf.Abs(target.unitAir.currentTurnRate) < 4f;
+			if (straight && ata < 30f && dist > 50f && dist < 150f && u.currentSpeed > target.currentSpeed * 1.25f && UnityEngine.Random.value < 0.3f && ModFlight.StartBarrelAttack(u.unitAir, target))
+			{
+				s.acroCooldown = now + 45f;
+				ModDogfight.UseSpecial(s, now);
+				ModDogfight.SetPhase(u, s, 5, now, 6f, "closing at " + ((u.currentSpeed - target.currentSpeed) * 36f).ToString("F0") + " km/h on " + ModDogfight.Name(target) + ", barrel roll attack to stay behind it");
+				return true;
+			}
+		}
+		ModDogfight.GunRun(ai, u, target, dist);
+		return true;
+		}
+
+		// Phase 5: roll-over attack or split-S. ModFlight.Acro flies the plane; here we only fire (roll-over attack) and decide what to do afterwards.
+	public static bool RollAttack(Unit u, Unit target, ModDogfight.State s, bool japanese, bool targetIsFighter, float dist, float now)
+	{
+		if (ModFlight.AcroActive(u.unitAir) && now < s.phaseUntil + 12f)
+		{
+			u.wantedTurnRate = 0f;
+			u.wantedSpeed = u.unitData.maxSpeed * 1.2f;
+			int acroKind = ModFlight.AcroKind(u.unitAir);
+			if (acroKind == 1 || acroKind == 7)
+			{
+				Vector3 pos = u.transform.position;
+				Vector3 lead = target.transform.position + target.transform.forward * target.currentActualSpeed * (dist / ModDogfight.BulletSpeed);
+				float aim = Vector3.Angle(u.transform.forward, lead - pos);
+				WeaponParticle wp = u.weaponParticle;
+				if (wp != null)
+				{
+					float range = (u.unitAIAir != null && u.unitAIAir.attackRange > 0f) ? u.unitAIAir.attackRange : 400f * 0.1f;
+					bool inCone = dist < range && aim < ModDogfight.ConeFor(u);
+					if (inCone && !wp.enabled)
+					{
+						wp.FireAll(true);
+					}
+					else if (!inCone && wp.enabled)
+					{
+						ModDogfight.StopGuns(u);
+					}
+				}
+			}
+			return true;
+		}
+		ModDogfight.StopGuns(u);
+		ModDogfight.NormalPitch(u);
+		s.defendCooldown = now + ModDogfight.DefendRest;
+		s.modeUntil = 0f;
+		ModDogfight.Decide(u, target, s, japanese, targetIsFighter, dist, now);
+		ModDogfight.Resume(u, target, s, japanese, targetIsFighter, dist, now, "rolled out of the dive");
+		return true;
+	}
+
+	// Phase 1: climb for energy. Get above the target and out to one side at full throttle (the engine's best climb), then dive in once the energy
+	// lead is big enough (IsRich) or the time is up.
+	public static bool Position(Unit u, Unit target, ModDogfight.State s, bool japanese, bool targetIsFighter, float dist, float now)
+	{
+		float want = targetIsFighter ? ModDogfight.USHeightAdvantage : ModDogfight.BomberHeightAdvantage;
+		Vector3 tp = target.transform.position;
+		Vector3 right = target.transform.right;
+		right.y = 0f;
+		Vector3 aim = tp + right.normalized * ModDogfight.SetupOffset * s.side;
+		ModDogfight.Steer(u, aim, 1f, s, japanese);
+		// 0.27.1: aim for the cruise altitude, not just the target's height plus 500 m, when the fight has dragged the plane well below it.
+		float cruise = ModFlight.CruiseHeight(u);
+		bool lowOnHeight = u.transform.position.y < cruise - ModDogfight.CruiseSlack;
+		float climbTo = tp.y + want;
+		if (lowOnHeight)
+		{
+			climbTo = Mathf.Max(climbTo, Mathf.Min(cruise, u.transform.position.y + ModDogfight.ClimbStep));
+		}
+		ModDogfight.SetHeight(u, climbTo, s);
+		u.wantedSpeed = u.unitData.maxSpeed;
+		ModFlight.FlapsRequest(u.unitAir, false);
+		float diff;
+		bool rich = ModDogfight.IsRich(u, target, japanese, targetIsFighter, out diff);
+		s.rich = rich;
+		s.energyDiff = diff;
+		float adv = u.transform.position.y - tp.y;
+		if ((rich && !lowOnHeight) || now > s.phaseUntil)
+		{
+			ModDogfight.SetPhase(u, s, 0, now, 0f, "diving on " + ModDogfight.Name(target) + " from " + (adv * 10f).ToString("F0") + " m above, energy " + (diff >= 0f ? "+" : "") + diff.ToString("F0") + " m, speed " + (u.currentSpeed * 36f).ToString("F0") + " km/h");
+		}
+		return true;
+	}
+
+	// Phase 2: zoom climb after a pass. Full throttle, nose up as far as the speed allows (ModAirFlight.ClimbLimit), a gentle turn to the setup
+	// side. It ends after 7 s or when the speed is used up (below 90% of corner speed), then the energy is judged again.
+	public static bool Zoom(Unit u, Unit target, ModDogfight.State s, bool japanese, bool targetIsFighter, float dist, float now)
+	{
+		// mostly straight, a gentle turn to the setup side
+		u.wantedTurnRate = s.side * ModFlight.SustainedTurnNow(u) * 0.25f;
+		u.wantedSpeed = u.unitData.maxSpeed * 1.1f;
+		ModFlight.FlapsRequest(u.unitAir, false);
+		// v0.20.7: zoom up, but not more than 1 km above the target (they were climbing higher with every loop)
+		ModDogfight.SetHeight(u, Mathf.Min(s.targetHeight, target.transform.position.y + ModDogfight.MaxAbove), s);
+		ModDogfight.Energy(u, japanese);
+		ModAirFlight.Row zr = ModAirFlight.Of(u);
+		bool spent = zr != null && u.currentSpeed < zr.cornerSpeed * 0.9f;
+		if (now > s.phaseUntil || spent)
+		{
+			s.side = -s.side;
+			// v0.20.6: between passes, pick the best target again (spreads fighters out as more enemies are seen)
+			ModDogfight.Repick(u, s, now);
+			target = u.unitAI.focusedUnit;
+			targetIsFighter = ModDogfight.IsFighter(target);
+			dist = Vector3.Distance(u.transform.position, target.transform.position);
+			s.modeUntil = 0f;
+			ModDogfight.Decide(u, target, s, japanese, targetIsFighter, dist, now);
+			ModDogfight.Resume(u, target, s, japanese, targetIsFighter, dist, now, spent ? "zoom climb used up the speed" : "zoom climb finished");
+		}
+		return true;
+	}
+
+	// Phase 3: high yo-yo - pull up and ease the turn so as not to overshoot, then drop back in behind
+	public static bool YoYo(Unit u, Unit target, ModDogfight.State s, bool japanese, bool targetIsFighter, float dist, float now)
+	{
+		ModDogfight.Steer(u, target.transform.position, 0.5f, s, japanese);
+		ModDogfight.SetHeight(u, s.targetHeight, s);
+		u.wantedSpeed = u.unitData.maxSpeed * 0.85f;
+		if (now > s.phaseUntil)
+		{
+			ModDogfight.SetPhase(u, s, 0, now, 0f, "dropping back in behind " + ModDogfight.Name(target));
+		}
+		return true;
+	}
+
+	// Phase 4: defend - break hard towards the threat (and dive away if US, climbing turn if Japanese)
+	public static bool Defend(Unit u, Unit target, ModDogfight.State s, bool japanese, bool targetIsFighter, float dist, float now)
+	{
+		u.wantedTurnRate = s.turnSign * ModFlight.TurnLimitNow(u) * ModDogfight.ControlFactor(u, japanese) * s.defTurn;
+		// 0.27: a hard break turn puts the combat flaps out (they come in by themselves above the flap speed limit)
+		ModFlight.FlapsRequest(u.unitAir, s.defTurn >= 0.7f);
+		ModDogfight.SetHeight(u, s.targetHeight, s);
+		if (s.defSpeed > 0f)
+		{
+			u.wantedSpeed = u.unitData.maxSpeed * s.defSpeed;
+		}
+		ModDogfight.Energy(u, japanese);
+		// Defending, but a friend is being chased by this enemy: fire if it crosses the nose while breaking.
+		Unit sup = s.supportTarget;
+		if (sup != null && !sup.isDestroyed && now < s.supportUntil && u.weaponParticle != null)
+		{
+			Vector3 toSup = sup.transform.position - u.transform.position;
+			bool lined = toSup.magnitude < 400f * 0.1f && Vector3.Angle(u.transform.forward, toSup) < ModDogfight.ConeFor(u);
+			if (lined && !u.weaponParticle.enabled)
+			{
+				u.weaponParticle.FireAll(true);
+			}
+			else if (!lined && u.weaponParticle.enabled)
+			{
+				ModDogfight.StopGuns(u);
+			}
+		}
+		if (now > s.phaseUntil)
+		{
+			s.defendCooldown = now + ModDogfight.DefendRest;
+			if (sup != null && !sup.isDestroyed && now < s.supportUntil + 4f && u.unitAI != null)
+			{
+				// out of the break: straight on to the enemy that was on the friend's tail
+				u.unitAI.focusedUnit = sup;
+				s.lastTarget = sup;
+				ModDogfight.Hold(s, sup, now, Mathf.Max(0f, s.supportUntil - now));
+				ModDogfight.SetPhase(u, s, 0, now, 0f, "out of the break, going after " + ModDogfight.Name(sup) + " to cover a wingman");
+			}
+			else
+			{
+				s.modeUntil = 0f;
+				ModDogfight.Decide(u, target, s, japanese, targetIsFighter, dist, now);
+				ModDogfight.Resume(u, target, s, japanese, targetIsFighter, dist, now, "out of the break");
+			}
+		}
+		return true;
+	}
+
+	public static void StartDefend(Unit u, ModDogfight.State s, bool japanese, float now)
+	{
+		Unit threat = s.threat;
+		ModDogfight.JettisonBombs(u, "attacked by " + ModDogfight.Name(threat));
+		s.defTurn = 1f;
+		s.defSpeed = 0f;
+		float a = Utilities.GetSignedAngleToPosition(u.transform.forward, u.transform.position, threat.transform.position);
+		s.turnSign = (a >= 0f) ? 1f : -1f;
+		string how;
+		int rank = ModFlight.Rank(u);
+		// Japanese fighters never dive away from a fight (the Zero's controls stiffen in a fast dive): split-S is a US escape, and not every time.
+		bool splitS = !japanese && rank >= 3 && ModDogfight.SpecialReady(s, now) && UnityEngine.Random.value < 0.3f && now >= s.acroCooldown && u.transform.position.y >= 1100f * 0.1f && Vector3.Distance(u.transform.position, threat.transform.position) < 450f * 0.1f;
+		if (splitS && ModFlight.StartSplitS(u.unitAir))
+		{
+			s.acroCooldown = now + 40f;
+			ModDogfight.UseSpecial(s, now);
+			s.defendCooldown = now + ModDogfight.DefendRest;
+			ModDogfight.SetPhase(u, s, 5, now, 6f, ModDogfight.Name(threat) + " on her tail at " + (Vector3.Distance(u.transform.position, threat.transform.position) * 10f).ToString("F0") + " m, split-S: rolling inverted and diving away");
+			return;
+		}
+		// 0.27: the break depends on the energy. Fast: a Japanese pilot trades speed for height in a climbing break, an American dives away to
+		// build more. Slow: a break turn with flaps out, turning inside the attacker. An American too low to dive away does the same.
+		ModAirFlight.Row drow = ModAirFlight.Of(u);
+		ModAirFlight.Row trow = ModAirFlight.Of(threat);
+		float yNow = u.transform.position.y;
+		bool fastNow = drow != null && u.currentSpeed >= drow.cornerSpeed * 1.15f;
+		bool slowNow = drow != null && u.currentSpeed < drow.cornerSpeed * 0.95f;
+		bool betterTurn = drow != null && trow != null && drow.sustainedTurnRate * drow.turnScale >= trow.sustainedTurnRate * trow.turnScale;
+		float threatDist = Vector3.Distance(u.transform.position, threat.transform.position);
+		// 0.28 scissors: a close attacker that turns worse than I do, at a low speed: reverse the turn every second or two so it overshoots, then go after it.
+		if (rank >= 2 && ModDogfight.SpecialReady(s, now) && betterTurn && threatDist < ModDogfight.ScissorsRange && drow != null && u.currentSpeed < drow.cornerSpeed * 1.3f && yNow > ModDogfight.MinHeight * 3f && UnityEngine.Random.value < 0.35f)
+		{
+			ModDogfight.UseSpecial(s, now);
+			s.move = 7;
+			s.scissorFlip = now + 2.5f;   // v0.28.6
+			s.scissorFlips = 0;
+			s.defendCooldown = now + ModDogfight.DefendRest;
+			ModDogfight.scissorsCount++;
+			Unit mate = ModDogfight.FindSplitPartner(u);
+			string mateText = "";
+			if (mate != null)
+			{
+				ModDogfight.State ms = ModDogfight.GetState(mate);
+				mate.unitAI.focusedUnit = threat;
+				ms.lastTarget = threat;
+				ModDogfight.Hold(ms, threat, now, ModDogfight.CoverSeconds);
+				ms.supportTarget = threat;
+				ms.supportUntil = now + ModDogfight.CoverSeconds;
+				ms.coverCooldown = now + ModDogfight.CoverSeconds + ModDogfight.CoverRest;
+				ModDogfight.SetPhase(mate, ms, 0, now, 0f, null);
+				mateText = ", " + mate.unitData.unitName + " turns in on it";
+			}
+			ModDogfight.SetPhase(u, s, 6, now, ModDogfight.ScissorsSeconds, ModDogfight.Name(threat) + " on her tail at " + (threatDist * 10f).ToString("F0") + " m and I turn better (" + drow.sustainedTurnRate.ToString("F1") + " against " + trow.sustainedTurnRate.ToString("F1") + " deg/s) at " + (u.currentSpeed * 36f).ToString("F0") + " km/h: scissors, reversing turns to make it overshoot" + mateText);
+			return;
+		}
+		// 0.28 Immelmann as an escape: fast, with the attacker below me
+		if (rank >= 2 && ModDogfight.SpecialReady(s, now) && now >= s.acroCooldown && ModDogfight.FastEnough(u, 1.35f) && threat.transform.position.y < yNow - 15f && UnityEngine.Random.value < 0.3f && ModFlight.StartImmelmann(u.unitAir))
+		{
+			s.acroCooldown = now + 45f;
+			ModDogfight.UseSpecial(s, now);
+			s.defendCooldown = now + ModDogfight.DefendRest;
+			ModDogfight.SetPhase(u, s, 5, now, 9f, ModDogfight.Name(threat) + " low on her tail at " + (threatDist * 10f).ToString("F0") + " m and I am fast (" + (u.currentSpeed * 36f).ToString("F0") + " km/h): Immelmann, half loop up and over");
+			return;
+		}
+		if (rank == 0)
+		{
+			s.targetHeight = u.transform.position.y;
+			how = "plain break turn";
+		}
+		else if (japanese)
+		{
+			if (fastNow && yNow > 1500f * 0.1f)
+			{
+				s.targetHeight = yNow + 150f * 0.1f;
+				how = "hard climbing break turn, trading speed for height";
+			}
+			else
+			{
+				s.targetHeight = yNow;
+				how = "hard break turn with flaps out at turning speed";
+			}
+		}
+		else if (yNow < 900f * 0.1f || (slowNow && betterTurn))
+		{
+			s.targetHeight = yNow;
+			how = "flaps-out break turn (" + (yNow < 900f * 0.1f ? "too low to dive away" : "too slow to run, turning inside the attacker") + ")";
+		}
+		else
+		{
+			s.targetHeight = u.transform.position.y - ModDogfight.SplitSDrop;
+			how = "breaking and diving away to build speed";
+			// Thach Weave: turn towards a wingman, who turns in on the attacker
+			Unit wing = (rank >= 2 && ModDogfight.SpecialReady(s, now) && UnityEngine.Random.value < 0.5f) ? ModDogfight.FindWingman(u, threat) : null;
+			if (wing != null)
+			{
+				float wa = Utilities.GetSignedAngleToPosition(u.transform.forward, u.transform.position, wing.transform.position);
+				s.turnSign = (wa >= 0f) ? 1f : -1f;
+				wing.unitAI.focusedUnit = threat;
+				ModDogfight.State ws = ModDogfight.GetState(wing);
+				ws.lastTarget = threat;
+				ModDogfight.Hold(ws, threat, now, ModDogfight.CoverSeconds);
+				ws.supportTarget = threat;
+				ws.supportUntil = now + ModDogfight.CoverSeconds;
+				ws.coverCooldown = now + ModDogfight.CoverSeconds + ModDogfight.CoverRest;
+				ModDogfight.UseSpecial(s, now);
+				ModDogfight.SetPhase(wing, ws, 0, now, 0f, null);
+				how = "Thach Weave, turning towards " + wing.unitData.unitName + " who turns in on the attacker";
+			}
+		}
+		// 0.26.4.8: defensive split. Bounced with a friend close by: both break in opposite directions (one up, one down), so the attacker can
+		// only follow one, and the friend then turns in on the attacker.
+		if (rank >= 1 && !how.StartsWith("Thach") && ModDogfight.SpecialReady(s, now) && UnityEngine.Random.value < 0.3f)
+		{
+			Unit partner = ModDogfight.FindSplitPartner(u);
+			if (partner != null)
+			{
+				ModDogfight.State ps = ModDogfight.GetState(partner);
+				ModDogfight.UseSpecial(s, now);
+				ps.nextSpecial = now + UnityEngine.Random.Range(60f, 120f);
+				float myY = u.transform.position.y;
+				float climb = (s.targetHeight >= myY) ? 1f : -1f;
+				s.targetHeight = myY + climb * 120f * 0.1f;
+				ps.threat = threat;
+				ps.turnSign = -s.turnSign;
+				ps.defTurn = 1f;
+				ps.defSpeed = 0f;
+				ps.targetHeight = partner.transform.position.y - climb * 120f * 0.1f;
+				ps.supportTarget = threat;
+				ps.supportUntil = now + 8f;
+				ps.coverCooldown = now + 8f + ModDogfight.CoverRest;
+				ps.defendCooldown = now + ModDogfight.DefendRest;
+				how = "defensive split with " + partner.unitData.unitName + ", breaking " + (climb > 0f ? "up" : "down") + " while the friend breaks the other way and comes back at the attacker";
+				ModDogfight.SetPhase(partner, ps, 4, now, 4f, "defensive split: breaking away from " + ModDogfight.Name(threat) + " so it must choose between us");
+				if (ModDogfight.teamLogged < 40)
+				{
+					ModDogfight.teamLogged++;
+					UnityEngine.Debug.Log("[TEAM] " + u.unitData.unitName + " id " + u.GetInstanceID() + " (" + (u.faction == Faction.Player ? "ours" : "enemy") + ") " + how);
+				}
+			}
+		}
+		// 0.26.4.2: more ways out. Not with a Thach Weave in progress (that has its own plan), and only when the pilot is ready for a special move.
+		if (rank >= 1 && !how.StartsWith("Thach") && !how.StartsWith("defensive split") && ModDogfight.SpecialReady(s, now))
+		{
+			float r = UnityEngine.Random.value;
+			float y = u.transform.position.y;
+			if (r < 0.20f)
+			{
+				ModDogfight.UseSpecial(s, now);
+				float upDown = (japanese || UnityEngine.Random.value < 0.5f) ? 1f : -1f;
+				s.defTurn = 0.7f;
+				s.targetHeight = y + upDown * 150f * 0.1f;
+				how = "out-of-plane break, " + (upDown > 0f ? "up" : "down") + " and away out of its turn plane";
+			}
+			else if (r < 0.32f && !japanese)
+			{
+				ModDogfight.UseSpecial(s, now);
+				s.defTurn = 1f;
+				s.targetHeight = y - 250f * 0.1f;
+				s.defSpeed = 0.8f;
+				how = "defensive spiral, tight diving turn with the throttle back";
+			}
+			else if (r < 0.42f && rank >= 2 && !japanese)
+			{
+				ModDogfight.UseSpecial(s, now);
+				s.defTurn = 0.15f;
+				s.targetHeight = y - 80f * 0.1f;
+				s.defSpeed = 1.15f;
+				how = "unloaded extension, nose down and straight out to build speed";
+			}
+		}
+		if (rank >= 2 && ModDogfight.SpecialReady(s, now) && UnityEngine.Random.value < 0.3f)
+		{
+			ModDogfight.UseSpecial(s, now);
+			if (threatDist < 400f * 0.1f && ModFlight.StartHighGBarrel(u.unitAir))
+			{
+				how = how + ", high-g barrel roll with a climb to make it overshoot";
+			}
+			else
+			{
+				ModFlight.StartBarrelRoll(u.unitAir);
+				how = how + ", barrel roll";
+			}
+		}
+		ModDogfight.SetPhase(u, s, 4, now, UnityEngine.Random.Range(4f, 6f), ModDogfight.Name(threat) + " on her tail at " + (Vector3.Distance(u.transform.position, threat.transform.position) * 10f).ToString("F0") + " m, " + how);
+	}
+
+	public static void SetMain(ModDogfight.State s, Unit target, float now)
+	{
+		s.mainTarget = target;
+		s.mainUntil = now + ModDogfight.TargetHoldSeconds;
+		s.crowded = false;
+		s.nextCrowdCheck = now + 1f;
+	}
+
+	// True when this pilot may change target: no main target, it is destroyed, the hold time is up, or more than 4 of our aircraft are on it
+	public static bool CanSwitch(Unit u, ModDogfight.State s, float now)
+	{
+		Unit m = s.mainTarget;
+		if (m == null || m.isDestroyed || m.unitAir == null || m.unitAir.shootDown || now >= s.mainUntil)
+		{
+			return true;
+		}
+		if (now >= s.nextCrowdCheck)
+		{
+			s.nextCrowdCheck = now + 1f;
+			int n = 0;
+			List<Unit> air = EngagementManager.instance.allAirUnits;
+			for (int i = 0; i < air.Count; i++)
+			{
+				Unit f = air[i];
+				if (f != null && f != u && !f.isDestroyed && f.faction == u.faction && f.unitAI != null && f.unitAI.focusedUnit == m)
+				{
+					n++;
+				}
+			}
+			s.crowded = n > 4;
+		}
+		return s.crowded;
+	}
+
+	public static void Hold(ModDogfight.State s, Unit target, float now, float seconds)
+	{
+		s.holdTarget = target;
+		s.holdUntil = now + seconds;
+	}
+
+	// 0.26.4.2: look at the situation and pick one of the steering moves by weight (rare: only when SpecialReady)
+	public static void PickMove(Unit u, Unit target, ModDogfight.State s, float dist, float ata, float now)
+	{
+		int rank = ModFlight.Rank(u);
+		Vector3 to = target.transform.position - u.transform.position;
+		float speedShare = u.currentSpeed / Mathf.Max(u.unitData.maxSpeed, 0.1f);
+		float tAway = Vector3.Dot(target.transform.forward, to.normalized);
+		// low yo-yo: target is flying away from me, far ahead, and I am slow: dip below its turn plane to gain speed, then close from behind
+		float wLow = (rank >= 2 && ata < 50f && dist > 500f * 0.1f && dist < 1500f * 0.1f && tAway > 0.5f && speedShare < 0.85f) ? 0.25f : 0f;
+		// wingover: slow, and the target is well off my nose: climbing turn to bring the nose round
+		float wWing = (ata > 100f && dist < 1500f * 0.1f && speedShare < 0.75f) ? 0.25f : 0f;
+		float total = wLow + wWing;
+		if (total <= 0f || UnityEngine.Random.value > Mathf.Min(1f, total))
+		{
+			return;
+		}
+		if (UnityEngine.Random.value * total < wLow)
+		{
+			UseSpecial(s, now);
+			s.move = 1;
+			SetPhase(u, s, 6, now, 3.5f, "low yo-yo: dipping below " + Name(target) + " to gain speed and close from behind");
+		}
+		else
+		{
+			UseSpecial(s, now);
+			s.move = 3;
+			s.turnSign = (Utilities.GetSignedAngleToPosition(u.transform.forward, u.transform.position, target.transform.position) >= 0f) ? 1f : -1f;
+			SetPhase(u, s, 6, now, 5f, "wingover: climbing turn to bring the nose round onto " + Name(target));
+		}
+	}
+
+	// Phase 6: steering moves. 1 low yo-yo, 2 lag displacement roll, 3 wingover; v0.27: 4 extend (flee: away from the target, nose down if there is
+	// height to spare, full throttle, until above corner speed), 5 climb (flee: best climb towards the cruise altitude, then judge again)
+	public static bool Move(Unit u, Unit target, ModDogfight.State s, bool japanese, float dist, float now)
+	{
+		Vector3 tp = target.transform.position;
+		float max = ModFlight.TurnLimitNow(u);
+		ModAirFlight.Row row = ModAirFlight.Of(u);
+		float y = u.transform.position.y;
+		if (s.move == 4)
+		{
+			Vector3 away = u.transform.position + (u.transform.position - tp);
+			ModDogfight.Steer(u, away, 1f, s, japanese);
+			float give = (y > 1500f * 0.1f) ? 200f * 0.1f : 0f;
+			ModDogfight.SetHeight(u, Mathf.Max(ModDogfight.MinHeight + 100f * 0.1f, y - give), s);
+			u.wantedSpeed = u.unitData.maxSpeed * 1.2f;
+			ModFlight.FlapsRequest(u.unitAir, false);
+			if ((row != null && u.currentSpeed >= row.cornerSpeed * ModDogfight.ExtendSpeedShare) || now > s.phaseUntil)
+			{
+				s.move = 5;
+				ModDogfight.SetPhase(u, s, 6, now, ModDogfight.ClimbMax, "extended to " + (u.currentSpeed * 36f).ToString("F0") + " km/h, climbing away from " + ModDogfight.Name(target));
+			}
+			return true;
+		}
+		if (s.move == 5)
+		{
+			u.wantedTurnRate = s.side * ModFlight.SustainedTurnNow(u) * 0.2f;
+			ModDogfight.SetHeight(u, Mathf.Min(ModFlight.CruiseHeight(u), y + 300f * 0.1f), s);
+			u.wantedSpeed = u.unitData.maxSpeed;
+			ModFlight.FlapsRequest(u.unitAir, false);
+			if (now > s.phaseUntil)
+			{
+				s.modeUntil = 0f;
+				bool tf = ModDogfight.IsFighter(target);
+				ModDogfight.Decide(u, target, s, japanese, tf, dist, now);
+				ModDogfight.Resume(u, target, s, japanese, tf, dist, now, "climb finished");
+			}
+			return true;
+		}
+		if (s.move == 6)
+		{
+			// recover: unloaded, nose slightly down if there is height to spare, full throttle, only a gentle turn towards the target
+			Vector3 fl6 = u.transform.forward;
+			fl6.y = 0f;
+			float ang6 = Utilities.GetSignedAngleToPosition(fl6, u.transform.position, new Vector3(tp.x, y, tp.z));
+			float sus6 = ModFlight.SustainedTurnNow(u);
+			u.wantedTurnRate = Mathf.Clamp(ang6, -sus6 * 0.3f, sus6 * 0.3f);
+			float give6 = (y > 1200f * 0.1f) ? 150f * 0.1f : 0f;
+			ModDogfight.SetHeight(u, Mathf.Max(ModDogfight.MinHeight + 100f * 0.1f, y - give6), s);
+			u.wantedSpeed = u.unitData.maxSpeed * 1.2f;
+			ModFlight.FlapsRequest(u.unitAir, false);
+			if ((row != null && u.currentSpeed >= row.cornerSpeed * ModDogfight.RecoverUntil) || now > s.phaseUntil)
+			{
+				s.slowSince = 0f;
+				s.modeUntil = 0f;
+				bool tf6 = ModDogfight.IsFighter(target);
+				ModDogfight.Decide(u, target, s, japanese, tf6, dist, now);
+				ModDogfight.Resume(u, target, s, japanese, tf6, dist, now, "speed recovered to " + (u.currentSpeed * 36f).ToString("F0") + " km/h");
+			}
+			return true;
+		}
+		if (s.move == 7)
+		{
+			// scissors: hard turns, reversing every 1.4 to 2.2 s, throttle back, flaps out; when the attacker has gone past (it is ahead of the nose) turn on it
+			Unit th = s.threat != null ? s.threat : s.lastThreat;
+			if (th == null || th.isDestroyed || th.unitAir == null || th.unitAir.shootDown)
+			{
+				ModDogfight.SetPhase(u, s, 0, now, 0f, "scissors over, the attacker is gone");
+				return true;
+			}
+			u.wantedTurnRate = s.turnSign * ModFlight.TurnLimitNow(u);
+			ModFlight.FlapsRequest(u.unitAir, true);
+			u.wantedSpeed = (row != null) ? Mathf.Max(row.stallSpeed * 1.4f, row.cornerSpeed * 0.9f) : u.unitData.maxSpeed * 0.5f;
+			ModDogfight.SetHeight(u, y + s.turnSign * 40f * 0.1f, s);
+			if (now >= s.scissorFlip)
+			{
+				s.turnSign = -s.turnSign;
+				s.scissorFlips++;
+				s.scissorFlip = now + UnityEngine.Random.Range(2.8f, 3.6f);   // v0.28.6: was 1.4 to 2.2 s, less than the time to roll from one bank to the other
+			}
+			float angTh = Vector3.Angle(u.transform.forward, th.transform.position - u.transform.position);
+			if (angTh < 70f && s.scissorFlips >= 1)
+			{
+				ModDogfight.scissorsWon++;
+				u.unitAI.focusedUnit = th;
+				s.lastTarget = null;
+				ModDogfight.Hold(s, th, now, 20f);
+				s.defendCooldown = now + ModDogfight.DefendRest;
+				ModDogfight.SetPhase(u, s, 0, now, 0f, "scissors worked after " + s.scissorFlips + " reversals: " + ModDogfight.Name(th) + " overshot and is now ahead at " + (Vector3.Distance(u.transform.position, th.transform.position) * 10f).ToString("F0") + " m, going after it");
+				return true;
+			}
+			if (now > s.phaseUntil)
+			{
+				s.defendCooldown = now + 4f;
+				s.modeUntil = 0f;
+				bool tf7 = ModDogfight.IsFighter(target);
+				ModDogfight.Decide(u, target, s, japanese, tf7, dist, now);
+				ModDogfight.Resume(u, target, s, japanese, tf7, dist, now, "scissors over after " + s.scissorFlips + " reversals, the attacker stayed behind");
+			}
+			return true;
+		}
+		if (s.move == 8)
+		{
+			// decoy: bait. Steady at a moderate speed, level, a gentle turn towards the target, guns off. The others climb above while it draws the enemy.
+			ModDogfight.Steer(u, tp, 0.25f, s, japanese);
+			ModDogfight.SetHeight(u, y, s);
+			u.wantedSpeed = (row != null) ? row.cornerSpeed * 1.05f : u.unitData.maxSpeed * 0.7f;
+			ModFlight.FlapsRequest(u.unitAir, false);
+			if (now > s.phaseUntil)
+			{
+				int drew = ModDogfight.CountOnMe(u);
+				ModDogfight.decoyDrew += drew;
+				if (ModDogfight.teamLogged < 60)
+				{
+					ModDogfight.teamLogged++;
+					UnityEngine.Debug.Log("[TEAM] " + u.unitData.unitName + " id " + u.GetInstanceID() + " (" + (u.faction == Faction.Player ? "ours" : "enemy") + ") decoy over: " + drew + " enemy fighters are on it");
+				}
+				ModDogfight.SetPhase(u, s, 0, now, 0f, "decoy over, back on " + ModDogfight.Name(target));
+			}
+			return true;
+		}
+		if (s.move == 1)
+		{
+			ModDogfight.Steer(u, tp, 1f, s, japanese);
+			ModDogfight.SetHeight(u, Mathf.Max(ModDogfight.MinHeight, tp.y - 80f * 0.1f), s);
+			u.wantedSpeed = u.unitData.maxSpeed * 1.1f;
+		}
+		else if (s.move == 2)
+		{
+			Vector3 right = target.transform.right;
+			right.y = 0f;
+			ModDogfight.Steer(u, tp + right.normalized * s.side * 300f * 0.1f, 0.8f, s, japanese);
+			ModDogfight.SetHeight(u, u.transform.position.y + 60f * 0.1f, s);
+			u.wantedSpeed = u.unitData.maxSpeed * 0.85f;
+		}
+		else
+		{
+			u.wantedTurnRate = s.turnSign * max * ModDogfight.ControlFactor(u, japanese);
+			float half = s.phaseStart + (s.phaseUntil - s.phaseStart) * 0.5f;
+			ModDogfight.SetHeight(u, (now < half) ? u.transform.position.y + 120f * 0.1f : tp.y, s);
+			u.wantedSpeed = u.unitData.maxSpeed * 0.9f;
+		}
+		if (now > s.phaseUntil)
+		{
+			s.defendCooldown = now + 4f;
+			ModDogfight.SetPhase(u, s, 0, now, 0f, "out of the move, back on " + ModDogfight.Name(target));
+		}
+		return true;
+	}
+
+	// 0.26.4.2.4: the game gives every plane about 30 s of trigger time (WeaponParticle.secondsFiring) and refuses to fire at 0. Count the burst
+	// starts per side and log the first 40 with range and aim angle; log once per plane when it is out.
+	// 0.26.4.6: called by AAAParticleCollisions when a bullet hits an aircraft. Counts hits per side (shown in [STATUS]) and logs the first 80.
+	public static void AirHit(Unit shooter, Unit victim, float damage)
+	{
+		if (shooter == null || victim == null || shooter.unitAir == null)
+		{
+			return;
+		}
+		if (shooter.faction == Faction.Player)
+		{
+			ModDogfight.hitOurs++;
+		}
+		else
+		{
+			ModDogfight.hitEnemy++;
+		}
+		if (ModDogfight.hitLogged < 80)
+		{
+			ModDogfight.hitLogged++;
+			UnityEngine.Debug.Log("[HIT] " + shooter.unitData.unitName + " (" + (shooter.faction == Faction.Player ? "ours" : "enemy") + ") hit " + ModDogfight.Name(victim) + " at " + (Vector3.Distance(shooter.transform.position, victim.transform.position) * 10f).ToString("F0") + " m, gun damage " + damage.ToString("F1"));
+		}
+	}
+
+	public static void CountFire(Unit u, Unit target, float dist, float aim, WeaponParticle wp)
+	{
+		if (wp.secondsFiring <= 0f)
+		{
+			if (ModDogfight.noAmmoLogged < 60 && ModDogfight.emptyDone.Add(u.GetInstanceID()))
+			{
+				ModDogfight.noAmmoLogged++;
+				UnityEngine.Debug.Log("[GUN] " + u.unitData.unitName + " id " + u.GetInstanceID() + " (" + (u.faction == Faction.Player ? "ours" : "enemy") + ") is OUT OF AMMO (0 s of fire left)");
+			}
+			return;
+		}
+		if (u.faction == Faction.Player)
+		{
+			ModDogfight.fireOurs++;
+		}
+		else
+		{
+			ModDogfight.fireEnemy++;
+		}
+		if (ModDogfight.fireLogged < 100)
+		{
+			ModDogfight.fireLogged++;
+			UnityEngine.Debug.Log("[GUN] " + u.unitData.unitName + " id " + u.GetInstanceID() + " (" + (u.faction == Faction.Player ? "ours" : "enemy") + ") opens fire on " + Name(target) + " at " + (dist * 10f).ToString("F0") + " m, " + aim.ToString("F1") + " deg off, " + wp.secondsFiring.ToString("F1") + " s of fire left");
+		}
+	}
+
+	// 0.26.4.2.2: every 30 s, one line counting the aircraft on each side by what the AI is doing (to see why a side does not engage)
+	public static void Status(float now)
+	{
+		if (now < ModDogfight.nextStatus || EngagementManager.instance == null || EngagementManager.instance.allAirUnits == null)
+		{
+			return;
+		}
+		ModDogfight.nextStatus = now + 30f;
+		Dictionary<string, int> counts = new Dictionary<string, int>();
+		List<Unit> air = EngagementManager.instance.allAirUnits;
+		for (int i = 0; i < air.Count; i++)
+		{
+			Unit a = air[i];
+			if (a == null || a.isDestroyed || a.isParked || a.unitAI == null)
+			{
+				continue;
+			}
+			string key = (a.faction == Faction.Player ? "ours " : "enemy ") + (ModDogfight.IsFighter(a) ? "fighters " : "others ") + a.unitAI.currentAIAction;
+			int n;
+			counts.TryGetValue(key, out n);
+			counts[key] = n + 1;
+		}
+		string line = "";
+		foreach (KeyValuePair<string, int> kv in counts)
+		{
+			line += kv.Value + " " + kv.Key + "; ";
+		}
+		float ammoOurs = 0f;
+		float ammoEnemy = 0f;
+		int nOurs = 0;
+		int nEnemy = 0;
+		int emptyOurs = 0;
+		int emptyEnemy = 0;
+		for (int j = 0; j < air.Count; j++)
+		{
+			Unit f = air[j];
+			if (f == null || f.isDestroyed || f.isParked || !ModDogfight.IsFighter(f) || f.weaponParticle == null)
+			{
+				continue;
+			}
+			if (f.faction == Faction.Player)
+			{
+				nOurs++;
+				ammoOurs += f.weaponParticle.secondsFiring;
+				if (f.weaponParticle.secondsFiring <= 0f)
+				{
+					emptyOurs++;
+				}
+			}
+			else
+			{
+				nEnemy++;
+				ammoEnemy += f.weaponParticle.secondsFiring;
+				if (f.weaponParticle.secondsFiring <= 0f)
+				{
+					emptyEnemy++;
+				}
+			}
+		}
+		line += "| gun ammo left (average seconds of fire): ours " + (nOurs > 0 ? (ammoOurs / nOurs).ToString("F1") : "-") + " (" + emptyOurs + " empty), enemy " + (nEnemy > 0 ? (ammoEnemy / nEnemy).ToString("F1") : "-") + " (" + emptyEnemy + " empty); bursts started so far: ours " + ModDogfight.fireOurs + ", enemy " + ModDogfight.fireEnemy + "; hits on aircraft so far: ours " + ModDogfight.hitOurs + ", enemy " + ModDogfight.hitEnemy;
+		UnityEngine.Debug.Log("[STATUS] " + now.ToString("F0") + " s: " + line);
+		// 0.27: one line about the whole battle every 60 s (fighters only for the kills)
+		if (now >= ModDogfight.nextBattle)
+		{
+			ModDogfight.nextBattle = now + 60f;
+			UnityEngine.Debug.Log("[BATTLE] " + now.ToString("F0") + " s: fighter kills ours " + ModDogfight.lostEnemy + ", enemy " + ModDogfight.lostOurs + " (left the area: ours " + ModDogfight.leftOurs + ", enemy " + ModDogfight.leftEnemy + "); gun bursts started ours " + ModDogfight.fireOurs + ", enemy " + ModDogfight.fireEnemy + "; hits on aircraft ours " + ModDogfight.hitOurs + ", enemy " + ModDogfight.hitEnemy + "; " + ModFlight.BattleEnergyText() + "; collisions " + ModAirCollide.Counts() + "; " + ModDogfight.MoveText());
+		}
+	}
+
+	// 0.26.4.2: once every 2 s, report every fighter that is no longer there: destroyed, or removed from the battle (left the area).
+	public static void ScanLosses(float now)
+	{
+		if (now < ModDogfight.nextLossScan)
+		{
+			return;
+		}
+		ModDogfight.nextLossScan = now + 2f;
+		foreach (KeyValuePair<int, ModDogfight.State> kv in ModDogfight.states)
+		{
+			ModDogfight.State st = kv.Value;
+			if (st.reported || st.label == null)
+			{
+				continue;
+			}
+			string what = null;
+			if (st.self == null)
+			{
+				what = "gone from the battle";
+			}
+			else if (st.self.isParked)
+			{
+				what = "REMOVED FROM THE BATTLE (left the battle area)";
+			}
+			else if (st.self.isDestroyed || (st.self.unitAir != null && st.self.unitAir.shootDown))
+			{
+				what = "DESTROYED";
+			}
+			if (what == null)
+			{
+				continue;
+			}
+			st.reported = true;
+			bool oursSide = st.label.Contains("(ours)");
+			if (what == "DESTROYED")
+			{
+				if (oursSide) { ModDogfight.lostOurs++; } else { ModDogfight.lostEnemy++; }
+			}
+			else if (what.StartsWith("REMOVED"))
+			{
+				if (oursSide) { ModDogfight.leftOurs++; } else { ModDogfight.leftEnemy++; }
+			}
+			string by = (st.lastThreat != null && st.lastThreat.unitData != null) ? ", last enemy on its tail: " + st.lastThreat.unitData.unitName : "";
+			string low = (st.lastY * 10f < 150f) ? " (hit the sea or ground?)" : "";
+			UnityEngine.Debug.Log("[LOSS] " + st.label + " " + what + " at " + (st.lastY * 10f).ToString("F0") + " m, " + Time.time.ToString("F0") + " s, phase " + st.phase + by + low);
+		}
+	}
+
+	// v0.20.6: ask the game's target choice (our v0.17 fighter AI, which spreads fighters out) for the best target now.
+	// Returns true if the target changed.
+	public static bool Repick(Unit u, ModDogfight.State s, float now)
+	{
+		if (now < s.nextRepick || EngagementAI.instance == null || u.unitAI == null || !ModDogfight.CanSwitch(u, s, now))
+		{
+			return false;
+		}
+		s.nextRepick = now + ModDogfight.RepickSeconds;
+		List<Unit> enemies = (u.faction == Faction.Player) ? EngagementAI.instance.otherAir : EngagementAI.instance.playerAir;
+		if (enemies == null)
+		{
+			return false;
+		}
+		Unit old = u.unitAI.focusedUnit;
+		Unit pick = EngagementAI.instance.GetBestDogfightTarget(u, enemies);
+		if (pick == null || pick == old || pick.isDestroyed)
+		{
+			return false;
+		}
+		u.unitAI.focusedUnit = pick;
+		s.lastTarget = pick;
+		ModDogfight.SetMain(s, pick, now);
+		UnityEngine.Debug.Log("[DOGFIGHT] " + u.unitData.unitName + " id " + u.GetInstanceID() + " (" + (u.faction == Faction.Player ? "ours" : "enemy") + "): switching from " + ModDogfight.Name(old) + " to " + ModDogfight.Name(pick) + " id " + pick.GetInstanceID());
+		return true;
+	}
+
+	// v0.20.9: fly the gun run. Aim at the lead point (where the target will be when the bullets get there), with the
+	// nose pointed up or down at it too: the game sets pitch from the height difference the plane is chasing,
+	// so wanting a height N units below the plane gives N degrees nose down. Fire when the lead point is within
+	// 5 degrees of the nose and in gun range, as the game does.
+	public static void GunRun(UnitAIAir ai, Unit u, Unit target, float dist)
+	{
+		Vector3 pos = u.transform.position;
+		ModDogfight.State gs = ModDogfight.GetState(u);
+		// 0.27: throttle and flaps by mode. A turn fighter flies at about corner speed (best turn) with flaps out inside 1000 m; everyone else flies
+		// flat out and keeps the flaps in.
+		ModAirFlight.Row grow = ModAirFlight.Of(u);
+		if (gs.mode == ModDogfight.ModeTurn && grow != null)
+		{
+			// v0.28.3: a turn fighter used to fly at the TARGET's speed, so it could never close the gap and trailed it. Far out it now flies flat out to catch up;
+			// inside CatchUpRange it flies 15% faster than the target (the lag pursuit below still eases off if it is about to overshoot).
+			if (dist > ModDogfight.CatchUpRange)
+			{
+				u.wantedSpeed = u.unitData.maxSpeed * 1.1f;
+			}
+			else
+			{
+				u.wantedSpeed = Mathf.Max(grow.cornerSpeed * 1.1f, Mathf.Min(target.currentSpeed * 1.15f, u.unitData.maxSpeed * 1.1f));
+			}
+			ModFlight.FlapsRequest(u.unitAir, dist < ModDogfight.FlapRange);
+		}
+		else
+		{
+			u.wantedSpeed = u.unitData.maxSpeed * 1.1f;
+			if (gs.mode == ModDogfight.ModeBoom)
+			{
+				ModFlight.FlapsRequest(u.unitAir, false);
+			}
+		}
+		// v0.28.5: a target farther than CatchUpRange that is not being overhauled (it flies about as fast as we do) is run down on emergency power
+		// (ModAirFlight.ChaseRequest, a few minutes of it, rested between). A 1v1 log had the chaser 3 km behind a plane flying away at the same top speed for 7 minutes.
+		// v0.28.6: only when the target is flying away and we are already near our top speed (not head-on, not while slow in a climb: 828 starts in the multi-battle log)
+		if (dist > ModDogfight.CatchUpRange && u.currentSpeed < target.currentSpeed * ModDogfight.ChaseOvertakeShare && grow != null && u.currentSpeed >= ModDogfight.TopSpeedNow(grow) * 0.9f && Vector3.Angle(target.transform.forward, target.transform.position - pos) < 60f)
+		{
+			ModAirFlight.ChaseRequest(u.unitAir);
+		}
+		// a Green pilot under-leads, a Trained one a little less so
+		float tof = dist / ModDogfight.BulletSpeed * ModFlight.LeadScale(u);
+		// 0.26.4.2: pursuit curves. Far out: lead pursuit (aim ahead). Close in: pure pursuit (aim at it). Fast and close on a slower target: lag pursuit
+		// (aim a little behind it and ease off, so as not to fly past).
+		if (dist < 150f * 0.1f)
+		{
+			tof *= 0.5f;
+		}
+		Vector3 lead = target.transform.position + target.transform.forward * target.currentActualSpeed * tof;
+		if (ModFlight.Rank(u) >= 1 && dist < 250f * 0.1f && u.currentSpeed > target.currentSpeed * 1.25f)
+		{
+			lead = target.transform.position - target.transform.forward * dist * 0.25f;
+			u.wantedSpeed = Mathf.Max(target.currentSpeed * 1.1f, u.unitData.maxSpeed * 0.6f);
+		}
+		if (gs.sandwich != 0f)
+		{
+			Vector3 toT = target.transform.position - pos;
+			toT.y = 0f;
+			if (toT.sqrMagnitude > 1f)
+			{
+				Vector3 perp = Vector3.Cross(Vector3.up, toT.normalized);
+				float lateral = Mathf.Clamp((dist - 20f) * 0.3f, 0f, ModDogfight.SandwichOffset);
+				lead += perp * (gs.sandwich * lateral);
+			}
+		}
+		Vector3 d = lead - pos;
+		Vector3 flat = d;
+		flat.y = 0f;
+		Vector3 fwd = u.transform.forward;
+		fwd.y = 0f;
+		float yaw = Utilities.GetSignedAngleToPosition(fwd, pos, new Vector3(lead.x, pos.y, lead.z));
+		float down = Mathf.Atan2(-d.y, Mathf.Max(flat.magnitude, 1f)) * Mathf.Rad2Deg;
+		float aim = Vector3.Angle(u.transform.forward, d);
+		float turnMax = ModDogfight.GunRunTurn(u, gs, dist, aim);
+		u.wantedTurnRate = Mathf.Clamp(yaw, -turnMax, turnMax);
+		ModFlight.Aim(u.unitAir, down);
+		ModFlight.AimYaw(u.unitAir, yaw);
+		u.wantedHeight = Mathf.Clamp(pos.y - down, ModDogfight.MinHeight, ModDogfight.Ceiling(u));
+		WeaponParticle wp = u.weaponParticle;
+		if (wp == null)
+		{
+			return;
+		}
+		float range = (ai.attackRange > 0f) ? ai.attackRange : 400f * 0.1f;
+		// 0.27: out to a little past where this plane's guns cross (ModAirFlight convergeAt), never past the old FireRange for planes without a row
+		range = Mathf.Min(range, ModAirFlight.FireRange(u, ModDogfight.FireRange));
+		ModDogfight.CountGunRun(u, dist, range, aim);
+		int id = u.GetInstanceID();
+		float t = Time.time;
+		float rest;
+		ModDogfight.burstRest.TryGetValue(id, out rest);
+		if (wp.enabled)
+		{
+			float started;
+			ModDogfight.burstStart.TryGetValue(id, out started);
+			bool keep = dist < range * 1.25f && aim < ModDogfight.StopCone + (ModDogfight.ConeFor(u) - ModDogfight.GunCone) && t - started < ModDogfight.MaxBurst;
+			if (!keep)
+			{
+				ModDogfight.StopGuns(u);
+			}
+			// the plane you have selected keeps its guns on (StopGuns skips it), so only count a burst as ended when the guns really stopped
+			if (!keep && !wp.enabled)
+			{
+				ModDogfight.burstRest[id] = t + ModDogfight.BurstRest;
+				if (ModDogfight.burstLogged < 60)
+				{
+					ModDogfight.burstLogged++;
+					UnityEngine.Debug.Log("[GUN] " + u.unitData.unitName + " id " + id + " burst ended after " + (t - started).ToString("F1") + " s, " + (dist * 10f).ToString("F0") + " m, " + aim.ToString("F1") + " deg off");
+				}
+			}
+		}
+		else if (dist < range && aim < ModDogfight.ConeFor(u) && t >= rest)
+		{
+			wp.FireAll(true);
+			if (wp.enabled)
+			{
+				ModDogfight.burstStart[id] = t;
+			}
+			ModDogfight.CountFire(u, target, dist, aim, wp);
+		}
+	}
+
+	// 0.27: the turn rate a gun run may ask for. A boom-and-zoom pass pulls whatever the lead needs (the speed it spends is the dive's). A turn
+	// fighter holds the sustained rate (no speed lost) and only uses the full instantaneous rate for a snap shot at close range and a small angle.
+	public static float GunRunTurn(Unit u, ModDogfight.State gs, float dist, float aim)
+	{
+		float limit = ModFlight.TurnLimitNow(u);
+		if (gs.mode != ModDogfight.ModeTurn)
+		{
+			return limit;
+		}
+		if (dist < ModDogfight.SnapShotRange && aim < ModDogfight.SnapShotCone)
+		{
+			return limit;
+		}
+		return Mathf.Min(limit, ModFlight.SustainedTurnNow(u) * 1.15f);
+	}
+
+	public static void StopGuns(Unit u)
+	{
+		// v0.28.6: the selected plane is no longer skipped (its AI burst never ended and it fired until it was out of ammunition). Fly only runs while the AI flies the plane.
+		if (u.weaponParticle != null && u.weaponParticle.enabled)
+		{
+			u.weaponParticle.FireAll(false);
+		}
+	}
+
+	public static void NormalPitch(Unit u)
+	{
+		u.unitAir.maxDiveClimb = new Vector2(u.unitData.dive, u.unitData.climb);
+	}
+
+	// An enemy fighter behind us, close, pointing at us and targeting us
+	public static Unit FindThreat(Unit u)
+	{
+		if (EngagementManager.instance == null || EngagementManager.instance.allAirUnits == null)
+		{
+			return null;
+		}
+		List<Unit> air = EngagementManager.instance.allAirUnits;
+		Unit best = null;
+		float bestDist = ModDogfight.ThreatRange;
+		for (int i = 0; i < air.Count; i++)
+		{
+			Unit e = air[i];
+			if (e == null || e.isDestroyed || e.faction == u.faction || !ModDogfight.IsFighter(e) || e.unitAI == null)
+			{
+				continue;
+			}
+			float d = Vector3.Distance(e.transform.position, u.transform.position);
+			// v0.28.1: a plane that is not aimed at me by its AI but sits on my tail inside 250 m is a threat all the same (the test log: Zeros shot Wildcats they were not 'focused' on)
+			if (e.unitAI.focusedUnit != u && d > ModDogfight.TailCloseRange)
+			{
+				continue;
+			}
+			if (d > bestDist)
+			{
+				continue;
+			}
+			// it is behind us, and we are in front of its nose
+			if (Vector3.Angle(-u.transform.forward, e.transform.position - u.transform.position) < 70f && Vector3.Angle(e.transform.forward, u.transform.position - e.transform.position) < 25f)
+			{
+				bestDist = d;
+				best = e;
+			}
+		}
+		return best;
+	}
+
+	// A friendly fighter close by that is free to help
+	public static bool SpecialReady(ModDogfight.State s, float now)
+	{
+		return now >= s.nextSpecial;
+	}
+
+	public static void UseSpecial(ModDogfight.State s, float now)
+	{
+		s.nextSpecial = now + UnityEngine.Random.Range(60f, 120f);
+	}
+
+	// The enemy fighter that is on the tail of the nearest friend that needs help. At most two of our fighters go after the same enemy.
+	public static Unit FindAttackerOfFriend(Unit u)
+	{
+		if (EngagementManager.instance == null || EngagementManager.instance.allAirUnits == null)
+		{
+			return null;
+		}
+		List<Unit> air = EngagementManager.instance.allAirUnits;
+		Unit best = null;
+		float bestDist = ModDogfight.WingmanRange;
+		for (int i = 0; i < air.Count; i++)
+		{
+			Unit f = air[i];
+			if (f == null || f == u || f.isDestroyed || f.faction != u.faction || !ModDogfight.IsFighter(f))
+			{
+				continue;
+			}
+			Unit enemy = ModDogfight.FindThreat(f);
+			if (enemy == null)
+			{
+				continue;
+			}
+			float d = Vector3.Distance(enemy.transform.position, u.transform.position);
+			if (d > bestDist)
+			{
+				continue;
+			}
+			int already = 0;
+			for (int j = 0; j < air.Count; j++)
+			{
+				Unit o = air[j];
+				if (o != null && o != u && !o.isDestroyed && o.faction == u.faction && o.unitAI != null && o.unitAI.focusedUnit == enemy)
+				{
+					already++;
+				}
+			}
+			if (already >= 2)
+			{
+				continue;
+			}
+			bestDist = d;
+			best = enemy;
+		}
+		return best;
+	}
+
+	// 0.28: a fighter with a bomb load drops all of it, once (ModAirDamage.Jettison does it and logs [BOMBS]; it waits while a friendly ship is below).
+	// Called when a dogfight starts, when enemy fighters come within BombEarlyRange, when attacked and when leaving the battle.
+	public static void JettisonBombs(Unit u, string why)
+	{
+		ModAirDamage.Jettison(u, why);
+	}
+
+	// 0.28: the true top speed now (engine damage, altitude, fuel, bombs change it): the speed where full thrust balances parasite drag.
+	public static float TopSpeedNow(ModAirFlight.Row r)
+	{
+		return r.maxSpeed * Mathf.Pow(Mathf.Max(0.05f, r.thrustScale) / Mathf.Max(0.5f, r.dragScale), 1f / 3f);
+	}
+
+	public static bool FastEnough(Unit u, float shareOfCorner)
+	{
+		ModAirFlight.Row r = ModAirFlight.Of(u);
+		return r != null && u.currentSpeed >= r.cornerSpeed * shareOfCorner;
+	}
+
+	// An enemy fighter within the range (game units)
+	public static bool EnemyFighterNear(Unit u, float range)
+	{
+		if (EngagementManager.instance == null || EngagementManager.instance.allAirUnits == null)
+		{
+			return false;
+		}
+		List<Unit> air = EngagementManager.instance.allAirUnits;
+		float r2 = range * range;
+		for (int i = 0; i < air.Count; i++)
+		{
+			Unit e = air[i];
+			if (e == null || e.isDestroyed || e.isParked || e.faction == u.faction || !ModDogfight.IsFighter(e))
+			{
+				continue;
+			}
+			if ((e.transform.position - u.transform.position).sqrMagnitude < r2)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// 0.28: how many enemy fighters have this plane as their target
+	public static int CountOnMe(Unit u)
+	{
+		int n = 0;
+		if (EngagementManager.instance == null || EngagementManager.instance.allAirUnits == null)
+		{
+			return 0;
+		}
+		List<Unit> air = EngagementManager.instance.allAirUnits;
+		for (int i = 0; i < air.Count; i++)
+		{
+			Unit e = air[i];
+			if (e != null && !e.isDestroyed && e.faction != u.faction && ModDogfight.IsFighter(e) && e.unitAI != null && e.unitAI.focusedUnit == u)
+			{
+				n++;
+			}
+		}
+		return n;
+	}
+
+	// 0.28 bomber hunters. Returns the nearest enemy fighter when this fighter is one too many on bombers (more than HunterShare of the side's fighters are
+	// on bombers while enemy fighters are within HuntRange), else null. The lowest ids stay on the bombers, so the same planes keep the job.
+	public static Unit HuntLimit(Unit u, Unit target)
+	{
+		if (EngagementManager.instance == null || EngagementManager.instance.allAirUnits == null)
+		{
+			return null;
+		}
+		List<Unit> air = EngagementManager.instance.allAirUnits;
+		int ours = 0;
+		int rankAmongHunters = 0;
+		int myId = u.GetInstanceID();
+		Unit nearest = null;
+		float best = ModDogfight.HuntRange * ModDogfight.HuntRange;
+		for (int i = 0; i < air.Count; i++)
+		{
+			Unit a = air[i];
+			if (a == null || a.isDestroyed || a.isParked || !ModDogfight.IsFighter(a))
+			{
+				continue;
+			}
+			if (a.faction == u.faction)
+			{
+				ours++;
+				Unit f = (a.unitAI != null) ? a.unitAI.focusedUnit : null;
+				if (a != u && f != null && !f.isDestroyed && !ModDogfight.IsFighter(f) && f.unitAir != null && a.GetInstanceID() < myId)
+				{
+					rankAmongHunters++;
+				}
+			}
+			else
+			{
+				float d2 = (a.transform.position - u.transform.position).sqrMagnitude;
+				if (d2 < best)
+				{
+					best = d2;
+					nearest = a;
+				}
+			}
+		}
+		if (nearest == null)
+		{
+			return null;
+		}
+		int cap = Mathf.Max(1, Mathf.RoundToInt((float)ours * ModDogfight.HunterShare));
+		return (rankAmongHunters >= cap) ? nearest : null;
+	}
+
+	// 0.28 team move, decoy. Called for an Elite pilot with nobody on its tail. If its flight is outnumbered it flies bait (phase 6, move 8) while the
+	// other fighters near it climb above (phase 1). Only the Elite pilot with the lowest id near the others takes the role.
+	public static void TryDecoy(Unit u, ModDogfight.State s, bool japanese, float now)
+	{
+		if (EngagementManager.instance == null || EngagementManager.instance.allAirUnits == null)
+		{
+			return;
+		}
+		List<Unit> air = EngagementManager.instance.allAirUnits;
+		List<Unit> mates = new List<Unit>();
+		int enemies = 0;
+		int myId = u.GetInstanceID();
+		for (int i = 0; i < air.Count; i++)
+		{
+			Unit a = air[i];
+			if (a == null || a == u || a.isDestroyed || a.isParked || !ModDogfight.IsFighter(a))
+			{
+				continue;
+			}
+			float d = Vector3.Distance(a.transform.position, u.transform.position);
+			if (a.faction == u.faction)
+			{
+				if (d < ModDogfight.DecoyFriendRange)
+				{
+					if (ModFlight.Rank(a) >= 3 && a.GetInstanceID() < myId)
+					{
+						return;
+					}
+					mates.Add(a);
+				}
+			}
+			else if (d < ModDogfight.DecoyEnemyRange)
+			{
+				enemies++;
+			}
+		}
+		if (mates.Count < 2 || enemies < mates.Count + 3)
+		{
+			return;
+		}
+		int climbing = 0;
+		for (int i = 0; i < mates.Count; i++)
+		{
+			Unit w = mates[i];
+			ModDogfight.State ws = ModDogfight.GetState(w);
+			if ((ws.phase == 0 || ws.phase == 2 || ws.phase == 3) && ModFlight.Rank(w) >= 1 && w.unitAI != null)
+			{
+				ModDogfight.SetPhase(w, ws, 1, now, ModDogfight.DecoySeconds + 8f, null);
+				climbing++;
+			}
+		}
+		if (climbing == 0)
+		{
+			return;
+		}
+		ModDogfight.UseSpecial(s, now);
+		s.move = 8;
+		ModDogfight.decoyCount++;
+		if (ModDogfight.teamLogged < 60)
+		{
+			ModDogfight.teamLogged++;
+			UnityEngine.Debug.Log("[TEAM] " + u.unitData.unitName + " id " + myId + " (" + (u.faction == Faction.Player ? "ours" : "enemy") + ") decoy: " + (mates.Count + 1) + " of us against " + enemies + " enemy fighters, flying bait while " + climbing + " friends climb above");
+		}
+		ModDogfight.SetPhase(u, s, 6, now, ModDogfight.DecoySeconds, "decoy: outnumbered " + (mates.Count + 1) + " to " + enemies + ", flying bait at " + (u.currentSpeed * 36f).ToString("F0") + " km/h while the others climb");
+	}
+
+	// 0.28 flight readout (ModAirReadoutUI, F8): what the AI of this fighter is doing.
+	public static string ReadoutText(Unit u)
+	{
+		if (u == null || u.unitAI == null)
+		{
+			return "";
+		}
+		if (!ModDogfight.IsFighter(u))
+		{
+			string f = ModAirFormation.ReadoutText(u);
+			return (f != null) ? f : "not a fighter";
+		}
+		ModDogfight.State s = ModDogfight.GetState(u);
+		string[] modes = new string[] { "neutral", "boom and zoom", "turn fight", "flee" };
+		string[] phases = new string[] { "gun run", "climbing to position", "zoom climb", "high yo-yo", "defending", "roll-over attack / loop", "move" };
+		string[] moves = new string[] { "-", "low yo-yo", "lag displacement roll", "wingover", "extend", "climb away", "recover speed", "scissors", "decoy" };
+		string t = "mode " + modes[Mathf.Clamp(s.mode, 0, 3)] + "   phase " + ((s.phase >= 0 && s.phase < phases.Length) ? phases[s.phase] : "-");
+		if (s.phase == 6)
+		{
+			t += " (" + moves[Mathf.Clamp(s.move, 0, moves.Length - 1)] + ")";
+		}
+		Unit tg = u.unitAI.focusedUnit;
+		if (tg != null && !tg.isDestroyed)
+		{
+			t += "\ntarget " + ModDogfight.Name(tg) + " at " + (Vector3.Distance(u.transform.position, tg.transform.position) * 10f).ToString("F0") + " m, energy " + (s.energyDiff >= 0f ? "+" : "") + s.energyDiff.ToString("F0") + " m" + (s.rich ? " (rich)" : "");
+		}
+		if (s.threat != null && !s.threat.isDestroyed)
+		{
+			t += "\nthreat " + ModDogfight.Name(s.threat) + " at " + (Vector3.Distance(u.transform.position, s.threat.transform.position) * 10f).ToString("F0") + " m";
+		}
+		if (s.sandwich != 0f)
+		{
+			t += "\nsandwich: coming in from the " + (s.sandwich > 0f ? "right" : "left");
+		}
+		string form = ModAirFormation.ReadoutText(u);
+		if (form != null)
+		{
+			t += "\n" + form;
+		}
+		if (u.unitAir != null && ModFlight.AcroActive(u.unitAir))
+		{
+			t += "\nacrobatic move: " + ModFlight.AcroName(ModFlight.AcroKind(u.unitAir));
+		}
+		return t;
+	}
+
+	public static string MoveText()
+	{
+		return "moves: recover " + ModDogfight.recoverCount + ", scissors " + ModDogfight.scissorsCount + " (worked " + ModDogfight.scissorsWon + "), decoy " + ModDogfight.decoyCount + " (drew " + ModDogfight.decoyDrew + "), bomber hunters redirected " + ModDogfight.huntRedirects + ", low-pass climbs " + ModDogfight.lowPassClimbs + ", chase boosts " + ModAirFlight.chaseStarted + ", flights yielded " + ModAirFormation.yields + ", taken by the player " + ModPlayerOverride.taken + ", " + ModFlight.AcroCounts();
+	}
+
+	// 0.26.4.8: which side of the target this pilot should come in on so that a friend on the same target takes the other side. 0 = no partner.
+	public static float SandwichSide(Unit u, Unit target)
+	{
+		List<Unit> air = EngagementManager.instance.allAirUnits;
+		Unit friend = null;
+		float bestD = ModDogfight.SandwichFriendRange;
+		for (int i = 0; i < air.Count; i++)
+		{
+			Unit f = air[i];
+			if (f == null || f == u || f.isDestroyed || f.faction != u.faction || !ModDogfight.IsFighter(f) || f.unitAI == null || f.unitAI.focusedUnit != target)
+			{
+				continue;
+			}
+			float d = Vector3.Distance(f.transform.position, u.transform.position);
+			if (d < bestD)
+			{
+				bestD = d;
+				friend = f;
+			}
+		}
+		if (friend == null)
+		{
+			return 0f;
+		}
+		Vector3 toT = target.transform.position - u.transform.position;
+		toT.y = 0f;
+		if (toT.sqrMagnitude < 1f)
+		{
+			return 0f;
+		}
+		Vector3 right = Vector3.Cross(Vector3.up, toT.normalized);
+		float lateral = Vector3.Dot(friend.transform.position - u.transform.position, right);
+		if (Mathf.Abs(lateral) < 5f)
+		{
+			return (u.GetInstanceID() % 2 == 0) ? 1f : -1f;
+		}
+		return (lateral > 0f) ? -1f : 1f;
+	}
+
+	// 0.26.4.8: a friendly fighter close by, not already defending, to split with when bounced
+	public static Unit FindSplitPartner(Unit u)
+	{
+		List<Unit> air = EngagementManager.instance.allAirUnits;
+		Unit best = null;
+		float bestDist = ModDogfight.SplitRange;
+		for (int i = 0; i < air.Count; i++)
+		{
+			Unit w = air[i];
+			if (w == null || w == u || w.isDestroyed || w.faction != u.faction || !ModDogfight.IsFighter(w) || w.unitAI == null)
+			{
+				continue;
+			}
+			ModDogfight.State ws = ModDogfight.GetState(w);
+			if (ws.phase == 4 || ws.phase == 5)
+			{
+				continue;
+			}
+			float d = Vector3.Distance(w.transform.position, u.transform.position);
+			if (d < bestDist)
+			{
+				bestDist = d;
+				best = w;
+			}
+		}
+		return best;
+	}
+
+	public static Unit FindWingman(Unit u, Unit threat)
+	{
+		List<Unit> air = EngagementManager.instance.allAirUnits;
+		Unit best = null;
+		float bestDist = ModDogfight.WingmanRange;
+		for (int i = 0; i < air.Count; i++)
+		{
+			Unit w = air[i];
+			if (w == null || w == u || w.isDestroyed || w.faction != u.faction || !ModDogfight.IsFighter(w) || w.unitAIAir == null || w.unitAIAir.aiAttack != AIAttack.Dogfight || w.unitAI.focusedUnit == threat)
+			{
+				continue;
+			}
+			if (ModDogfight.GetState(w).phase == 4)
+			{
+				continue;
+			}
+			float d = Vector3.Distance(w.transform.position, u.transform.position);
+			if (d < bestDist)
+			{
+				bestDist = d;
+				best = w;
+			}
+		}
+		return best;
+	}
+
+	// Turn towards a point (scale = share of full rudder), with a little pilot wobble so it isn't on rails
+	public static void Steer(Unit u, Vector3 point, float scale, ModDogfight.State s, bool japanese)
+	{
+		Vector3 fwd = u.transform.forward;
+		fwd.y = 0f;
+		Vector3 pos = u.transform.position;
+		point.y = pos.y;
+		float angle = Utilities.GetSignedAngleToPosition(fwd, pos, point);
+		// 0.27: transit turns (positioning, yo-yos, extending) use the sustained rate, so they do not cost speed
+		float max = ModFlight.SustainedTurnNow(u) * ModDogfight.ControlFactor(u, japanese);
+		float wob = Mathf.Sin((Time.time + s.wobble) * 0.7f) * 0.1f * max;
+		u.wantedTurnRate = Mathf.Clamp(angle + wob, -max, max) * scale;
+	}
+
+	// 0.26.4.2.3: a fighter never aims higher than 1000 m above the height it started the fight at (every pass sets up 500 m above the
+	// target, and with both sides doing it everyone crept up to the ceiling)
+	public static float Ceiling(Unit u)
+	{
+		ModDogfight.State s = ModDogfight.GetState(u);
+		return Mathf.Min(ModDogfight.MaxHeight, s.homeY + ModDogfight.CombatBand);
+	}
+
+	public static void SetHeight(Unit u, float h, ModDogfight.State s)
+	{
+		float wob = Mathf.Sin((Time.time + s.wobble) * 0.4f) * 30f * 0.1f;
+		u.wantedHeight = Mathf.Clamp(h + wob, ModDogfight.MinHeight, ModDogfight.Ceiling(u));
+	}
+
+	// Diving builds speed past level top speed, climbing costs it
+	// Disabled in 0.26.1: ModFlight now works out speed from the dive and climb itself.
+	public static void Energy(Unit u, bool japanese)
+	{
+	}
+
+	// v0.27: the Zero's stiff controls at high speed are now physics (ModAirFlight: turn limit falls with speed above corner speed, roll rate fades
+	// with rollFade), so this no longer scales anything. Kept so the call sites stay as they are.
+	public static float ControlFactor(Unit u, bool japanese)
+	{
+		return 1f;
+	}
+
+	public static void SetPhase(Unit u, ModDogfight.State s, int phase, float now, float duration, string why)
+	{
+		s.phase = phase;
+		s.phaseStart = now;
+		s.phaseUntil = now + duration;
+		if (phase == 0)
+		{
+			s.attackStart = now;
+			s.sawAhead = false;
+			s.minDist = float.MaxValue;
+		}
+		else if (phase == 2)
+		{
+			s.targetHeight = u.transform.position.y + ModDogfight.ZoomHeight;
+		}
+		else if (phase == 3)
+		{
+			s.targetHeight = u.transform.position.y + ModDogfight.YoYoHeight;
+		}
+		if (why != null)
+		{
+			UnityEngine.Debug.Log("[DOGFIGHT] " + u.unitData.unitName + " id " + u.GetInstanceID() + " (" + (u.faction == Faction.Player ? "ours" : "enemy") + ", " + Time.time.ToString("F0") + " s, " + (u.transform.position.y * 10f).ToString("F0") + " m): " + why);
+		}
+	}
+
+	public static string Name(Unit t)
+	{
+		return (t != null && t.unitData != null) ? t.unitData.unitName : "the enemy";
+	}
+}
