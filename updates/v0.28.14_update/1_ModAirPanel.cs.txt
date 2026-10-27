@@ -1,0 +1,111 @@
+using System;
+using UnityEngine;
+using UnityEngine.UI;
+
+// v0.28.14 NEW CLASS. The aircraft control panel (speed and height sliders) now matches the mod's flight model.
+// Before: the speed read in knots (the logs and the F8 readout use km/h), the speed slider ran from 100 knots to the data file's top speed (the mod
+// flies a different top speed from ModAirFlight), and the height slider stopped at 3330 m for every aircraft.
+// Now, for aircraft only (ships and submarines are untouched):
+//   * speed reads in km/h (metric option) or mph (imperial option), for the slider and for the current speed (the SPD number)
+//   * the speed slider runs from a little above the plane's stall speed to its real top speed from ModAirFlight
+//   * the height slider runs up to the plane's ceiling: its supercharger critical altitude plus the height where the engine is down to half power,
+//     between CeilingMin and CeilingMax (Wildcat about 10500 m, F4U-4 Corsair 12000 m). Planes without a hand-set row keep the old 3330 m.
+// Hooks (CombatInterface, see the README): SetUnitNavigationPanel (Limits), SetSpeedText (SpeedText), UpdateSelfInterface (CurrentSpeed).
+public static class ModAirPanel
+{
+	public const bool On = true;
+	public const float MinSpeedOverStall = 1.15f;  // slowest slider speed = stall speed x this (clean, no flaps)
+	public const float CeilingMin = 3330f;         // metres: never lower than the game's old slider top
+	public const float CeilingMax = 12000f;        // metres
+	public const float CeilingPower = 0.5f;        // the ceiling is where the engine is down to this share of its power
+	private static bool failed;
+	private static int logged;
+
+	private static bool IsAir(CombatInterface ci)
+	{
+		return On && !failed && ci != null && ci.currentUnit != null && ci.currentUnit.unitAir != null && ci.currentUnit.unitData != null;
+	}
+
+	// Game speed units to the panel's unit (1 game unit = 10 m/s).
+	public static string SpeedString(float speed)
+	{
+		return SpeedNumber(speed) + (Imperial() ? " mph" : " km/h");
+	}
+
+	public static string SpeedNumber(float speed)
+	{
+		return (speed * (Imperial() ? 22.36936f : 36f)).ToString("F0");
+	}
+
+	private static bool Imperial()
+	{
+		return OptionsManager.instance != null && !OptionsManager.instance.optionsData.useMetric;
+	}
+
+	// Ceiling in metres from the row's altitude numbers.
+	public static float CeilingOf(ModAirFlight.Row r)
+	{
+		if (r == null || !r.tuned || r.critAlt <= 0f || r.altLoss <= 0f)
+		{
+			return CeilingMin;
+		}
+		float c = r.critAlt + (1f - CeilingPower) / r.altLoss * 1000f;
+		return Mathf.Clamp(c, CeilingMin, CeilingMax);
+	}
+
+	// Called in SetUnitNavigationPanel just before "heightChange.value = currentUnit.wantedHeight;": sets the slider ranges for an aircraft.
+	// The game puts the slider values in right after, so they are clamped to the new ranges.
+	public static void Limits(CombatInterface ci)
+	{
+		if (!IsAir(ci))
+		{
+			return;
+		}
+		try
+		{
+			ModAirFlight.Row r = ModAirFlight.Of(ci.currentUnit.unitAir);
+			if (r == null)
+			{
+				return;
+			}
+			float top = (r.maxSpeed > 0f) ? r.maxSpeed : ci.currentUnit.unitData.maxSpeed;
+			float low = Mathf.Min(r.stallSpeed * MinSpeedOverStall, top * 0.6f);
+			ci.speedChange.maxValue = top;
+			ci.speedChange.minValue = low;
+			float ceiling = CeilingOf(r);
+			ci.heightChange.maxValue = Imperial() ? ceiling * 0.1f * 3.28084f : ceiling * 0.1f;
+			if (logged < 20)
+			{
+				logged++;
+				Debug.Log((object)("[PANEL] " + ci.currentUnit.unitData.unitName + ": speed slider " + SpeedString(low) + " to " + SpeedString(top) + ", height slider up to " + ceiling.ToString("F0") + " m"));
+			}
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[PANEL] aircraft panel failed and stopped: " + ex.Message + " " + ex.StackTrace));
+		}
+	}
+
+	// First lines of SetSpeedText: true = the speed text was written here, the game's knots text is skipped.
+	public static bool SpeedText(CombatInterface ci)
+	{
+		if (!IsAir(ci) || ci.speedOutput == null)
+		{
+			return false;
+		}
+		ci.speedOutput.text = SpeedString(ci.speedChange.value);
+		return true;
+	}
+
+	// Called in UpdateSelfInterface right after the line that writes currentUnitTexts[2]: the current speed of an aircraft in km/h or mph
+	// (the number only, like the game's own field, which has its SPD label next to it).
+	public static void CurrentSpeed(CombatInterface ci)
+	{
+		if (!IsAir(ci) || ci.currentUnitTexts == null || ci.currentUnitTexts.Length < 3)
+		{
+			return;
+		}
+		ci.currentUnitTexts[2].text = SpeedNumber(ci.currentUnit.currentSpeed);
+	}
+}
