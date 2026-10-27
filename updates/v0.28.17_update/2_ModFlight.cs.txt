@@ -63,6 +63,9 @@ public static class ModFlight
 	// and never below this multiple of its stall speed.
 	public const float SpawnSpeedOverStall = 1.5f;
 	private static HashSet<int> seen = new HashSet<int>();
+	// v0.28.17: dive brakes. A dive bomber in its bombing dive is held to this share of its structural speed limit as it is NOW (a damaged wing lowers
+	// the limit). Before, the dive was capped at the undamaged limit, so a Dauntless with a holed wing always tore its wings off in the dive.
+	public const float DiveBrakeShare = 0.95f;
 	private static int spawnLogged;
 
 	private static Dictionary<int, float> startSpeed = new Dictionary<int, float>();
@@ -330,6 +333,11 @@ public static class ModFlight
 				if (bs > diveSpeed)
 				{
 					bs = diveSpeed;
+				}
+				float brake = ModAirDamage.VneNow(ua) * DiveBrakeShare;
+				if (brake > 0f && bs > brake)
+				{
+					bs = brake;
 				}
 				ua.currentSpeed = bs;
 				ua.percentMaxSpeed = bs / maxSpeed * ua.currentSpeedPenalty;

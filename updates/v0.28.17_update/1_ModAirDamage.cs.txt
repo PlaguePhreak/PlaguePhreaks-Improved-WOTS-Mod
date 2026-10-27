@@ -430,6 +430,18 @@ public static class ModAirDamage
 		}
 	}
 
+	// v0.28.17: the structural speed limit right now, with wing damage (ModFlight's dive brakes keep a bombing dive under it).
+	public static float VneNow(UnitAir ua)
+	{
+		if (ua == null || ua.unitData == null)
+		{
+			return 0f;
+		}
+		ModAirFlight.Row bs = ModAirFlight.BaseOf(ua);
+		State s = Get(ua);
+		return ModAirFlight.Vne(bs) * (1f - WingVneLoss * s.wing);
+	}
+
 	public static float OverspeedRatio(Unit u)
 	{
 		if (u == null || u.unitAir == null)

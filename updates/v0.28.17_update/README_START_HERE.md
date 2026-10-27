@@ -1,11 +1,13 @@
-# v0.28.17 update: bomber stall freeze, long shots at runners, wings that fail, ship panel crash
+# v0.28.17 update: bomber stall freeze, dive brakes, long shots at runners, wings that fail, ship panel crash
 
 Three classes to paste and one one-line stock edit. In dnSpy, for each class: **Edit Class**, delete everything, paste the whole file, **Compile**.
 When everything is in: **File > Save Module**.
 
-1. **ModFlight**: paste `1_ModFlight.cs.txt` (built on the 0.28.8 ModFlight, the newest).
-2. **ModDogfight**: paste `2_ModDogfight.cs.txt` (built on the 0.28.11 ModDogfight, the newest).
-3. **ModAirDamage**: paste `3_ModAirDamage.cs.txt` (built on the 0.28.11 ModAirDamage, the newest).
+Do them **in this order** (ModFlight uses a new method in ModAirDamage, so ModAirDamage must be in first or ModFlight will not compile):
+
+1. **ModAirDamage**: paste `1_ModAirDamage.cs.txt` (built on the 0.28.11 ModAirDamage, the newest).
+2. **ModFlight**: paste `2_ModFlight.cs.txt` (built on the 0.28.8 ModFlight, the newest).
+3. **ModDogfight**: paste `3_ModDogfight.cs.txt` (built on the 0.28.11 ModDogfight, the newest).
 4. **UnitReference.GetAAAText**: one line, see `4_stock_edit_UnitReference.txt`.
 5. Optional: in **ModVersion** change `Current` to `"0.28.17"` so the main menu shows the new version.
 
@@ -19,6 +21,8 @@ No new hooks. 0.28.14 (panel), 0.28.15 (stick) and 0.28.16 (chase cam) are not t
 - Turn drag is only paid for the turn the plane can really make at its speed.
 - A plane below its stall speed now falls: it gains speed at half of g whatever its nose does, and sinks while it has no flying speed (`StallFall`, `StallSink`). A plane that stalls very low can now hit the sea, as it would for real.
 
+**Dive brakes (ModFlight + ModAirDamage).** Aaron's 27 Oct log: 5 Dauntlesses tore their wings off in the bombing dive at 451 km/h. The dive was held at the undamaged structural limit, so any Dauntless with a holed wing (which lowers the limit) was sure to break up. The bombing dive is now held at 95% of the plane's limit as it is now (`DiveBrakeShare`), like the real dive brakes. A plane can still overspeed in a dive it flies itself.
+
 **Chasers take long shots (ModDogfight).** A fighter chasing a plane that is running away and that it cannot catch now fires from out to 800 m, but only with the nose within 3 degrees of the aim point and in 1.5 s bursts. Before, it held fire until 300 m and never got there. Hits out there are rare, as they were for real. Log: `[GUN] Wildcat id ... long shot at A7M2 Sam running away at 760 m`. Knobs: `ChaseFireRange`, `ChaseFireCone`, `ChaseBurst`.
 
 **Shredded wings can fail (ModAirDamage).** Once a wing is at 80% damage, each further wing hit can break the main spar and the plane is lost. Chance per hit = 15% + 2.5 x the hit's share of the plane's toughness, at most 95% (B-17 hit by a .50 cal: about 1 in 4; Wildcat hit by 20 mm: nearly certain). Log: `[BREAKUP] ... WING SPAR BREAKS` and `[LOSS] ... wing spar broke`. Knobs: `SparBase`, `SparPerRel`, `SparMax`.
@@ -30,6 +34,7 @@ No new hooks. 0.28.14 (panel), 0.28.15 (stick) and 0.28.16 (chase cam) are not t
 v0.28.17 - Bombers no longer hang in the air, long shots at runners, wings that fail
 ---------------------------------------------------------------------------------
 * Fix: planes no longer hang in the air at speed 0 after a stall (B-17, B-25). Planes enter a battle with flying speed, the rudder turn of big planes is smaller and fades with speed, and a stalled plane falls until it flies again.
+* Fix: dive bombers no longer tear their wings off in the bombing dive when a wing is damaged (dive brakes hold the dive under the plane's current structural limit).
 * A fighter chasing a plane it cannot catch fires short bursts from out to 800 m when its nose is right on the target.
 * A wing already shot to 80% can break under further hits and the plane is lost. Before, a B-17 could fly on with its wings shredded.
 * Fix: the ship info panel no longer throws an error for a ship without AA guns (stock bug).
