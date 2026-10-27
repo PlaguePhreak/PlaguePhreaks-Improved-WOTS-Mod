@@ -21,6 +21,6 @@ private static void BuildMainMenuButton()
 		}
 	}
 	Button mod = Clone(anchor, "Mod Options", new UnityAction(OpenPanelFromMain));
-	Button ver = Clone(anchor, "Version " + ModVersion.Current, new UnityAction(ModVersion.Open));
-	PlaceAfter(anchor, new Button[2] { mod, ver });
+	PlaceAfter(anchor, new Button[1] { mod });
+	ModVersion.Build();
 }
