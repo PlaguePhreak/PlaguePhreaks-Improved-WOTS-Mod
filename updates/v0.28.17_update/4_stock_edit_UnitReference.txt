@@ -1,0 +1,9 @@
+v0.28.17 stock edit: UnitReference.GetAAAText (ship info panel crash)
+
+The ship info panel crashed (ArgumentOutOfRangeException in UnitReference.GetAAAText) when it was left on the AA tab and you
+clicked a ship that has no AA guns (some merchant ships). The game read the first AA entry of a ship that has none.
+
+1. Open UnitReference, find the method GetAAAText, right-click > Edit Method (C#).
+2. Add this line as the FIRST line inside the method (right after the opening {):
+   if (unitModelReference == null || unitModelReference.aaaGunsData == null || unitModelReference.aaaGunsData.Count == 0) { return; }
+3. Compile.

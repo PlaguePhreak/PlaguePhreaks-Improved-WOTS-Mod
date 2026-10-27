@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-// v0.28.18: a wing shot to MaxWing can break its spar under further hits and the plane is lost (SparBase, SparPerRel, WingFails).
+// v0.28.17: a wing shot to MaxWing can break its spar under further hits and the plane is lost (SparBase, SparPerRel, WingFails).
 // v0.28 NEW CLASS. Damage changes how a plane flies, plus fuel, fire, parts that fall off, bombs, altitude performance and overspeed break-up.
 // Credits: the fuel-fire idea is Kiko's, the idea of parts falling off a damaged plane is Avaricles'.
 //
@@ -41,7 +41,7 @@ public static class ModAirDamage
 		public bool warnedVne;
 		public float lastRefresh;
 		public bool dead;
-		public bool sparBroken;        // v0.28.18: the wing has failed, the plane is lost on its next flight tick
+		public bool sparBroken;        // v0.28.17: the wing has failed, the plane is lost on its next flight tick
 		public int shed;               // parts lost
 		public bool probed;
 	}
@@ -58,7 +58,7 @@ public static class ModAirDamage
 	public const float TailHitShare = 0.85f;     // tail 0.75 to 0.85
 	public const float MinEngine = 0.25f;
 	public const float MaxWing = 0.8f;
-	// v0.28.18: a wing already at MaxWing can fail: every further wing hit has this chance (plus SparPerRel x the hit's share of the toughness)
+	// v0.28.17: a wing already at MaxWing can fail: every further wing hit has this chance (plus SparPerRel x the hit's share of the toughness)
 	// to break the main spar, and the wing folds: the plane is lost. Before, a wrecked wing never killed a plane (a B-17 flew on with 80% wing damage).
 	public const float SparBase = 0.15f;
 	public const float SparPerRel = 2.5f;
@@ -174,7 +174,7 @@ public static class ModAirDamage
 			{
 				return;
 			}
-			// v0.28.18: a broken wing spar (WingFails) is a loss. Done here and not inside the hit, which runs in the middle of the game's own damage code.
+			// v0.28.17: a broken wing spar (WingFails) is a loss. Done here and not inside the hit, which runs in the middle of the game's own damage code.
 			if (s.sparBroken)
 			{
 				Kill(ua, s, "wing spar broke (wing shot to pieces)");
@@ -258,7 +258,7 @@ public static class ModAirDamage
 			}
 			else if (roll < WingHitShare)
 			{
-				// v0.28.18: a hit on a wing that is already wrecked can break the spar
+				// v0.28.17: a hit on a wing that is already wrecked can break the spar
 				if (s.wing >= MaxWing - 0.001f && UnityEngine.Random.value < Mathf.Min(SparMax, SparBase + SparPerRel * rel))
 				{
 					WingFails(ua, s, damage, rel);
@@ -454,7 +454,7 @@ public static class ModAirDamage
 		Kill(ua, s, "broke up at " + (speed * 36f).ToString("F0") + " km/h (overspeed)");
 	}
 
-	// v0.28.18: the main spar of a wrecked wing breaks under a further hit. The wing piece is thrown off; the plane is lost on its next flight tick (Tick).
+	// v0.28.17: the main spar of a wrecked wing breaks under a further hit. The wing piece is thrown off; the plane is lost on its next flight tick (Tick).
 	private static void WingFails(UnitAir ua, State s, float damage, float rel)
 	{
 		if (s.sparBroken)
