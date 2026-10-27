@@ -10,6 +10,14 @@ The mod is in alpha, so every version is 0.x. Version numbers group the work in 
 Numbering: a major change gets a whole number (v0.25 = new map locations); the minor changes under it are v0.25.1, v0.25.2 and so on. What used to be called v0.24.3 to v0.24.6 is now v0.25 to v0.25.3.
 NOTE: the in-game logbook (ModGuide class, What's New page) still uses the old numbers and must be updated to match.
 
+v0.28.9 - Fire key and wingman-cover bursts no longer cancelled, Wildcat tactics (pending test)
+------------------------------------------------------------
+* A burst the mod did not start (fire key on the selected plane, wingman cover, barrel roll attack) was cancelled on the next tick as "too old". Now adopted as a new burst (ModDogfight.GunsOn, GunRun).
+* Threat range 250 m to 400 m (320 m for a plane not aimed at us): Zeros fire from 270 to 300 m and were never seen on the tail.
+* A target busy with someone else counts as running away only beyond 800 m (Fleeing); boom and zoom holds down to 90% of corner speed (Decide). Ends the 4 s mode flip-flop.
+* The worse turner keeps the flaps in except for a snap shot (GunRun). No Immelmann or barrel roll attack with an enemy on the tail.
+* [BATTLE] line: "collisions collisions" fixed.
+
 v0.28.8 - Zoom-climb loop fixed, air collisions off (pending test)
 ------------------------------------------------------------
 * A gun pass only ends in a zoom climb above 1.1 x corner speed; a slow plane extends level to build speed first, then climbs (ModDogfight.Attack). A zoom gets 1.5 s before it counts as spent (ModDogfight.Zoom). The 4v4 log had Wildcats zooming at 190 km/h every pass and stalling.

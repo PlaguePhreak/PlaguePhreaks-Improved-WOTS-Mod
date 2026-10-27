@@ -54,6 +54,7 @@ public class ModDogfight
 		public float targetHeight;
 		public float side;          // which side of the target to set up on
 		public float nextThreatCheck;
+		public bool betterTurner;   // v0.28.9: set by Decide, used by GunRun (flaps only for the better turner)
 		public float defendCooldown;
 		public Unit threat;
 		public Unit lastTarget;
@@ -118,12 +119,13 @@ public class ModDogfight
 	// distances and heights in battle code are metres x 0.1
 	// 0.26.4.1: fighters turn back when this far from the middle of the battle (the game removes planes at 5000 units)
 	public const float ZoneTurnBack = 4300f;
-	public const float ThreatRange = 250f * 0.1f;
+	public const float ThreatRange = 400f * 0.1f;   // v0.28.9: 250 before. Zeros open fire at 270 to 300 m, so a plane on the tail at 300 m was never a threat
 	// 0.26.4.8: wait 15 s (was 8) after a break before the next one, so fighters get back to attacking
 	public const float DefendRest = 15f;
 	public const float ChaseOvertakeShare = 1.12f;     // v0.28.5: emergency power is used while we are less than 12% faster than the target and farther than CatchUpRange
+	public const float FleeOtherRange = 800f * 0.1f;   // v0.28.9: a target busy with someone else counts as running away only beyond this
 	public const float CatchUpRange = 300f * 0.1f;     // v0.28.3: beyond this a turn fighter chases at full speed (was: the target's speed)
-	public const float TailCloseRange = 250f * 0.1f;   // v0.28.1: an enemy this close behind is a threat even if its AI is aimed at someone else
+	public const float TailCloseRange = 320f * 0.1f;   // v0.28.9: 250 before. v0.28.1: an enemy this close behind is a threat even if its AI is aimed at someone else
 	public const float DefendRepeat = 4f;              // v0.28.1: with an enemy this close (TailHotRange) a new defence may start this soon after the last, not after DefendRest
 	public const float TailHotRange = 200f * 0.1f;
 	// 0.26.4.8 team work: sandwich (two fighters on one enemy come in from opposite sides) and defensive split
@@ -326,6 +328,9 @@ public class ModDogfight
 	public static Dictionary<int, float> burstStart = new Dictionary<int, float>();
 	public static Dictionary<int, float> burstRest = new Dictionary<int, float>();
 	public static HashSet<int> emptyDone = new HashSet<int>();
+	// v0.28.9: planes whose guns the mod switched on. A plane whose guns are on without being in here had them switched on by someone else
+	// (the fire key on the selected plane): GunRun adopts that burst instead of cancelling it on the next tick.
+	public static HashSet<int> gunsOn = new HashSet<int>();
 	public static Dictionary<int, ModDogfight.State> states = new Dictionary<int, ModDogfight.State>();
 
 	public static ModDogfight.State GetState(Unit u)
@@ -767,7 +772,9 @@ public class ModDogfight
 			float poorLimit = ModDogfight.EnergyLow + (japanese ? ModDogfight.JPPoorShift : ModDogfight.USPoorShift);
 			float edge = ModDogfight.TurnEdge + (japanese ? ModDogfight.JPTurnEdgeShift : ModDogfight.USTurnEdgeShift);
 			bool better = ratio >= edge;
-			bool fast = rm != null && u.currentSpeed >= rm.cornerSpeed;
+			s.betterTurner = better;
+			// v0.28.9: a plane already in boom and zoom stays 'fast' down to 90% of corner speed (the mode flipped every 4 s around corner speed)
+			bool fast = rm != null && u.currentSpeed >= rm.cornerSpeed * ((s.mode == ModDogfight.ModeBoom) ? 0.9f : 1f);
 			// 0.27.1: running only works if the target cannot catch me: my top speed is about the same or better, or I have the height to dive
 			// away (above 2500 m). Otherwise a straight run just gives the faster plane free gun time, so the fighter turns with flaps instead.
 			bool canRun = (rm != null && rt != null && ModDogfight.TopSpeedNow(rm) * 0.97f >= ModDogfight.TopSpeedNow(rt)) || u.transform.position.y > 2500f * 0.1f;
@@ -779,7 +786,7 @@ public class ModDogfight
 			else if (diff < -poorLimit)
 			{
 				mode = (better || !canRun) ? ModDogfight.ModeTurn : ModDogfight.ModeFlee;
-				why = better ? "low on energy but the better turner, turn fight with flaps" : (canRun ? "low on energy and the worse turner, disengage" : "low on energy, the worse turner but too slow to run: turn with flaps out");
+				why = better ? "low on energy but the better turner, turn fight with flaps" : (canRun ? "low on energy and the worse turner, disengage" : "low on energy, the worse turner but too slow to run: sustained turns, flaps in, building speed");
 			}
 			else if (better)
 			{
@@ -799,7 +806,7 @@ public class ModDogfight
 			else
 			{
 				mode = ModDogfight.ModeTurn;
-				why = "level on energy, slow and the worse turner but cannot outrun it: turn with flaps out";
+				why = "level on energy, slow and the worse turner but cannot outrun it: sustained turns, flaps in, building speed";
 			}
 		}
 		if (mode == s.mode)
@@ -880,7 +887,7 @@ public class ModDogfight
 			// 0.27: the move depends on the energy mode, not the nation. A turn fighter trades speed for height (high yo-yo) so as not to overshoot;
 			// a fighter that is not boom-and-zooming slides out to the outside of the turn (lag displacement roll); a boom-and-zoom pass just zooms.
 			bool special = targetIsFighter && ModFlight.Rank(u) >= 2 && ModDogfight.SpecialReady(s, now) && UnityEngine.Random.value < 0.3f;
-			if (special && s.mode == ModDogfight.ModeBoom && ModDogfight.FastEnough(u, 1.4f) && UnityEngine.Random.value < 0.4f && ModFlight.StartImmelmann(u.unitAir))
+			if (special && s.threat == null && s.mode == ModDogfight.ModeBoom && ModDogfight.FastEnough(u, 1.4f) && UnityEngine.Random.value < 0.4f && ModFlight.StartImmelmann(u.unitAir))
 			{
 				ModDogfight.UseSpecial(s, now);
 				s.acroCooldown = now + 45f;
@@ -1006,7 +1013,8 @@ public class ModDogfight
 			}
 			// barrel roll attack: closing fast on a bomber or a plane flying straight, so the pass does not overshoot
 			bool straight = !targetIsFighter || Mathf.Abs(target.unitAir.currentTurnRate) < 4f;
-			if (straight && ata < 30f && dist > 50f && dist < 150f && u.currentSpeed > target.currentSpeed * 1.25f && UnityEngine.Random.value < 0.3f && ModFlight.StartBarrelAttack(u.unitAir, target))
+			// v0.28.9: not with an enemy on the tail (a Wildcat was shot down in the middle of a barrel roll attack)
+			if (straight && s.threat == null && ata < 30f && dist > 50f && dist < 150f && u.currentSpeed > target.currentSpeed * 1.25f && UnityEngine.Random.value < 0.3f && ModFlight.StartBarrelAttack(u.unitAir, target))
 			{
 				s.acroCooldown = now + 45f;
 				ModDogfight.UseSpecial(s, now);
@@ -1038,7 +1046,7 @@ public class ModDogfight
 					bool inCone = dist < range && aim < ModDogfight.ConeFor(u);
 					if (inCone && !wp.enabled)
 					{
-						wp.FireAll(true);
+						ModDogfight.GunsOn(u);
 					}
 					else if (!inCone && wp.enabled)
 					{
@@ -1152,7 +1160,7 @@ public class ModDogfight
 			bool lined = toSup.magnitude < 400f * 0.1f && Vector3.Angle(u.transform.forward, toSup) < ModDogfight.ConeFor(u);
 			if (lined && !u.weaponParticle.enabled)
 			{
-				u.weaponParticle.FireAll(true);
+				ModDogfight.GunsOn(u);
 			}
 			else if (!lined && u.weaponParticle.enabled)
 			{
@@ -1701,7 +1709,7 @@ public class ModDogfight
 		if (now >= ModDogfight.nextBattle)
 		{
 			ModDogfight.nextBattle = now + 60f;
-			UnityEngine.Debug.Log("[BATTLE] " + now.ToString("F0") + " s: fighter kills ours " + ModDogfight.lostEnemy + ", enemy " + ModDogfight.lostOurs + " (left the area: ours " + ModDogfight.leftOurs + ", enemy " + ModDogfight.leftEnemy + "); gun bursts started ours " + ModDogfight.fireOurs + ", enemy " + ModDogfight.fireEnemy + "; hits on aircraft ours " + ModDogfight.hitOurs + ", enemy " + ModDogfight.hitEnemy + "; " + ModFlight.BattleEnergyText() + "; collisions " + ModAirCollide.Counts() + "; " + ModDogfight.MoveText());
+			UnityEngine.Debug.Log("[BATTLE] " + now.ToString("F0") + " s: fighter kills ours " + ModDogfight.lostEnemy + ", enemy " + ModDogfight.lostOurs + " (left the area: ours " + ModDogfight.leftOurs + ", enemy " + ModDogfight.leftEnemy + "); gun bursts started ours " + ModDogfight.fireOurs + ", enemy " + ModDogfight.fireEnemy + "; hits on aircraft ours " + ModDogfight.hitOurs + ", enemy " + ModDogfight.hitEnemy + "; " + ModFlight.BattleEnergyText() + "; " + ModAirCollide.Counts() + "; " + ModDogfight.MoveText());
 		}
 	}
 
@@ -1803,7 +1811,9 @@ public class ModDogfight
 			{
 				u.wantedSpeed = Mathf.Max(grow.cornerSpeed * 1.1f, Mathf.Min(target.currentSpeed * 1.15f, u.unitData.maxSpeed * 1.1f));
 			}
-			ModFlight.FlapsRequest(u.unitAir, dist < ModDogfight.FlapRange);
+			// v0.28.9: the worse turner keeps the flaps in (they only bled its speed: Wildcats were below corner speed 95% of the time), except for a snap shot
+			bool snap = dist < ModDogfight.SnapShotRange && Vector3.Angle(u.transform.forward, target.transform.position - pos) < ModDogfight.SnapShotCone;
+			ModFlight.FlapsRequest(u.unitAir, dist < ModDogfight.FlapRange && (gs.betterTurner || snap));
 		}
 		else
 		{
@@ -1875,9 +1885,19 @@ public class ModDogfight
 		float t = Time.time;
 		float rest;
 		ModDogfight.burstRest.TryGetValue(id, out rest);
+		if (!wp.enabled)
+		{
+			ModDogfight.gunsOn.Remove(id);   // v0.28.9: the game can switch the guns off too (ammunition gone)
+		}
 		if (wp.enabled)
 		{
 			float started;
+			if (!ModDogfight.gunsOn.Contains(id))
+			{
+				// v0.28.9: the guns were switched on by someone else (the fire key): a new burst from now, not one cancelled for being 'old'
+				ModDogfight.gunsOn.Add(id);
+				ModDogfight.burstStart[id] = t;
+			}
 			ModDogfight.burstStart.TryGetValue(id, out started);
 			bool keep = dist < range * 1.25f && aim < ModDogfight.StopCone + (ModDogfight.ConeFor(u) - ModDogfight.GunCone) && t - started < ModDogfight.MaxBurst;
 			if (!keep)
@@ -1897,11 +1917,7 @@ public class ModDogfight
 		}
 		else if (dist < range && aim < ModDogfight.ConeFor(u) && t >= rest)
 		{
-			wp.FireAll(true);
-			if (wp.enabled)
-			{
-				ModDogfight.burstStart[id] = t;
-			}
+			ModDogfight.GunsOn(u);
 			ModDogfight.CountFire(u, target, dist, aim, wp);
 		}
 	}
@@ -1928,6 +1944,24 @@ public class ModDogfight
 		if (u.weaponParticle != null && u.weaponParticle.enabled)
 		{
 			u.weaponParticle.FireAll(false);
+		}
+		ModDogfight.gunsOn.Remove(u.GetInstanceID());
+	}
+
+	// v0.28.9: the one place the mod switches the guns on; records the burst start so GunRun does not cancel it as an old burst
+	public static void GunsOn(Unit u)
+	{
+		WeaponParticle wp = u.weaponParticle;
+		if (wp == null)
+		{
+			return;
+		}
+		wp.FireAll(true);
+		if (wp.enabled)
+		{
+			int id = u.GetInstanceID();
+			ModDogfight.burstStart[id] = Time.time;
+			ModDogfight.gunsOn.Add(id);
 		}
 	}
 
@@ -2050,7 +2084,9 @@ public class ModDogfight
 		AIAction a = target.unitAI.currentAIAction;
 		bool routing = a == AIAction.Follow_Nav_Points || a == AIAction.Retreat || a == AIAction.Nav_Done || target.unitAI.retreating;
 		bool runningAway = Vector3.Angle(target.transform.forward, target.transform.position - u.transform.position) < 50f;
-		return runningAway && (routing || target.unitAI.focusedUnit != u);
+		// v0.28.9: a target that is busy with someone else only counts as running when it is far off. Inside FleeOtherRange it is in the same fight
+		// (every Zero chasing a wingman was 'running away' the moment it was passed, and the mode flipped every 4 s).
+		return runningAway && (routing || (target.unitAI.focusedUnit != u && dist > ModDogfight.FleeOtherRange));
 	}
 
 	public static float TopSpeedNow(ModAirFlight.Row r)
