@@ -2,14 +2,18 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
+using WorldMapStrategyKit;
 
-// v0.28.12: Air auto resolve, points and dice (Aaron's design).
+// v0.28.13: Air auto resolve, points and dice (Aaron's design).
 //   Each side gets POINTS: for every plane, gun damage + toughness x armour (+ 3 x gunner for a plane with gunners), summed and divided by PointDivisor.
 //   The multiplier is 1 + points / 1000 (104 points = 1.104x).
 //   Resolve rolls three dice for each side: Attacked (1-6), Defended (1-6), Shot down (0 to the side's own plane count, never more than the enemy has,
 //   pulled toward the side with the better points). Score = (attacked + defended + shot down) x multiplier; the higher score wins. A side whose planes are all shot down loses at once.
 //   Losses: the loser loses the planes shot down against it; the winner loses 1/2 to 3/4 of the planes shot down against it.
 //   The window shows the groups, the points, the chance of victory (1000 dice rehearsals) and, after Resolve, the rolls and the result.
+// v0.28.13: like a real engagement, the window pulls in every other air group within JoinRange (50 km, the game's own join distance) of our engaged group,
+//   on both sides, up to the game's air limit per side. An enemy group we have not spotted is shown as "N unknown aircraft"; its planes still count
+//   in the dice and the points. Losses are applied to every group that took part.
 // v0.28.12 fix: the old version showed "nobody is armed" for two fighter groups because the planes were only marked alive inside the fight.
 public static class ModAirResolve
 {
@@ -21,12 +25,20 @@ public static class ModAirResolve
 		public bool alive;
 	}
 
+	private class Group
+	{
+		public MobileMapObject mmo;
+		public List<Craft> craft = new List<Craft>();
+		public bool known;        // false = an enemy group we have not spotted (shown as unknown aircraft)
+	}
+
 	private class Side
 	{
-		public List<Craft> craft = new List<Craft>();
-		public MobileMapObject mmo;
+		public List<Craft> craft = new List<Craft>();   // every plane of every group, in group order
+		public List<Group> groups = new List<Group>();
 		public bool player;
-		public Dictionary<string, int> counts = new Dictionary<string, int>();
+		public Dictionary<string, int> counts = new Dictionary<string, int>();   // known planes by type
+		public int unknown;                                                       // planes in unspotted groups
 		public float points;
 		public float mult;
 		// the last roll
@@ -62,6 +74,7 @@ public static class ModAirResolve
 	public const float WinnerLossMin = 0.5f;   // the winner loses between 1/2 and 3/4 of the planes shot down against it
 	public const float WinnerLossMax = 0.75f;
 	public const float ShotDownShare = 1f;     // the shot-down die runs from 0 to this share of the side's own planes (1 = as designed; 0.5 = at most half)
+	public const float JoinRange = 50000f;     // metres; other air groups this close to our engaged group join the fight (the game's own engagement join distance)
 
 	public static bool windowOpen;
 	public static string resultText;
@@ -103,14 +116,14 @@ public static class ModAirResolve
 			{
 				return false;
 			}
-			MobileMapObject pm = CampaignManager.instance.playerMobile[cd.playerObjectEngaged].mobileMapObject;
-			MobileMapObject em = CampaignManager.instance.otherMobile[cd.otherObjectEngaged].mobileMapObject;
-			if (!CanResolve(pm, em))
+			GameObjectAnimator pg = CampaignManager.instance.playerMobile[cd.playerObjectEngaged];
+			GameObjectAnimator eg = CampaignManager.instance.otherMobile[cd.otherObjectEngaged];
+			if (!CanResolve(pg.mobileMapObject, eg.mobileMapObject))
 			{
 				return false;
 			}
-			player = Build(pm, true);
-			enemy = Build(em, false);
+			player = Build(pg, pg, CampaignManager.instance.playerMobile, true);
+			enemy = Build(eg, pg, CampaignManager.instance.otherMobile, false);
 			resultText = null;
 			rollText = null;
 			Estimate();
@@ -142,24 +155,85 @@ public static class ModAirResolve
 		}
 	}
 
-	private static Side Build(MobileMapObject mmo, bool isPlayer)
+	// The engaged group first, then every other air group of the same side within JoinRange of our engaged group, nearest first,
+	// up to the game's air limit per side (Config maxAirPerSide), the way the game itself gathers a battle.
+	private static Side Build(GameObjectAnimator engaged, GameObjectAnimator centre, List<GameObjectAnimator> all, bool isPlayer)
 	{
 		Side s = new Side();
-		s.mmo = mmo;
 		s.player = isPlayer;
-		float sum = 0f;
-		for (int i = 0; i < mmo.unitPrefabs.Count; i++)
+		AddGroup(s, engaged, true);
+		List<GameObjectAnimator> near = new List<GameObjectAnimator>();
+		List<float> dist = new List<float>();
+		for (int i = 0; i < all.Count; i++)
 		{
-			Craft c = MakeCraft(mmo.unitPrefabs[i]);
-			s.craft.Add(c);
-			sum += c.value;
-			int n;
-			s.counts.TryGetValue(c.name, out n);
-			s.counts[c.name] = n + 1;
+			GameObjectAnimator g = all[i];
+			if (g == null || g == engaged || g.mobileMapObject == null || g.mobileMapObject.type != 1 || g.mobileMapObject.unitPrefabs == null || g.mobileMapObject.unitPrefabs.Count == 0 || !IsAir(g.mobileMapObject))
+			{
+				continue;
+			}
+			float d = CampaignManager.instance.GetDistanceInMetresBetweenMapObjects(centre.currentMap2DLocation, g.currentMap2DLocation);
+			if (d >= JoinRange)
+			{
+				continue;
+			}
+			int at = 0;
+			while (at < dist.Count && dist[at] <= d)
+			{
+				at++;
+			}
+			near.Insert(at, g);
+			dist.Insert(at, d);
+		}
+		int limit = (Config.instance != null && Config.instance.maxAirPerSide > 0) ? Config.instance.maxAirPerSide : 9999;
+		for (int i = 0; i < near.Count; i++)
+		{
+			MobileMapObject m = near[i].mobileMapObject;
+			if (s.Count() + m.unitPrefabs.Count > limit)
+			{
+				Debug.Log("[AUTORESOLVE] " + (isPlayer ? "our" : "enemy") + " air group of " + m.unitPrefabs.Count + " at " + (dist[i] / 1000f).ToString("F0") + " km left out: air limit " + limit + " per side");
+				continue;
+			}
+			AddGroup(s, near[i], isPlayer || m.spottedTimer > 0f);
+			Debug.Log("[AUTORESOLVE] " + (isPlayer ? "our" : "enemy") + " air group of " + m.unitPrefabs.Count + " at " + (dist[i] / 1000f).ToString("F0") + " km joins the fight" + ((isPlayer || m.spottedTimer > 0f) ? "" : " as unknown aircraft"));
+		}
+		float sum = 0f;
+		for (int i = 0; i < s.craft.Count; i++)
+		{
+			sum += s.craft[i].value;
 		}
 		s.points = sum / PointDivisor;
 		s.mult = 1f + s.points / 1000f;
 		return s;
+	}
+
+	private static void AddGroup(Side s, GameObjectAnimator goa, bool known)
+	{
+		Group g = new Group();
+		g.mmo = goa.mobileMapObject;
+		g.known = known;
+		for (int i = 0; i < g.mmo.unitPrefabs.Count; i++)
+		{
+			Craft c = MakeCraft(g.mmo.unitPrefabs[i]);
+			g.craft.Add(c);
+			s.craft.Add(c);
+			if (known)
+			{
+				int n;
+				s.counts.TryGetValue(c.name, out n);
+				s.counts[c.name] = n + 1;
+			}
+			else
+			{
+				s.unknown++;
+			}
+		}
+		s.groups.Add(g);
+	}
+
+	private static bool IsAir(MobileMapObject m)
+	{
+		UnitData d;
+		return EngagementManager.instance.unitDataDictionary.TryGetValue(m.unitPrefabs[0], out d) && d.unitType == UnitType.Air;
 	}
 
 	// One plane's worth: gun damage + toughness x armour share (+ gunners). From the ModAirStats table (toughness, guns, armour, gunner).
@@ -189,7 +263,11 @@ public static class ModAirResolve
 		{
 			t += (t.Length > 0 ? ", " : "") + kv.Value + " x " + kv.Key;
 		}
-		return t;
+		if (s.unknown > 0)
+		{
+			t += (t.Length > 0 ? " + " : "") + s.unknown + " unknown aircraft";
+		}
+		return t + (s.groups.Count > 1 ? " (" + s.groups.Count + " groups)" : "");
 	}
 
 	public static string DescribeSide(bool playerSide)
@@ -203,6 +281,14 @@ public static class ModAirResolve
 		foreach (KeyValuePair<string, int> kv in s.counts)
 		{
 			t += kv.Value + " x " + kv.Key + "\n";
+		}
+		if (s.unknown > 0)
+		{
+			t += "+ " + s.unknown + " unknown aircraft\n";
+		}
+		if (s.groups.Count > 1)
+		{
+			t += "(" + s.groups.Count + " groups, " + s.Count() + " aircraft)\n";
 		}
 		return t;
 	}
@@ -355,8 +441,14 @@ public static class ModAirResolve
 				resultText = (won ? "VICTORY. " : "DEFEAT. ") + "You lost " + (lp.Length > 0 ? lp : "nothing") + "; the enemy lost " + (le.Length > 0 ? le : "nothing") + ".";
 			}
 			Debug.Log("[AUTORESOLVE] resolved (chance was " + chance.ToString("F0") + "%): " + (rollText != null ? rollText.Replace("\n", " | ") + " | " : "") + resultText);
-			Finish(player);
-			Finish(enemy);
+			for (int i = 0; i < player.groups.Count; i++)
+			{
+				Finish(player.groups[i]);
+			}
+			for (int i = 0; i < enemy.groups.Count; i++)
+			{
+				Finish(enemy.groups[i]);
+			}
 			if (EngagementPanel.instance != null)
 			{
 				EngagementPanel.instance.ClearEncounterData();
@@ -409,10 +501,10 @@ public static class ModAirResolve
 		return t;
 	}
 
-	// Writes the losses into the map object and lets the game's own post-combat code remove them.
-	private static void Finish(Side s)
+	// Writes one group's losses into its map object and lets the game's own post-combat code remove them.
+	private static void Finish(Group g)
 	{
-		MobileMapObject mmo = s.mmo;
+		MobileMapObject mmo = g.mmo;
 		if (mmo == null)
 		{
 			return;
@@ -421,7 +513,7 @@ public static class ModAirResolve
 		mmo.cellVariables = new List<string>();
 		for (int i = 0; i < count; i++)
 		{
-			mmo.cellVariables.Add((i < s.craft.Count && !s.craft[i].alive) ? "DESTROYED" : string.Empty);
+			mmo.cellVariables.Add((i < g.craft.Count && !g.craft[i].alive) ? "DESTROYED" : string.Empty);
 		}
 		if (mmo.ammunitionRemaining == null)
 		{

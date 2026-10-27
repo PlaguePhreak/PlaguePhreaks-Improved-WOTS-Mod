@@ -11,6 +11,12 @@ The mod is in alpha, so every version is 0.x. Version numbers group the work in 
 Numbering: a major change gets a whole number (v0.25 = new map locations); the minor changes under it are v0.25.1, v0.25.2 and so on. What used to be called v0.24.3 to v0.24.6 is now v0.25 to v0.25.3.
 NOTE: the in-game logbook (ModGuide class, What's New page) still uses the old numbers and must be updated to match.
 
+v0.28.13 - Air auto resolve pulls in nearby air groups (pending test)
+---------------------------------------------------------------------
+* The auto resolve window now gathers the fight like a real engagement: every other air group within 50 km of our engaged group joins, both sides, up to the game's air limit per side.
+* Unspotted enemy groups show as "+ N unknown aircraft" but still count in the points and the dice. Losses are written back to every group that took part.
+* Found from a test log: a 24-Sam auto resolve left 8, and a second 12-Sam group on the same spot joined the real fight, giving 20. Now the window would show "24 x A7M2 Sam + 12 unknown aircraft".
+
 v0.28.12 - Air auto resolve: points and dice (pending test)
 ------------------------------------------------------------
 * Fix: "nobody is armed" for two fighter groups (planes were only marked alive inside the fight roll).
