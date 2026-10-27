@@ -10,6 +10,12 @@ The mod is in alpha, so every version is 0.x. Version numbers group the work in 
 Numbering: a major change gets a whole number (v0.25 = new map locations); the minor changes under it are v0.25.1, v0.25.2 and so on. What used to be called v0.24.3 to v0.24.6 is now v0.25 to v0.25.3.
 NOTE: the in-game logbook (ModGuide class, What's New page) still uses the old numbers and must be updated to match.
 
+v0.28.11 - Realistic fuel, bingo at 10%, fighters let a leaving plane go (pending test)
+------------------------------------------------------------
+* Every aircraft row carries its real endurance at full power from the internal tanks (ModAirFlight fuelMinutes; Zero 140, Wildcat 100, Hellcat 100, Corsair 95, P-51D 160 and so on). Before, every fighter had 26 minutes.
+* Bingo fuel 10% (was 15%); a plane at bingo leaves at once and cruises to the edge.
+* A target that has left the battle is dropped for the best enemy still in the fight unless it is the last one (ModDogfight.Candidates, Fly, Repick); counted in the [BATTLE] line.
+
 v0.28.10 - Leavers head for the edge at cruise, no emergency power below 40% fuel (pending test)
 ------------------------------------------------------------
 * A plane leaving the battle heads straight away from the middle of the area once 1 km clear of its enemy, at cruise throttle when short of fuel or clear (a bingo-fuel Wildcat ditched 280 s after leaving at full throttle).

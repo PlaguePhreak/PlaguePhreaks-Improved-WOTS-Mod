@@ -74,6 +74,7 @@ public class ModDogfight
 		public Unit supportTarget;
 		public float supportUntil;
 		public float nextSupportCheck;
+		public float nextLeaverCheck;   // v0.28.11
 		// 0.26.4.1: special moves (yo-yo, barrel roll, split-S, roll-over) are rare: one at most every 25 to 50 seconds per pilot
 		public float nextSpecial;
 		public float lastZoneLog;
@@ -249,6 +250,8 @@ public class ModDogfight
 	public static int decoyCount;
 	public static int decoyDrew;
 	public static int huntRedirects;
+	public static int leaversDropped;   // v0.28.11
+	private static List<Unit> candidates = new List<Unit>();
 	public static int lowPassClimbs;
 	public static HashSet<int> leaveLogged = new HashSet<int>();
 	public static int modeLogged;
@@ -558,6 +561,26 @@ public class ModDogfight
 					UnityEngine.Debug.Log("[DOGFIGHT] " + u.unitData.unitName + " id " + u.GetInstanceID() + " is near the edge of the battle area (" + (Utilities.GetXZDistance(Vector3.zero, u.transform.position) * 10f).ToString("F0") + " m from the middle), turning back");
 				}
 				return true;
+			}
+			// v0.28.11: a target that has left the battle (damaged, out of ammunition, short of fuel) is let go while another enemy plane is still in it.
+			// Four Wildcats chased two leaving Zeros for five minutes to bingo fuel.
+			if (now >= s.nextLeaverCheck)
+			{
+				s.nextLeaverCheck = now + 2f;
+				if (ModDogfight.leaveLogged.Contains(target.GetInstanceID()) && EngagementAI.instance != null)
+				{
+					List<Unit> c = ModDogfight.Candidates(u);
+					Unit pick = (c.Count > 0) ? EngagementAI.instance.GetBestDogfightTarget(u, c) : null;
+					if (pick != null && pick != target && !pick.isDestroyed)
+					{
+						ModDogfight.leaversDropped++;
+						UnityEngine.Debug.Log("[DOGFIGHT] " + u.unitData.unitName + " id " + u.GetInstanceID() + " (" + (u.faction == Faction.Player ? "ours" : "enemy") + "): " + ModDogfight.Name(target) + " has left the battle, letting it go for " + ModDogfight.Name(pick) + " id " + pick.GetInstanceID());
+						u.unitAI.focusedUnit = pick;
+						s.lastTarget = pick;
+						ModDogfight.SetMain(s, pick, now);
+						target = pick;
+					}
+				}
 			}
 			bool targetIsFighter = ModDogfight.IsFighter(target);
 			float dist = Vector3.Distance(u.transform.position, target.transform.position);
@@ -1395,6 +1418,31 @@ public class ModDogfight
 	}
 
 	// True when this pilot may change target: no main target, it is destroyed, the hold time is up, or more than 4 of our aircraft are on it
+	// v0.28.11: the enemy planes still in the fight: flying, detected, and not logged as leaving the battle. Empty when only leavers are left (then they are fair game).
+	public static List<Unit> Candidates(Unit u)
+	{
+		ModDogfight.candidates.Clear();
+		if (EngagementAI.instance == null)
+		{
+			return ModDogfight.candidates;
+		}
+		List<Unit> enemies = (u.faction == Faction.Player) ? EngagementAI.instance.otherAir : EngagementAI.instance.playerAir;
+		if (enemies == null)
+		{
+			return ModDogfight.candidates;
+		}
+		for (int i = 0; i < enemies.Count; i++)
+		{
+			Unit e = enemies[i];
+			if (e == null || e.isDestroyed || e.isParked || !e.detected || e.unitAir == null || e.unitAir.shootDown || ModDogfight.leaveLogged.Contains(e.GetInstanceID()))
+			{
+				continue;
+			}
+			ModDogfight.candidates.Add(e);
+		}
+		return ModDogfight.candidates;
+	}
+
 	public static bool CanSwitch(Unit u, ModDogfight.State s, float now)
 	{
 		Unit m = s.mainTarget;
@@ -1788,7 +1836,9 @@ public class ModDogfight
 			return false;
 		}
 		Unit old = u.unitAI.focusedUnit;
-		Unit pick = EngagementAI.instance.GetBestDogfightTarget(u, enemies);
+		// v0.28.11: planes that have left the battle are not picked while others are still in it
+		List<Unit> c = ModDogfight.Candidates(u);
+		Unit pick = EngagementAI.instance.GetBestDogfightTarget(u, (c.Count > 0) ? c : enemies);
 		if (pick == null || pick == old || pick.isDestroyed)
 		{
 			return false;
@@ -2318,7 +2368,7 @@ public class ModDogfight
 
 	public static string MoveText()
 	{
-		return "moves: recover " + ModDogfight.recoverCount + ", scissors " + ModDogfight.scissorsCount + " (worked " + ModDogfight.scissorsWon + "), decoy " + ModDogfight.decoyCount + " (drew " + ModDogfight.decoyDrew + "), bomber hunters redirected " + ModDogfight.huntRedirects + ", low-pass climbs " + ModDogfight.lowPassClimbs + ", chase boosts " + ModAirFlight.chaseStarted + ", flights yielded " + ModAirFormation.yields + ", taken by the player " + ModPlayerOverride.taken + ", " + ModFlight.AcroCounts();
+		return "moves: recover " + ModDogfight.recoverCount + ", scissors " + ModDogfight.scissorsCount + " (worked " + ModDogfight.scissorsWon + "), decoy " + ModDogfight.decoyCount + " (drew " + ModDogfight.decoyDrew + "), bomber hunters redirected " + ModDogfight.huntRedirects + ", leavers let go " + ModDogfight.leaversDropped + ", low-pass climbs " + ModDogfight.lowPassClimbs + ", chase boosts " + ModAirFlight.chaseStarted + ", flights yielded " + ModAirFormation.yields + ", taken by the player " + ModPlayerOverride.taken + ", " + ModFlight.AcroCounts();
 	}
 
 	// 0.26.4.8: which side of the target this pilot should come in on so that a friend on the same target takes the other side. 0 = no partner.

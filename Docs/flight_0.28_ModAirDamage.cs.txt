@@ -59,7 +59,7 @@ public static class ModAirDamage
 	// fuel: the share of a tank a plane has when it first appears in the battle (it flew here), bingo = leave when below this
 	public const float StartFuelMin = 0.75f;
 	public const float StartFuelMax = 1.0f;
-	public const float BingoFuel = 0.15f;
+	public const float BingoFuel = 0.10f;      // v0.28.11: 15% before
 	public const float DitchHeight = 12f;        // game units (120 m): an out-of-fuel plane gliding down is lost below this (v0.28.2)
 	// cruise burns this share of the full-power rate
 	public const float CruiseBurn = 0.3f;

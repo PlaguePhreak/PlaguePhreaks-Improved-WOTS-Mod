@@ -1,0 +1,930 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using UnityEngine;
+
+// v0.28: per-aircraft flight characteristics and the pure physics formulas of the energy model. Table for ALL 135 aircraft (the 0.27 table had 21).
+// Changes from 0.27:
+//   * a hand-set row for every aircraft key (stock names zero, hellcat, corsair, val, kate ... included), see Build()
+//   * altitude performance: engine power falls above the plane's critical altitude (critAlt, altLoss), the stall speed rises with thin air (AltStallShare)
+//   * compressibility: parasite drag rises steeply near the dive speed limit, so the limit is no longer a hard cap (0.26.8). Beyond the structural limit the
+//     wings come off (ModAirDamage.Overspeed)
+//   * one LIVE row per aircraft (Of) that ModAirDamage.Refresh updates every tick: damage, altitude, bombs and fuel change the thrust, drag, stall and turn
+//     scale fields of that copy while the table row stays the pristine one
+//   * per-aircraft flight FILE: unit/air/<key>/<key>_flight.txt (in the Override folder or the game folder) overwrites any field of the row (JSON, see Docs)
+//   * a row with maxSpeed -1 keeps the game's value (it was a bug in 0.27)
+// To change one plane, edit its line in Build(), Compile, Save Module. Or drop a flight file next to the aircraft's data file (no compile needed).
+//
+// ---------------------------------------------------------------------------------------------------------------------------------------
+// UNITS. Speeds are game units per second (x 10 = metres per second, x 36 = km/h: 14.2 = 142 m/s = 511 km/h). Turn rates are degrees per second.
+// Climb power is metres per second. Convergence is metres. Wing loading is kg per square metre. Altitudes in metres.
+//
+// THE ENERGY EQUATION (this is what every number below feeds):
+//     E = h + v^2 / (2 g)                specific energy in metres: height plus the height the speed would climb to
+//     dE/dt = Ps = v (T - D) / (m g)     it only grows by thrust beyond drag, and falls with every turn, climb or skid that costs drag
+// A dive turns height into speed at no cost, a zoom climb turns speed into height at no cost. Only thrust adds energy and only drag takes it.
+//
+// ENGINE: constant power P. Thrust acceleration T = throttle * P / v (never less than 35% of top speed). Parasite drag D0 = P v^2 / vmax^3, so
+//     thrust equals drag exactly at top speed. P is set from climbPower: at the best climb speed (60% of top) the spare power climbs at climbPower.
+//     Above critAlt the power falls by altLoss per 1000 m (0.10 = 10% of the power per km), never below MinAltPower.
+// TURN DRAG:   Dturn = (turnRate / instantTurnRate)^2 * wingLoading * TurnDragK        (metres per second squared, taken off the speed)
+// TURN LIMIT:  lift limits the turn below corner speed, the airframe limit (load factor nMax) above it, so the turn rate is
+//     n = min(nMax, (v / stall)^2),   w = g sqrt(n^2 - 1) / v,   scaled so that w = instantTurnRate at corner speed.
+// ---------------------------------------------------------------------------------------------------------------------------------------
+public static class ModAirFlight
+{
+	[Serializable]
+	public class Row
+	{
+		public string name;
+		public float maxSpeed;           // level top speed. > 0 replaces the game's own value for this type, -1 keeps the game's value
+		public float cornerSpeed;        // speed of the best instantaneous turn (and the highest speed that can use the full airframe load factor)
+		public float stallSpeed;         // 1 g stall speed, flaps up
+		public float sustainedTurnRate;  // degrees per second it can hold at corner speed without losing speed
+		public float instantTurnRate;    // degrees per second at corner speed, paid for with speed
+		public float climbPower;         // best sustained climb rate, metres per second
+		public float wingLoading;        // kg per square metre. Heavier planes bleed more speed in a turn
+		public float rollRate;           // degrees per second at low speed
+		public float flapBonus;          // share by which combat flaps lower the stall speed (0.12 = 12% lower)
+		public float flapSpeedLimit;     // flaps cannot be used (they are retracted) above this speed
+		public float flapDragMultiplier; // parasite drag multiplier with flaps out
+		public float convergeAt;         // metres where the wing guns cross
+		public float noseConvergeAt;     // metres for guns mounted on the centre line (cowl guns)
+		public float diveSpeed;          // dive speed limit (the structural limit, Vne) as a multiple of maxSpeed
+		public float rollFade;           // share of the roll rate left at the dive speed limit (heavy ailerons at speed: Zero 0.25)
+		public bool tuned;               // true = hand-set row from this table, false = made from UnitData
+		// ---- v0.28
+		public float critAlt;            // metres: highest altitude with full engine power (supercharger critical altitude)
+		public float altLoss;            // share of the power lost per 1000 m above critAlt
+		public float fuelMinutes;        // minutes of fuel at full power (combat fuel). Cruise burns about a third
+		// ---- v0.28 live scales (the table row has 1; ModAirDamage.Refresh sets them on the per-aircraft copy every tick)
+		public float thrustScale = 1f;   // engine damage, altitude, bombs
+		public float dragScale = 1f;     // damaged skin, bombs, open canopy
+		public float stallScale = 1f;    // thin air, wing damage, bombs
+		public float turnScale = 1f;     // wing damage lowers the instant turn rate
+		public float rollScale = 1f;     // aileron damage
+		public float controlScale = 1f;  // elevator damage: pitch authority
+
+		public Row Copy()
+		{
+			return (Row)MemberwiseClone();
+		}
+	}
+
+	public const float G = 9.81f;
+	// Turn drag constant. Calibrated so that the sustainedTurnRate values below cost about the spare thrust at corner speed.
+	public const float TurnDragK = 0.022f;
+	// Closed throttle: the windmilling propeller adds this share of the parasite drag.
+	public const float IdleDrag = 0.5f;
+	public const float MinThrustShare = 0.35f;
+	// Best climb speed as a share of top speed, and the climb angle a zoom may use while speed lasts.
+	public const float BestClimbShare = 0.6f;
+	public const float ZoomClimbAngle = 55f;
+	// Governor: throttle changes from closed to open over this share of top speed around the wanted speed.
+	public const float ThrottleBand = 0.08f;
+	public const float MaxLoadFactor = 9f;
+	// A gun this close to the centre line (game units, local x) is a nose gun.
+	public const float NoseGunX = 0.15f;
+	// The AI opens fire out to this multiple of the gun convergence distance.
+	public const float RangePastConverge = 1.2f;
+	// Doctrine cruise altitudes in game units (metres x 0.1). Used when a fighter has not been seen cruising yet.
+	public const float CruiseUS = 450f;
+	public const float CruiseJapan = 420f;
+	// ---- v0.28 altitude and compressibility
+	// The engine never loses more than this share of its power to altitude.
+	public const float MinAltPower = 0.35f;
+	// How much of the real thin-air effect on the stall speed is used (0 = none, 1 = full). At 5000 m the full effect raises the stall speed by 29%.
+	public const float AltStallShare = 0.5f;
+	// Parasite drag grows near the structural dive speed: drag x (1 + CompressK * x^2), x = 0 at CompressStart * vne and 1 at vne.
+	public const float CompressK = 4f;
+	public const float CompressStart = 0.9f;
+
+	private static Dictionary<string, Row> table;
+	private static Dictionary<string, Row> fileRows = new Dictionary<string, Row>();
+	private static Dictionary<int, Row> tunedCache = new Dictionary<int, Row>();
+	private static Dictionary<int, Row> airCache = new Dictionary<int, Row>();
+	private static Dictionary<int, Row> baseCache = new Dictionary<int, Row>();
+	private static HashSet<string> fileLogged = new HashSet<string>();
+
+	// ------------------------------------------------------------------------------------------------------------------------------------
+	// THE TABLE. Key = prefab name in lower case (the same key ModAirStats uses and the [AIRDMG] lines print).
+	// Four helpers fill the long columns from a few numbers, then the line can be edited freely:
+	//   Fighter(key, name, kmh, stallKmh, sust, inst, climb, wl, roll, critAlt, conv, nose, japanese)
+	//       corner speed = 2.6 x stall, flaps -12% (Japanese Zero family -12%), dive limit 1.28 x top (US) or 1.15 x (Japan), roll fade 0.5 (US) / 0.25 (Japan)
+	//   Bomber(key, name, kmh, stallKmh, sust, inst, climb, wl, roll, critAlt)      corner speed = 2.05 x stall, dive limit 1.12, no forward gun convergence
+	//   Heavy(key, name, kmh, stallKmh, sust, inst, climb, wl, roll, critAlt)       corner speed = 1.8 x stall, dive limit 1.08, long fuel
+	//   AddRow(...)  every column by hand (the 0.27 rows below use it)
+	// sust / inst = sustained / instantaneous turn rate in degrees per second at corner speed, climb in m/s, wl in kg/m2, roll in degrees/s.
+	// ------------------------------------------------------------------------------------------------------------------------------------
+
+	// name, max, corner, stall, sustained, instant, climb, wingLoading, roll, flapBonus, flapLimit, flapDrag, converge, noseConverge, dive, rollFade
+	private static void AddRow(string key, string name, float maxSpeed, float corner, float stall, float sustained, float instant, float climb, float wl, float roll, float flapBonus, float flapLimit, float flapDrag, float converge, float nose, float dive, float fade)
+	{
+		Row r = new Row();
+		r.name = name;
+		r.maxSpeed = maxSpeed;
+		r.cornerSpeed = corner;
+		r.stallSpeed = stall;
+		r.sustainedTurnRate = sustained;
+		r.instantTurnRate = instant;
+		r.climbPower = climb;
+		r.wingLoading = wl;
+		r.rollRate = roll;
+		r.flapBonus = flapBonus;
+		r.flapSpeedLimit = flapLimit;
+		r.flapDragMultiplier = flapDrag;
+		r.convergeAt = converge;
+		r.noseConvergeAt = nose;
+		r.diveSpeed = dive;
+		r.rollFade = fade;
+		r.critAlt = 5000f;
+		r.altLoss = 0.10f;
+		r.fuelMinutes = 100f;   // v0.28.11: minutes at full power; each row sets its own below (Alt / Fuel)
+		r.tuned = true;
+		table[key] = r;
+	}
+
+	// altitude and fuel columns of a row that exists already
+	private static void Alt(string key, float critAlt, float altLoss, float fuelMinutes)
+	{
+		Row r = table[key];
+		r.critAlt = critAlt;
+		r.altLoss = altLoss;
+		r.fuelMinutes = fuelMinutes;
+	}
+
+	// v0.28.11: fuel column alone. Minutes of flight at full power from the internal tanks (no drop tank); cruise burns about a third of that.
+	private static void Fuel(string key, float fuelMinutes)
+	{
+		table[key].fuelMinutes = fuelMinutes;
+	}
+
+	private static void Fighter(string key, string name, float kmh, float stallKmh, float sust, float inst, float climb, float wl, float roll, float critAlt, float conv, float nose, bool japanese)
+	{
+		float stall = stallKmh / 36f;
+		float corner = stall * 2.6f;
+		AddRow(key, name, kmh / 36f, corner, stall, sust, inst, climb, wl, roll, 0.12f, corner * 1.08f, 1.5f, conv, nose, japanese ? 1.15f : 1.28f, japanese ? 0.25f : 0.5f);
+		Alt(key, critAlt, 0.10f, 26f);
+	}
+
+	private static void Bomber(string key, string name, float kmh, float stallKmh, float sust, float inst, float climb, float wl, float roll, float critAlt)
+	{
+		float stall = stallKmh / 36f;
+		float corner = stall * 2.05f;
+		AddRow(key, name, kmh / 36f, corner, stall, sust, inst, climb, wl, roll, 0.10f, corner * 1.05f, 1.5f, -1f, -1f, 1.12f, 0.5f);
+		Alt(key, critAlt, 0.10f, 40f);
+	}
+
+	private static void Heavy(string key, string name, float kmh, float stallKmh, float sust, float inst, float climb, float wl, float roll, float critAlt)
+	{
+		float stall = stallKmh / 36f;
+		float corner = stall * 1.8f;
+		AddRow(key, name, kmh / 36f, corner, stall, sust, inst, climb, wl, roll, 0.08f, corner * 1.05f, 1.4f, -1f, -1f, 1.08f, 0.6f);
+		Alt(key, critAlt, 0.08f, 90f);
+	}
+
+	// A copy of an existing row under another key (stock names and near-identical marks)
+	private static void Like(string key, string likeKey, string name)
+	{
+		Row r = table[likeKey].Copy();
+		r.name = name;
+		table[key] = r;
+	}
+
+	private static void Build()
+	{
+		table = new Dictionary<string, Row>();
+		// Key = prefab name in lower case (the same key ModAirStats uses). Starting values; the battle log lines [ENERGY] and [TURN] show how they play.
+		//   key              name              max    corner stall  sust  inst  climb wl    roll  flapB flapLim flapDrag conv nose dive  fade
+		// ---- Japanese: light, turn well, slow roll at speed (rollFade), weak in a dive
+		AddRow("a6m2mod21",     "A6M2 Zero",      14.5f, 8.6f,  3.3f,  19f,  26f,  12.5f, 112f, 105f, 0.12f, 9.0f,  1.5f,  250f, 400f, 1.15f, 0.25f);
+		Alt("a6m2mod21", 4200f, 0.10f, 140f);
+		AddRow("a6m3mod22a",    "A6M3 Zero",      14.8f, 8.7f,  3.3f,  18.5f,25.5f,13f,   116f, 105f, 0.12f, 9.0f,  1.5f,  250f, 400f, 1.15f, 0.25f);
+		Alt("a6m3mod22a", 6000f, 0.10f, 150f);
+		AddRow("a6m3mod32",     "A6M3 Zero 32",   15.0f, 8.8f,  3.4f,  17.5f,25f,  13f,   118f, 120f, 0.11f, 9.0f,  1.5f,  250f, 400f, 1.15f, 0.30f);
+		Alt("a6m3mod32", 6000f, 0.10f, 120f);
+		AddRow("a6m2n",         "A6M2-N Rufe",    12.6f, 7.8f,  3.5f,  14f,  20f,  9f,    140f, 80f,  0.10f, 8.0f,  1.6f,  250f, 400f, 1.10f, 0.30f);
+		Alt("a6m2n", 3500f, 0.12f, 120f);
+		AddRow("a6m5mod52a",    "A6M5 Zero",      15.7f, 9.0f,  3.5f,  17.5f,24.5f,14f,   128f, 100f, 0.12f, 9.2f,  1.5f,  250f, 400f, 1.15f, 0.25f);
+		Alt("a6m5mod52a", 6000f, 0.10f, 130f);
+		AddRow("a6m5mod52c",    "A6M5c Zero",     15.6f, 9.0f,  3.6f,  17f,  24f,  14f,   134f, 100f, 0.12f, 9.2f,  1.5f,  250f, 400f, 1.15f, 0.25f);
+		Alt("a6m5mod52c", 6000f, 0.10f, 125f);
+		AddRow("a7m1",          "A7M1 Sam",       15.0f, 9.4f,  3.6f,  16f,  23f,  14f,   160f, 90f,  0.14f, 10.0f, 1.5f,  250f, 400f, 1.15f, 0.40f);
+		Alt("a7m1", 6200f, 0.10f, 150f);
+		AddRow("a7m2",          "A7M2 Sam",       15.5f, 9.6f,  3.6f,  17f,  24f,  18f,   160f, 90f,  0.14f, 10.0f, 1.5f,  250f, 400f, 1.15f, 0.40f);
+		Alt("a7m2", 7500f, 0.09f, 150f);
+		// ---- American: heavy, rugged, fast in a dive, good roll at speed
+		AddRow("wildcat",       "F4F-4 Wildcat",  14.2f, 9.0f,  3.5f,  13.5f,21f,  11.5f, 135f, 95f,  0.12f, 9.3f,  1.45f, 250f, 400f, 1.25f, 0.50f);
+		Alt("wildcat", 5500f, 0.10f, 100f);
+		// ---- American dive and torpedo bombers (prefab names dauntless, avenger as in the battle log). No guns forward: convergence -1 keeps the data file.
+		AddRow("dauntless",     "SBD Dauntless",  11.4f, 7.0f,  3.4f,  6.0f, 8.5f, 7.5f,  160f, 60f,  0.10f, 7.5f,  1.5f,  -1f,  -1f,  1.10f, 0.50f);
+		Alt("dauntless", 4800f, 0.10f, 180f);
+		AddRow("avenger",       "TBF Avenger",    12.4f, 7.6f,  3.6f,  5.0f, 7.0f, 6.0f,  190f, 50f,  0.10f, 8.0f,  1.5f,  -1f,  -1f,  1.15f, 0.50f);
+		Alt("avenger", 4500f, 0.10f, 240f);
+		AddRow("f4f3",          "F4F-3 Wildcat",  14.4f, 9.0f,  3.5f,  13.5f,21f,  11.5f, 135f, 95f,  0.12f, 9.3f,  1.45f, 250f, 400f, 1.25f, 0.50f);
+		Alt("f4f3", 5500f, 0.10f, 110f);
+		AddRow("f4f4",          "F4F-4 Wildcat",  14.2f, 9.0f,  3.5f,  13.5f,21f,  11.5f, 135f, 95f,  0.12f, 9.3f,  1.45f, 250f, 400f, 1.25f, 0.50f);
+		Alt("f4f4", 5500f, 0.10f, 100f);
+		AddRow("fm2",           "FM-2 Wildcat",   14.6f, 9.0f,  3.5f,  14f,  21.5f,13.5f, 135f, 95f,  0.12f, 9.3f,  1.45f, 250f, 400f, 1.25f, 0.50f);
+		Alt("fm2", 4800f, 0.10f, 90f);
+		AddRow("f6f3",          "F6F-3 Hellcat",  16.5f, 10.0f, 3.7f,  12.5f,20f,  15f,   170f, 85f,  0.12f, 10.3f, 1.5f,  275f, 400f, 1.25f, 0.50f);
+		Alt("f6f3", 6800f, 0.09f, 100f);
+		AddRow("f6f5",          "F6F-5 Hellcat",  16.9f, 10.1f, 3.8f,  12.5f,20f,  15.5f, 175f, 85f,  0.12f, 10.4f, 1.5f,  275f, 400f, 1.25f, 0.50f);
+		Alt("f6f5", 7000f, 0.09f, 100f);
+		AddRow("f6f5n",         "F6F-5N Hellcat", 16.5f, 10.0f, 3.8f,  12f,  19.5f,14.5f, 180f, 85f,  0.12f, 10.3f, 1.5f,  275f, 400f, 1.25f, 0.50f);
+		Alt("f6f5n", 7000f, 0.09f, 100f);
+		AddRow("f4u1a",         "F4U-1A Corsair", 18.0f, 10.4f, 3.9f,  12f,  19.5f,17f,   185f, 95f,  0.10f, 10.8f, 1.5f,  275f, 400f, 1.30f, 0.50f);
+		Alt("f4u1a", 6700f, 0.09f, 95f);
+		AddRow("f4u1d",         "F4U-1D Corsair", 18.6f, 10.5f, 4.0f,  12f,  19.5f,17.5f, 190f, 95f,  0.10f, 11.0f, 1.5f,  275f, 400f, 1.30f, 0.50f);
+		Alt("f4u1d", 6700f, 0.09f, 95f);
+		AddRow("f4u4_corsair",  "F4U-4 Corsair",  19.5f, 10.8f, 4.0f,  12f,  19.5f,19f,   190f, 95f,  0.10f, 11.2f, 1.5f,  275f, 400f, 1.30f, 0.50f);
+		Alt("f4u4_corsair", 7500f, 0.08f, 90f);
+		AddRow("corsairmkii",   "Corsair II",     18.0f, 10.4f, 3.9f,  12f,  19.5f,17f,   185f, 95f,  0.10f, 10.8f, 1.5f,  275f, 400f, 1.30f, 0.50f);
+		Alt("corsairmkii", 6700f, 0.09f, 95f);
+
+		// ================= v0.28: the other 114 aircraft =================
+		//                  key               name                kmh  stall sust inst climb wl   roll crit  conv nose japanese
+		// ---- American fighters
+		Fighter("p43a1",          "P-43A Lancer",     573f, 140f, 12.5f, 19.5f, 10.5f, 150f, 80f,  7500f, 250f, 400f, false);
+		Fuel("p43a1", 110f);
+		Fighter("f2a3",           "F2A-3 Buffalo",    517f, 118f, 14.5f, 22f,   9.5f,  155f, 80f,  4600f, 250f, 400f, false);
+		Fuel("f2a3", 150f);
+		Fighter("p39d",           "P-39D Airacobra",  580f, 135f, 13f,   20f,   11f,   172f, 85f,  3700f, 250f, 400f, false);
+		Alt("p39d", 3700f, 0.15f, 60f);
+		Fighter("p400",           "P-400 Airacobra",  540f, 135f, 13f,   20f,   10.5f, 172f, 85f,  3700f, 250f, 400f, false);
+		Alt("p400", 3700f, 0.15f, 60f);
+		Fighter("p40f",           "P-40F Warhawk",    585f, 138f, 12.5f, 20f,   11f,   178f, 80f,  5200f, 250f, 400f, false);
+		Fuel("p40f", 85f);
+		Fighter("p40",            "P-40E Kittyhawk",  560f, 138f, 12.5f, 20f,   10.5f, 178f, 80f,  4500f, 250f, 400f, false);
+		Fuel("p40", 85f);
+		Fighter("p38e",           "P-38E Lightning",  660f, 160f, 11f,   17f,   16f,   210f, 95f,  8000f, 300f, 400f, false);
+		Alt("p38e", 8000f, 0.07f, 80f);
+		Fighter("p38g10",         "P-38G Lightning",  650f, 160f, 11f,   17f,   17f,   215f, 95f,  8000f, 300f, 400f, false);
+		Alt("p38g10", 8000f, 0.07f, 80f);
+		Fighter("p38j15",         "P-38J Lightning",  666f, 162f, 11f,   17f,   17f,   220f, 100f, 8200f, 300f, 400f, false);
+		Alt("p38j15", 8200f, 0.07f, 110f);
+		Fighter("p38k",           "P-38K Lightning",  680f, 162f, 11.5f, 17.5f, 18f,   218f, 100f, 8400f, 300f, 400f, false);
+		Alt("p38k", 8400f, 0.07f, 110f);
+		Fighter("p38l5",          "P-38L Lightning",  667f, 164f, 11f,   17f,   17.5f, 225f, 100f, 8200f, 300f, 400f, false);
+		Alt("p38l5", 8200f, 0.07f, 110f);
+		Fighter("p47d28",         "P-47D Thunderbolt",690f, 160f, 10.5f, 17f,   12f,   245f, 80f,  8500f, 275f, 400f, false);
+		Alt("p47d28", 8500f, 0.06f, 100f);
+		Fighter("p47m1",          "P-47M Thunderbolt",756f, 162f, 11f,   17.5f, 15f,   250f, 82f,  9000f, 275f, 400f, false);
+		Alt("p47m1", 9000f, 0.06f, 100f);
+		Fighter("p47n15",         "P-47N Thunderbolt",740f, 168f, 11f,   17.5f, 14f,   258f, 82f,  9000f, 275f, 400f, false);
+		Alt("p47n15", 9000f, 0.06f, 170f);
+		Fighter("p51d20",         "P-51D Mustang",    703f, 145f, 13.5f, 21f,   14f,   195f, 100f, 6700f, 275f, 400f, false);
+		Alt("p51d20", 6700f, 0.09f, 160f);
+		Fighter("p51h5",          "P-51H Mustang",    784f, 145f, 14f,   21.5f, 19f,   190f, 100f, 7000f, 275f, 400f, false);
+		Alt("p51h5", 7000f, 0.09f, 150f);
+		Fighter("p63c5",          "P-63C Kingcobra",  660f, 150f, 12.5f, 20f,   13f,   200f, 90f,  6500f, 250f, 400f, false);
+		Fuel("p63c5", 65f);
+		Fighter("p61c",           "P-61C Black Widow",589f, 140f, 9f,    14f,   10.5f, 215f, 70f,  7500f, 300f, 400f, false);
+		Alt("p61c", 7500f, 0.07f, 120f);
+		Fighter("p82b",           "P-82B Twin Mustang",740f,165f, 9.5f,  15f,   15f,   225f, 70f,  8000f, 300f, 400f, false);
+		Alt("p82b", 8000f, 0.08f, 170f);
+		Fighter("f4u2",           "F4U-2 Corsair",    640f, 150f, 12f,   19f,   15f,   188f, 90f,  6700f, 275f, 400f, false);
+		Fuel("f4u2", 95f);
+		Fighter("f4u4b_corsair",  "F4U-4B Corsair",   717f, 150f, 12f,   19.5f, 20f,   192f, 95f,  7500f, 275f, 400f, false);
+		Alt("f4u4b_corsair", 7500f, 0.08f, 90f);
+		Fighter("f2g1_corsair",   "F2G-1 Super Corsair",710f,155f, 12f,   19.5f, 22f,   200f, 95f,  6500f, 275f, 400f, false);
+		Alt("f2g1_corsair", 6500f, 0.08f, 90f);
+		Fighter("f2g2_corsair",   "F2G-2 Super Corsair",700f,155f, 12f,   19.5f, 21f,   200f, 95f,  6500f, 275f, 400f, false);
+		Alt("f2g2_corsair", 6500f, 0.08f, 90f);
+		Fighter("f7f3",           "F7F-3 Tigercat",   700f, 170f, 11.5f, 18f,   19f,   220f, 100f, 7000f, 300f, 400f, false);
+		Alt("f7f3", 7000f, 0.08f, 90f);
+		Fighter("f8f1b",          "F8F-1B Bearcat",   680f, 150f, 15f,   24f,   25f,   185f, 105f, 6000f, 275f, 400f, false);
+		Alt("f8f1b", 6000f, 0.09f, 70f);
+		Fighter("au1",            "AU-1 Corsair",     628f, 160f, 10.5f, 17f,   13f,   220f, 85f,  3000f, 275f, 400f, false);
+		Alt("au1", 3000f, 0.13f, 110f);
+		Fighter("a2d1",           "A2D-1 Skyshark",   780f, 170f, 10f,   16f,   20f,   245f, 75f,  6000f, 275f, 400f, false);
+		Fuel("a2d1", 150f);
+		Fighter("ad2",            "AD-2 Skyraider",   500f, 130f, 12f,   18f,   11f,   230f, 80f,  3500f, 275f, 400f, false);
+		Alt("ad2", 3500f, 0.12f, 180f);
+		Fighter("am1",            "AM-1 Mauler",      590f, 150f, 11.5f, 18f,   13f,   240f, 80f,  6000f, 275f, 400f, false);
+		Fuel("am1", 200f);
+		Fighter("beaufightermkvic","Beaufighter VIc", 507f, 150f, 9f,    14f,   8.5f,  230f, 65f,  4500f, 300f, 400f, false);
+		Alt("beaufightermkvic", 4500f, 0.10f, 150f);
+		Fighter("beaufighter",    "Beaufighter",      489f, 150f, 9f,    14f,   8.5f,  230f, 65f,  4500f, 300f, 400f, false);
+		Alt("beaufighter", 4500f, 0.10f, 150f);
+		Fighter("firebrandmk4",   "Firebrand Mk 4",   560f, 150f, 10.5f, 17f,   12f,   215f, 80f,  5000f, 275f, 400f, false);
+		Fuel("firebrandmk4", 130f);
+		// the stock names (the prefab key of the first aircraft of each kind)
+		Like("hellcat",  "f6f3",  "F6F Hellcat");
+		Like("corsair",  "f4u1a", "F4U Corsair");
+		// ---- Japanese fighters
+		Fighter("a5m4",           "A5M4 Claude",      435f, 95f,  22f,   30f,   12f,   75f,  120f, 3000f, 250f, 400f, true);
+		Fuel("a5m4", 120f);
+		Table("a5m4").diveSpeed = 1.10f;
+		Table("a5m4").rollFade = 0.20f;
+		Fighter("ki43",           "Ki-43 Oscar",      530f, 105f, 22f,   29f,   13f,   90f,  110f, 5800f, 250f, 400f, true);
+		Fuel("ki43", 150f);
+		Table("ki43").rollFade = 0.20f;
+		Fighter("ki45",           "Ki-45 Nick",       540f, 130f, 10.5f, 16f,   11f,   190f, 70f,  6000f, 300f, 400f, true);
+		Alt("ki45", 6000f, 0.10f, 180f);
+		Fighter("n1k1",           "N1K1 Rex",         482f, 120f, 15f,   22f,   8.5f,  150f, 85f,  3000f, 250f, 400f, true);
+		Fuel("n1k1", 100f);
+		Fighter("n1k1ja",         "N1K1-J George 11", 583f, 115f, 18.5f, 26f,   13.5f, 150f, 85f,  5800f, 250f, 400f, true);
+		Fuel("n1k1ja", 100f);
+		Table("n1k1ja").flapBonus = 0.16f;
+		Fighter("n1k2ja",         "N1K2-J George 21", 595f, 118f, 18f,   25.5f, 14.5f, 165f, 85f,  6000f, 250f, 400f, true);
+		Fuel("n1k2ja", 100f);
+		Table("n1k2ja").flapBonus = 0.16f;
+		Fighter("ki84otsu",       "Ki-84 Frank",      624f, 130f, 16f,   23f,   16f,   180f, 90f,  6100f, 250f, 400f, true);
+		Fuel("ki84otsu", 90f);
+		Fighter("ki100",          "Ki-100",           580f, 120f, 17.5f, 25f,   14f,   165f, 90f,  6000f, 250f, 400f, true);
+		Fuel("ki100", 110f);
+		Fighter("ki83",           "Ki-83",            705f, 150f, 10f,   16f,   18f,   200f, 75f,  8000f, 300f, 400f, true);
+		Alt("ki83", 8000f, 0.08f, 150f);
+		Fighter("ki87",           "Ki-87",            680f, 140f, 13f,   20f,   14f,   190f, 85f,  10000f,250f, 400f, true);
+		Alt("ki87", 10000f, 0.06f, 110f);
+		Fighter("ki94ii",         "Ki-94-II",         710f, 150f, 10f,   16f,   16f,   210f, 75f,  8500f, 300f, 400f, true);
+		Alt("ki94ii", 8500f, 0.08f, 120f);
+		Fighter("j1n1",           "J1N1 Irving",      507f, 125f, 10f,   16f,   9f,    190f, 70f,  6000f, 300f, 400f, true);
+		Alt("j1n1", 6000f, 0.10f, 240f);
+		Fighter("j5n2",           "J5N2 Tenrai",      590f, 135f, 12f,   19f,   15f,   200f, 85f,  5500f, 300f, 400f, true);
+		Fuel("j5n2", 110f);
+		Fighter("j6k1",           "J6K1 Jinpu",       700f, 145f, 13f,   20f,   18f,   195f, 85f,  7000f, 250f, 400f, true);
+		Fuel("j6k1", 110f);
+		Fighter("j7w1",           "J7W1 Shinden",     750f, 150f, 12f,   19f,   20f,   180f, 80f,  8700f, 250f, 400f, true);
+		Alt("j7w1", 8700f, 0.07f, 110f);
+		Fighter("a6m6c",          "A6M6c Zero",       570f, 125f, 17f,   24f,   15f,   135f, 95f,  6000f, 250f, 400f, true);
+		Fuel("a6m6c", 125f);
+		Fighter("a8k1",           "A8K1",             600f, 125f, 17f,   24f,   15f,   150f, 90f,  6000f, 250f, 400f, true);
+		Fuel("a8k1", 150f);
+		Fighter("r2y2",           "R2Y2 Keiun",       700f, 140f, 8f,    13f,   13f,   200f, 65f,  7500f, 300f, 400f, true);
+		Fuel("r2y2", 90f);
+		// the stock names
+		Like("zero",           "a6m2mod21", "A6M2 Zero");
+		Like("zero_kamikaze",  "a6m2mod21", "A6M2 Zero (kamikaze)");
+		Table("zero_kamikaze").wingLoading = 128f;
+		Fighter("pete",           "F1M2 Pete",        370f, 95f,  14f,   20f,   9f,    70f,  100f, 3000f, 250f, 400f, true);
+		Fuel("pete", 180f);
+		Table("pete").diveSpeed = 1.10f;
+		// ---- Japanese dive and torpedo bombers, scouts, patrol aircraft and bombers
+		Bomber("d3a1",            "D3A1 Val",         430f, 110f, 8.5f,  12f,   7f,    125f, 70f,  3500f);
+		Fuel("d3a1", 180f);
+		Table("d3a1").diveSpeed = 1.20f;
+		Bomber("d3a2",            "D3A2 Val",         430f, 110f, 8.5f,  12f,   7.5f,  130f, 70f,  4000f);
+		Fuel("d3a2", 180f);
+		Table("d3a2").diveSpeed = 1.20f;
+		Bomber("d4y1c",           "D4Y1 Judy",        552f, 120f, 8f,    12f,   10f,   150f, 65f,  5500f);
+		Fuel("d4y1c", 150f);
+		Table("d4y1c").diveSpeed = 1.15f;
+		Bomber("d4y2",            "D4Y2 Judy",        580f, 120f, 8f,    12f,   11f,   155f, 65f,  5500f);
+		Fuel("d4y2", 150f);
+		Table("d4y2").diveSpeed = 1.15f;
+		Bomber("d4y3a",           "D4Y3 Judy",        560f, 122f, 8f,    12f,   10f,   160f, 65f,  5000f);
+		Fuel("d4y3a", 150f);
+		Table("d4y3a").diveSpeed = 1.15f;
+		Bomber("d4y5",            "D4Y5 Judy",        590f, 125f, 8f,    12f,   11f,   165f, 65f,  5500f);
+		Fuel("d4y5", 150f);
+		Table("d4y5").diveSpeed = 1.15f;
+		Bomber("b5n2",            "B5N2 Kate",        378f, 105f, 7f,    10f,   6f,    105f, 55f,  3500f);
+		Fuel("b5n2", 200f);
+		Bomber("b6n2a",           "B6N2 Jill",        482f, 120f, 6.5f,  9.5f,  6.5f,  150f, 55f,  4500f);
+		Fuel("b6n2a", 200f);
+		Bomber("b7a2",            "B7A2 Grace",       567f, 130f, 7f,    10f,   8f,    170f, 60f,  5500f);
+		Fuel("b7a2", 200f);
+		Bomber("e13a1",           "E13A1 Jake",       376f, 100f, 8f,    11f,   6f,    100f, 55f,  3500f);
+		Fuel("e13a1", 300f);
+		Bomber("e14y",            "E14Y Glen",        246f, 85f,  8f,    11f,   5f,    80f,  55f,  2500f);
+		Fuel("e14y", 200f);
+		Heavy("ki49",             "Ki-49 Helen",      492f, 130f, 4.5f,  7f,    5f,    190f, 40f,  6000f);
+		Heavy("ki67otsu",         "Ki-67 Peggy",      537f, 140f, 4.5f,  7f,    6f,    215f, 40f,  6500f);
+		Heavy("p1y1",             "P1Y1 Frances",     546f, 140f, 5f,    8f,    6f,    205f, 40f,  6500f);
+		Heavy("g3m",              "G3M Nell",         415f, 125f, 4f,    6.5f,  4.5f,  150f, 35f,  4000f);
+		Heavy("g8n1",             "G8N1 Rita",        565f, 150f, 3.5f,  5.5f,  5f,    215f, 30f,  7500f);
+		Heavy("h6k",              "H6K Mavis",        340f, 110f, 3.5f,  5.5f,  3.5f,  125f, 30f,  3500f);
+		Heavy("emily",            "H8K Emily",        465f, 115f, 3.5f,  5.5f,  4.5f,  160f, 30f,  5500f);
+		Like("val",            "d3a1",  "D3A Val");
+		Like("kate",           "b5n2",  "B5N Kate");
+		Like("judy",           "d4y1c", "D4Y Judy");
+		Like("judy_kamikaze",  "d4y1c", "D4Y Judy (kamikaze)");
+		Table("judy_kamikaze").wingLoading = 175f;
+		Like("jake",           "e13a1", "E13A Jake");
+		Heavy("betty",            "G4M Betty",        437f, 125f, 4f,    6.5f,  4.5f,  175f, 35f,  4500f);
+		// ---- American dive and torpedo bombers, floatplanes, patrol aircraft, medium and heavy bombers
+		Bomber("sb2u3",           "SB2U-3 Vindicator",390f, 105f, 6.5f,  10f,   6.2f,  140f, 60f,  4000f);
+		Fuel("sb2u3", 200f);
+		Table("sb2u3").diveSpeed = 1.15f;
+		Like("sbd3",           "dauntless", "SBD-3 Dauntless");
+		Like("sbd5",           "dauntless", "SBD-5 Dauntless");
+		Table("sbd5").climbPower = 8f;
+		Like("sbd6",           "dauntless", "SBD-6 Dauntless");
+		Table("sbd6").maxSpeed = 11.6f;
+		Table("sbd6").climbPower = 8f;
+		Bomber("sb2c1c",          "SB2C-1C Helldiver",475f, 130f, 5.5f,  8f,    7f,    215f, 55f,  5500f);
+		Fuel("sb2c1c", 180f);
+		Table("sb2c1c").diveSpeed = 1.12f;
+		Like("sb2c4",          "sb2c1c", "SB2C-4 Helldiver");
+		Table("sb2c4").climbPower = 7.5f;
+		Like("helldiver",      "sb2c1c", "SB2C Helldiver");
+		Bomber("tbd1",            "TBD-1 Devastator", 322f, 100f, 5.5f,  8f,    4f,    105f, 55f,  3000f);
+		Fuel("tbd1", 180f);
+		Like("devastator",     "tbd1",  "TBD Devastator");
+		Like("tbf1c",          "avenger", "TBF-1C Avenger");
+		Like("tbm3",           "avenger", "TBM-3 Avenger");
+		Table("tbm3").climbPower = 6.5f;
+		Bomber("btd1",            "BTD-1 Destroyer",  500f, 130f, 5.5f,  8f,    8f,    190f, 55f,  5500f);
+		Fuel("btd1", 200f);
+		Bomber("soc1",            "SOC-1 Seagull",    266f, 85f,  7f,    10f,   5f,    80f,  55f,  2500f);
+		Fuel("soc1", 200f);
+		Bomber("os2u3",           "OS2U-3 Kingfisher",264f, 82f,  7.5f,  11f,   5f,    65f,  55f,  2500f);
+		Fuel("os2u3", 240f);
+		Like("kingfisher",     "os2u3", "OS2U Kingfisher");
+		Bomber("j2f",             "J2F Duck",         305f, 95f,  6f,    9f,    5f,    75f,  50f,  2800f);
+		Fuel("j2f", 180f);
+		Bomber("walrusmk1",       "Walrus Mk I",      217f, 80f,  5f,    7.5f,  3.5f,  55f,  40f,  2000f);
+		Fuel("walrusmk1", 240f);
+		Like("walrus",         "walrusmk1", "Walrus");
+		Heavy("pby",              "PBY Catalina",     315f, 105f, 3.5f,  5.5f,  3f,    100f, 30f,  3500f);
+		Heavy("pbm",              "PBM Mariner",      321f, 110f, 3.5f,  5.5f,  3.5f,  125f, 30f,  3500f);
+		Heavy("pb4y",             "PB4Y Privateer",   380f, 140f, 3f,    5f,    4f,    215f, 25f,  6500f);
+		Heavy("sunderland",       "Sunderland",       340f, 110f, 3.5f,  5.5f,  3.5f,  120f, 30f,  3500f);
+		Heavy("b17g",             "B-17G Fortress",   462f, 150f, 3f,    4.5f,  4f,    210f, 25f,  7500f);
+		Like("b17f",           "b17g", "B-17F Fortress");
+		Heavy("b24",              "B-24 Liberator",   467f, 150f, 3f,    4.5f,  4f,    245f, 25f,  7500f);
+		Heavy("b29a",             "B-29A Superfortress",574f,160f,3f,    4.5f,  5f,    320f, 22f,  9000f);
+		Heavy("b25j",             "B-25J Mitchell",   438f, 140f, 4f,    6f,    5f,    230f, 35f,  4500f);
+		Like("b25j20",         "b25j", "B-25J Mitchell");
+		Like("b25c",           "b25j", "B-25C Mitchell");
+		Like("pbj1j",          "b25j", "PBJ-1J Mitchell");
+		Heavy("b26b",             "B-26B Marauder",   454f, 155f, 4.5f,  6.5f,  5f,    285f, 35f,  5000f);
+		Heavy("a20",              "A-20G Havoc",      510f, 140f, 5.5f,  8f,    6f,    220f, 50f,  5500f);
+		Heavy("a26c45",           "A-26C Invader",    570f, 150f, 5.5f,  8f,    7f,    250f, 50f,  6500f);
+		Heavy("pv2d",             "PV-2D Harpoon",    450f, 140f, 4.5f,  6.5f,  4.5f,  215f, 35f,  5000f);
+		Heavy("beaufort",         "Beaufort",         418f, 125f, 4.5f,  7f,    5f,    180f, 40f,  4500f);
+	}
+
+	// Row of the table (Build() helper that edits a row just added)
+	private static Row Table(string key)
+	{
+		return table[key];
+	}
+
+	// ------------------------------------------------------------------------------------------------------------------------------------
+	// Lookup
+	// ------------------------------------------------------------------------------------------------------------------------------------
+
+	// cacheMiss false is used while a prefab is being built (its name may not be final yet): a miss is then not remembered.
+	private static Row Find(Unit unit, bool cacheMiss = true)
+	{
+		if (table == null)
+		{
+			Build();
+		}
+		if (unit == null)
+		{
+			return null;
+		}
+		int id = ((UnityEngine.Object)unit).GetInstanceID();
+		Row row;
+		if (tunedCache.TryGetValue(id, out row))
+		{
+			return row;
+		}
+		string key = DamageableAir.ModAirKey(unit);
+		if (!table.TryGetValue(key, out row))
+		{
+			row = null;
+		}
+		// v0.28: a flight file in the aircraft's folder overwrites the table row (or the row made from the data file)
+		Row fromFile = FileRow(key, row, unit.unitData);
+		if (fromFile != null)
+		{
+			row = fromFile;
+		}
+		if (row != null || cacheMiss)
+		{
+			tunedCache[id] = row;
+		}
+		return row;
+	}
+
+	// unit/air/<key>/<key>_flight.txt, looked up in the mod (Override) folder first, then the game's own. JSON: any field of Row, e.g.
+	// {"maxSpeed":14.5,"sustainedTurnRate":19,"critAlt":4200}. Fields that are left out keep their table value. Read once per aircraft kind.
+	private static Row FileRow(string key, Row baseRow, UnitData data)
+	{
+		Row cached;
+		if (fileRows.TryGetValue(key, out cached))
+		{
+			return cached;
+		}
+		Row result = null;
+		try
+		{
+			string text = ReadFlightFile(key);
+			if (text != null && (baseRow != null || data != null))
+			{
+				result = (baseRow != null) ? baseRow.Copy() : Default(data);
+				JsonUtility.FromJsonOverwrite(text, result);
+				result.tuned = true;
+				if (fileLogged.Add(key))
+				{
+					Debug.Log((object)("[AIRFLIGHT] " + key + ": flight file read, row now " + JsonUtility.ToJson(result)));
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError((object)("[AIRFLIGHT] flight file for " + key + " could not be read, using the table: " + ex.Message));
+			result = null;
+		}
+		if (data != null || baseRow != null)
+		{
+			fileRows[key] = result;
+		}
+		return result;
+	}
+
+	private static string ReadFlightFile(string key)
+	{
+		if (AssetLoader.instance == null || AssetLoader.instance.fullPathLocations == null)
+		{
+			return null;
+		}
+		string[] places = AssetLoader.instance.fullPathLocations;
+		for (int i = 0; i < places.Length; i++)
+		{
+			string path = places[i] + "unit/air/" + key + "/" + key + "_flight.txt";
+			if (File.Exists(path))
+			{
+				return File.ReadAllText(path);
+			}
+		}
+		return null;
+	}
+
+	// The pristine row for an aircraft: the hand-set one, or one made from its UnitData. A top speed of -1 means "the game's value".
+	public static Row BaseOf(UnitAir ua)
+	{
+		int id = ((UnityEngine.Object)ua).GetInstanceID();
+		Row row;
+		if (baseCache.TryGetValue(id, out row))
+		{
+			return row;
+		}
+		Unit u = (ua.unitAI != null) ? ua.unitAI.parentUnit : null;
+		row = Find(u);
+		if (row == null)
+		{
+			row = Default(ua.unitData);
+		}
+		else if (row.maxSpeed <= 0f)
+		{
+			row = row.Copy();
+			row.maxSpeed = ua.unitData.maxSpeed;
+		}
+		baseCache[id] = row;
+		return row;
+	}
+
+	// The LIVE row for an aircraft: a private copy of its row whose scale fields ModAirDamage.Refresh keeps up to date (damage, altitude, bombs).
+	public static Row Of(UnitAir ua)
+	{
+		int id = ((UnityEngine.Object)ua).GetInstanceID();
+		Row row;
+		if (airCache.TryGetValue(id, out row))
+		{
+			return row;
+		}
+		row = BaseOf(ua).Copy();
+		airCache[id] = row;
+		return row;
+	}
+
+	public static Row Of(Unit u)
+	{
+		if (u == null || u.unitAir == null)
+		{
+			return null;
+		}
+		return Of(u.unitAir);
+	}
+
+	// Row for a plane that has none: the old rules (fighters stall at 26% of top speed, others 38%, corner at 60%) expressed as a row.
+	public static Row Default(UnitData d)
+	{
+		Row r = new Row();
+		bool fighter = d.unitSubtype == UnitSubType.Fighter;
+		bool dive = d.unitSubtype == UnitSubType.Dive_Bomber;
+		bool heavy = d.unitSubtype == UnitSubType.Medium_Bomber || d.unitSubtype == UnitSubType.Heavy_Bomber;
+		r.name = d.unitName;
+		r.maxSpeed = d.maxSpeed;
+		r.cornerSpeed = d.maxSpeed * 0.6f;
+		r.stallSpeed = d.maxSpeed * (fighter ? 0.26f : 0.38f);
+		r.sustainedTurnRate = d.maxTurnRate * 0.7f;
+		r.instantTurnRate = d.maxTurnRate * 1.1f;
+		r.climbPower = fighter ? 12f : (dive ? 8f : 6f);
+		r.wingLoading = fighter ? 150f : (dive ? 180f : 220f);
+		r.rollRate = fighter ? 90f : 45f;
+		r.flapBonus = 0.1f;
+		r.flapSpeedLimit = d.maxSpeed * 0.65f;
+		r.flapDragMultiplier = 1.5f;
+		r.convergeAt = -1f;
+		r.noseConvergeAt = -1f;
+		r.diveSpeed = fighter ? 1.25f : (dive ? 1.05f : 1.15f);
+		r.rollFade = 0.5f;
+		r.critAlt = fighter ? 5500f : 4500f;
+		r.altLoss = 0.10f;
+		r.fuelMinutes = fighter ? 100f : (heavy ? 240f : 180f);   // v0.28.11: realistic endurance at full power
+		r.tuned = false;
+		return r;
+	}
+
+	// ---------------- pure formulas ----------------
+
+	// Stall speed in game units. A skid (rudder used to force a turn) raises it, handled by the caller.
+	public static float StallSpeed(Row r, bool flaps)
+	{
+		return r.stallSpeed * r.stallScale * (flaps ? (1f - r.flapBonus) : 1f);
+	}
+
+	// Highest turn rate in degrees per second the plane can pull at this speed (game units). See the header for the formula.
+	public static float TurnLimit(Row r, float speed, bool flaps)
+	{
+		float c = r.cornerSpeed * 10f;
+		float vs0 = r.stallSpeed * r.stallScale * 10f;
+		float vs = vs0 * (flaps ? (1f - r.flapBonus) : 1f);
+		float nMax = Mathf.Clamp((c / vs0) * (c / vs0), 2f, MaxLoadFactor);
+		float reference = G / c * Mathf.Sqrt(nMax * nMax - 1f);
+		float v = speed * 10f;
+		if (v <= vs)
+		{
+			return 0f;
+		}
+		float n = Mathf.Min(nMax, (v / vs) * (v / vs));
+		if (n <= 1.0001f)
+		{
+			return 0f;
+		}
+		float omega = G / v * Mathf.Sqrt(n * n - 1f);
+		return r.instantTurnRate * r.turnScale * omega / reference;
+	}
+
+	// Engine power in square metres per second cubed, from the climb power. Not scaled: drag is worked out from this too.
+	public static float Power(Row r)
+	{
+		return G * r.climbPower / (1f - BestClimbShare * BestClimbShare * BestClimbShare);
+	}
+
+	// Full-throttle thrust acceleration in metres per second squared (thrustScale: engine damage, altitude, bombs).
+	public static float ThrustAvail(Row r, float speed)
+	{
+		float v = Mathf.Max(speed * 10f, MinThrustShare * r.maxSpeed * 10f);
+		return Power(r) * r.thrustScale / v;
+	}
+
+	// Share of the engine power left at a height (game units): 1 up to the critical altitude, then altLoss per 1000 m.
+	public static float AltitudePower(Row r, float height)
+	{
+		float over = height * 10f - r.critAlt;
+		if (over <= 0f)
+		{
+			return 1f;
+		}
+		return Mathf.Max(MinAltPower, 1f - r.altLoss * over / 1000f);
+	}
+
+	// Stall speed multiplier from thin air at a height (game units). Density from the standard atmosphere, only AltStallShare of the effect is used.
+	public static float AltitudeStall(float height)
+	{
+		float h = Mathf.Clamp(height * 10f, 0f, 20000f);
+		float density = Mathf.Pow(1f - 2.2558e-5f * h, 4.2559f);
+		float full = 1f / Mathf.Sqrt(Mathf.Max(0.2f, density));
+		return 1f + AltStallShare * (full - 1f);
+	}
+
+	// Parasite drag deceleration in metres per second squared. Rises steeply near the structural dive speed (compressibility), see CompressK.
+	public static float Drag(Row r, float speed, bool flaps)
+	{
+		float v = speed * 10f;
+		float vm = r.maxSpeed * 10f;
+		float d = Power(r) * v * v / (vm * vm * vm) * (flaps ? r.flapDragMultiplier : 1f) * r.dragScale;
+		float vne = r.diveSpeed * r.maxSpeed * 10f;
+		float x = (v - CompressStart * vne) / Mathf.Max(1f, vne * (1f - CompressStart));
+		if (x > 0f)
+		{
+			d *= 1f + CompressK * x * x;
+		}
+		return d;
+	}
+
+	// Drag from turning, metres per second squared: (turn rate / max turn rate)^2 * wing loading * constant.
+	public static float TurnDrag(Row r, float turnDeg, bool flaps)
+	{
+		float ratio = Mathf.Clamp(turnDeg / Mathf.Max(r.instantTurnRate * r.turnScale, 1f), 0f, 1.5f);
+		return ratio * ratio * r.wingLoading * TurnDragK;
+	}
+
+	// Throttle (0 to 1) a pilot uses to hold wantedSpeed: the throttle that balances drag, turn drag and gravity, plus a correction for the speed error.
+	// sinPitch is positive nose down (gravity then helps).
+	public static float Throttle(Row r, float speed, float wantedSpeed, float sinPitch, float turnDeg, bool flaps)
+	{
+		float avail = ThrustAvail(r, speed);
+		float need = Drag(r, speed, flaps) + TurnDrag(r, turnDeg, flaps) - G * sinPitch;
+		float trim = need / avail;
+		float t = trim + (wantedSpeed - speed) / (ThrottleBand * r.maxSpeed);
+		return Mathf.Clamp01(t);
+	}
+
+	// Speed change in game units per second squared from thrust and drag only (gravity is added by the caller from the nose angle).
+	public static float Accel(Row r, float speed, float throttle, bool flaps, float turnDeg, float skid, float skidDragShare)
+	{
+		float thrust = throttle * ThrustAvail(r, speed);
+		float drag = Drag(r, speed, flaps) * (1f + IdleDrag * (1f - throttle));
+		float turn = TurnDrag(r, turnDeg, flaps) * (1f + skidDragShare * skid);
+		return (thrust - drag - turn) / 10f;
+	}
+
+	// Turn rate (degrees per second) that spare thrust at this speed can pay for. The AI uses the lower of this and the table's sustained rate.
+	public static float NeutralTurn(Row r, float speed, bool flaps)
+	{
+		float excess = ThrustAvail(r, speed) - Drag(r, speed, flaps);
+		if (excess <= 0f)
+		{
+			return 0f;
+		}
+		float ratio = Mathf.Sqrt(excess / (r.wingLoading * TurnDragK));
+		return Mathf.Min(r.instantTurnRate * ratio, TurnLimit(r, speed, flaps));
+	}
+
+	public static float SustainedTurn(Row r, float speed, bool flaps)
+	{
+		return Mathf.Min(r.sustainedTurnRate * r.turnScale * (flaps ? 1.1f : 1f), NeutralTurn(r, speed, flaps));
+	}
+
+	// How far the nose may be pulled up (degrees). At normal speed the power-limited angle (excess thrust over gravity); with speed to spare a zoom
+	// climb may be steeper, tapering back to the power limit as the speed is used up, and to zero as the plane nears its stall.
+	public static float ClimbLimit(Row r, float speed, bool flaps)
+	{
+		float v = speed * 10f;
+		float vm = r.maxSpeed * 10f;
+		float vs = StallSpeed(r, flaps) * 10f;
+		if (v < vs * 1.1f)
+		{
+			return 0f;
+		}
+		float excess = ThrustAvail(r, speed) - Drag(r, speed, flaps);
+		float sustained = Mathf.Asin(Mathf.Clamp(excess / G, 0f, 1f)) * Mathf.Rad2Deg;
+		float vClimb = Mathf.Max(1.3f * vs, BestClimbShare * vm);
+		float k = Mathf.Clamp01((v - vClimb) / (0.25f * vm));
+		float limit = Mathf.Lerp(sustained, ZoomClimbAngle, k);
+		limit *= Mathf.Clamp01((v - 1.1f * vs) / (0.2f * vs));
+		return limit;
+	}
+
+	// 0.5 to 1: how much of its full pitch and roll authority the plane has at this speed (it is the turn-limit curve, normalised to corner speed).
+	// Elevator damage (controlScale) lowers it.
+	public static float Authority(Row r, float speed, bool flaps)
+	{
+		return Mathf.Clamp(TurnLimit(r, speed, flaps) / Mathf.Max(r.instantTurnRate, 1f), 0.5f, 1f) * r.controlScale;
+	}
+
+	// Roll rate in degrees per second at this speed: full at low speed, fading to rollFade of it at the dive speed limit (stiff ailerons).
+	public static float RollRate(Row r, float speed)
+	{
+		float vne = r.diveSpeed * r.maxSpeed;
+		float start = 0.55f * r.maxSpeed;
+		float t = Mathf.Clamp01((speed - start) / Mathf.Max(0.1f, vne - start));
+		return r.rollRate * r.rollScale * Mathf.Lerp(1f, r.rollFade, t);
+	}
+
+	// The structural speed limit in game units (Vne).
+	public static float Vne(Row r)
+	{
+		return r.diveSpeed * r.maxSpeed;
+	}
+
+	// Specific energy in metres for a height and speed in game units.
+	public static float Energy(float height, float speed)
+	{
+		float v = speed * 10f;
+		return height * 10f + v * v / (2f * G);
+	}
+
+	// ---------------- gun convergence (PrefabBuilder) ----------------
+	// Replaces weaponParticle.convergeAt where the particle systems are aimed: wing guns converge at convergeAt, centre-line guns at noseConvergeAt.
+	// localX is the gun's local x position. Planes without a row keep the data file's value.
+	public static float Converge(Unit u, float stock, float localX)
+	{
+		Row r = Find(u, false);
+		if (r == null)
+		{
+			return stock;
+		}
+		float c = (Mathf.Abs(localX) < NoseGunX) ? r.noseConvergeAt : r.convergeAt;
+		return (c > 0f) ? c : stock;
+	}
+
+	// Distance in game units out to which the AI opens fire: a little past where the guns cross, so a burst is pulled where it does damage.
+	public static float FireRange(Unit u, float fallback)
+	{
+		Row r = Find(u);
+		if (r == null || r.convergeAt <= 0f)
+		{
+			return fallback;
+		}
+		return r.convergeAt * 0.1f * RangePastConverge;
+	}
+
+	// Doctrine cruise altitude in game units.
+	public static float Cruise(Unit u)
+	{
+		return (u != null && u.unitData != null && u.unitData.nationIndex == 3) ? CruiseJapan : CruiseUS;
+	}
+
+	// For the readout and the auto-resolve: does this key have a hand-set row?
+	public static bool HasRow(string key)
+	{
+		if (table == null)
+		{
+			Build();
+		}
+		return table.ContainsKey(key);
+	}
+
+	// The table row for a prefab key (null if none). Used by ModAirResolve to rate aircraft that are not in a battle.
+	public static Row ForKey(string key)
+	{
+		if (table == null)
+		{
+			Build();
+		}
+		Row r;
+		return table.TryGetValue(key, out r) ? r : null;
+	}
+
+	// ---------------- v0.28.5: chase power ----------------
+	// A fighter that chases a plane it cannot gain on (same top speed, target flying away) used to trail it for ever: wantedSpeed was above the top speed but
+	// the thrust model holds the plane to its top speed. Now a chaser may run its engine at emergency power for a while: ChaseBoost x thrust (about +10% top speed),
+	// ChaseBudget seconds, recovering at ChaseRecover seconds per second while not used, and burning fuel faster. The AI asks for it every tick it wants it
+	// (ChaseRequest, a request lasts 0.6 s, like the flaps), ModFlight.End asks for the factor (ChaseFactor).
+	public const float ChaseBoost = 1.35f;
+	public const float ChaseBudget = 240f;
+	public const float ChaseRecover = 0.15f;
+	public const float ChaseFuel = 1.8f;       // fuel burn: the throttle given to ModAirDamage.Tick is multiplied by this while boosting
+	public static int chaseStarted;
+	private static int chaseLogged;
+	private static Dictionary<int, float> chaseUntil = new Dictionary<int, float>();
+	private static Dictionary<int, float> chaseSpent = new Dictionary<int, float>();
+	private static HashSet<int> chaseOn = new HashSet<int>();
+	private static HashSet<int> chaseLocked = new HashSet<int>();
+
+	public static void ChaseRequest(UnitAir ua)
+	{
+		if (ua != null)
+		{
+			chaseUntil[((UnityEngine.Object)ua).GetInstanceID()] = Time.time + 0.6f;
+		}
+	}
+
+	public static bool Chasing(Unit u)
+	{
+		return u != null && u.unitAir != null && chaseOn.Contains(((UnityEngine.Object)u.unitAir).GetInstanceID());
+	}
+
+	// seconds of real time since the last tick (the game's duration is multiplied by the time compression twice)
+	public static float ChaseFactor(UnitAir ua, float seconds)
+	{
+		int id = ((UnityEngine.Object)ua).GetInstanceID();
+		float until;
+		bool want = chaseUntil.TryGetValue(id, out until) && Time.time <= until;
+		float spent;
+		chaseSpent.TryGetValue(id, out spent);
+		if (chaseLocked.Contains(id) && spent < ChaseBudget * 0.5f)
+		{
+			chaseLocked.Remove(id);
+		}
+		if (want && !chaseLocked.Contains(id) && spent < ChaseBudget)
+		{
+			spent += seconds;
+			chaseSpent[id] = spent;
+			if (spent >= ChaseBudget)
+			{
+				chaseLocked.Add(id);
+			}
+			if (chaseOn.Add(id))
+			{
+				chaseStarted++;
+				if (chaseLogged < 40)
+				{
+					chaseLogged++;
+					Debug.Log((object)("[CHASE] " + ua.unitData.unitName + " id " + id + " (" + ((ua.faction == Faction.Player) ? "ours" : "enemy") + ") chasing a plane it cannot gain on: emergency power on (" + ((ChaseBudget - spent)).ToString("F0") + " s left, +" + ((Mathf.Pow(ChaseBoost, 1f / 3f) - 1f) * 100f).ToString("F0") + "% top speed)"));
+				}
+			}
+			return ChaseBoost;
+		}
+		if (chaseOn.Remove(id) && chaseLogged < 40 && spent >= ChaseBudget)
+		{
+			chaseLogged++;
+			Debug.Log((object)("[CHASE] " + ua.unitData.unitName + " id " + id + " (" + ((ua.faction == Faction.Player) ? "ours" : "enemy") + ") emergency power used up, back to normal power until it has rested"));
+		}
+		if (spent > 0f)
+		{
+			chaseSpent[id] = Mathf.Max(0f, spent - seconds * ChaseRecover);
+		}
+		return 1f;
+	}
+}
