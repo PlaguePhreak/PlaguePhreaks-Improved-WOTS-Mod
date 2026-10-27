@@ -123,6 +123,9 @@ public class ModDogfight
 	// 0.26.4.8: wait 15 s (was 8) after a break before the next one, so fighters get back to attacking
 	public const float DefendRest = 15f;
 	public const float ChaseOvertakeShare = 1.12f;     // v0.28.5: emergency power is used while we are less than 12% faster than the target and farther than CatchUpRange
+	public const float LeaveClearRange = 1000f * 0.1f;  // v0.28.10: a plane leaving the battle this far from its enemy heads for the edge at cruise
+	public const float LeaveCruise = 0.6f;              // v0.28.10: share of top speed a leaver cruises at
+	public const float ChaseMinFuel = 0.4f;             // v0.28.10: no emergency power below this share of a tank (four Wildcats chased two leavers to bingo fuel)
 	public const float FleeOtherRange = 800f * 0.1f;   // v0.28.9: a target busy with someone else counts as running away only beyond this
 	public const float CatchUpRange = 300f * 0.1f;     // v0.28.3: beyond this a turn fighter chases at full speed (was: the target's speed)
 	public const float TailCloseRange = 320f * 0.1f;   // v0.28.9: 250 before. v0.28.1: an enemy this close behind is a threat even if its AI is aimed at someone else
@@ -455,6 +458,13 @@ public class ModDogfight
 				Vector3 here = u.transform.position;
 				Vector3 awayDir = here - target.transform.position;
 				awayDir.y = 0f;
+				// v0.28.10: once clear of the enemy (1 km), head straight away from the middle of the battle area: the shortest way out. A Wildcat leaving
+				// on bingo fuel flew away from its target at full throttle for 280 s and ditched with an empty tank just short of the edge.
+				bool clear = awayDir.magnitude > ModDogfight.LeaveClearRange;
+				if (clear)
+				{
+					awayDir = new Vector3(here.x, 0f, here.z);
+				}
 				if (awayDir.sqrMagnitude < 1f)
 				{
 					awayDir = -u.transform.forward;
@@ -464,7 +474,9 @@ public class ModDogfight
 				fwdFlat.y = 0f;
 				float turn = Utilities.GetSignedAngleToPosition(fwdFlat, here, new Vector3(awayPoint.x, here.y, awayPoint.z));
 				u.wantedTurnRate = Mathf.Clamp(turn, -u.unitData.maxTurnRate, u.unitData.maxTurnRate);
-				u.wantedSpeed = u.unitData.maxSpeed;
+				// v0.28.10: short of fuel, or clear of the enemy: cruise throttle (a third of the burn), otherwise full speed away
+				bool lowFuel = ModAirDamage.FuelOf(u) <= ModAirDamage.BingoFuel * 1.5f;
+				u.wantedSpeed = (lowFuel || clear) ? u.unitData.maxSpeed * ModDogfight.LeaveCruise : u.unitData.maxSpeed;
 				u.wantedHeight = Mathf.Clamp(here.y, ModDogfight.MinHeight, ModDogfight.MaxHeight);
 				return true;
 			}
@@ -1826,7 +1838,7 @@ public class ModDogfight
 		// v0.28.5: a target farther than CatchUpRange that is not being overhauled (it flies about as fast as we do) is run down on emergency power
 		// (ModAirFlight.ChaseRequest, a few minutes of it, rested between). A 1v1 log had the chaser 3 km behind a plane flying away at the same top speed for 7 minutes.
 		// v0.28.6: only when the target is flying away and we are already near our top speed (not head-on, not while slow in a climb: 828 starts in the multi-battle log)
-		if (dist > ModDogfight.CatchUpRange && u.currentSpeed < target.currentSpeed * ModDogfight.ChaseOvertakeShare && grow != null && u.currentSpeed >= ModDogfight.TopSpeedNow(grow) * 0.9f && Vector3.Angle(target.transform.forward, target.transform.position - pos) < 60f)
+		if (dist > ModDogfight.CatchUpRange && u.currentSpeed < target.currentSpeed * ModDogfight.ChaseOvertakeShare && ModAirDamage.FuelOf(u) > ModDogfight.ChaseMinFuel && grow != null && u.currentSpeed >= ModDogfight.TopSpeedNow(grow) * 0.9f && Vector3.Angle(target.transform.forward, target.transform.position - pos) < 60f)
 		{
 			ModAirFlight.ChaseRequest(u.unitAir);
 		}
