@@ -196,6 +196,7 @@ public class ModDogfight
 	// Turn fight: flaps out inside this range; a snap shot may use the full instantaneous turn inside this range and cone.
 	public const float FlapRange = 1000f * 0.1f;
 	public const float SnapShotRange = 400f * 0.1f;
+	public const float YawRange = 600f * 0.1f;         // v0.28.7: the rudder is only used to line up a shot inside this
 	public const float SnapShotCone = 30f;
 	// Fleeing: extend until the speed is this multiple of corner speed, for at most ExtendMax seconds, then climb for ClimbMax seconds.
 	public const float ExtendSpeedShare = 1.15f;
@@ -541,6 +542,13 @@ public class ModDogfight
 			}
 			bool targetIsFighter = ModDogfight.IsFighter(target);
 			float dist = Vector3.Distance(u.transform.position, target.transform.position);
+			// v0.28.7: a running target is chased straight; a climb, zoom, yo-yo, extend or recover in progress is dropped for the gun run
+			if (targetIsFighter && s.threat == null && ModDogfight.Fleeing(u, target, dist) && (s.phase == 1 || s.phase == 2 || s.phase == 3 || (s.phase == 6 && (s.move == 4 || s.move == 5 || s.move == 6))))
+			{
+				s.modeUntil = 0f;
+				s.mode = ModDogfight.ModeNeutral;
+				ModDogfight.SetPhase(u, s, 0, now, 0f, ModDogfight.Name(target) + " is running away at " + (dist * 10f).ToString("F0") + " m: dropping the energy move, straight chase at full power");
+			}
 			if (targetIsFighter && dist < ModDogfight.BombDropRange)
 			{
 				ModDogfight.JettisonBombs(u, "dogfight with " + ModDogfight.Name(target) + " at " + (dist * 10f).ToString("F0") + " m");
@@ -682,7 +690,7 @@ public class ModDogfight
 			s.move = 4;
 			ModDogfight.SetPhase(u, s, 6, now, ModDogfight.ExtendMax, why + ": energy " + s.energyDiff.ToString("F0") + " m behind " + ModDogfight.Name(target) + " and the worse turner, extending away to regain speed");
 		}
-		else if (s.mode == ModDogfight.ModeBoom && !s.rich && dist > climbRange && ModFlight.Rank(u) >= 1)
+		else if (s.mode == ModDogfight.ModeBoom && !s.rich && dist > climbRange && ModFlight.Rank(u) >= 1 && !ModDogfight.Fleeing(u, target, dist))
 		{
 			ModDogfight.SetPhase(u, s, 1, now, ModDogfight.PositionSeconds, why + ": climbing to get the energy to dive on " + ModDogfight.Name(target) + " (energy " + s.energyDiff.ToString("F0") + " m, " + (adv * 10f).ToString("F0") + " m height advantage)");
 		}
@@ -737,6 +745,11 @@ public class ModDogfight
 		{
 			mode = ModDogfight.ModeBoom;
 			why = "bombers: slashing passes from above";
+		}
+		else if (ModDogfight.Fleeing(u, target, dist))
+		{
+			mode = ModDogfight.ModeNeutral;
+			why = "it is running away, straight pursuit at full power";   // v0.28.7
 		}
 		else if (rank == 0)
 		{
@@ -1823,7 +1836,11 @@ public class ModDogfight
 		float turnMax = ModDogfight.GunRunTurn(u, gs, dist, aim);
 		u.wantedTurnRate = Mathf.Clamp(yaw, -turnMax, turnMax);
 		ModFlight.Aim(u.unitAir, down);
-		ModFlight.AimYaw(u.unitAir, yaw);
+		// v0.28.7: the rudder is only used to line up a shot inside YawRange; out on a chase it swung the nose left and right and cost speed
+		if (dist < ModDogfight.YawRange)
+		{
+			ModFlight.AimYaw(u.unitAir, yaw);
+		}
 		u.wantedHeight = Mathf.Clamp(pos.y - down, ModDogfight.MinHeight, ModDogfight.Ceiling(u));
 		WeaponParticle wp = u.weaponParticle;
 		if (wp == null)
@@ -2001,6 +2018,21 @@ public class ModDogfight
 	}
 
 	// 0.28: the true top speed now (engine damage, altitude, fuel, bombs change it): the speed where full thrust balances parasite drag.
+	// v0.28.7: a target that is running (on a route, retreating, or busy with someone else) and flying away from us, farther than CatchUpRange, is run
+	// down in level flight: no climb for energy, no zoom away after a 30 s run. The 1v1 logs had the chaser breaking off every 30 s to zoom and climb
+	// while the target flew straight on, and it never closed.
+	public static bool Fleeing(Unit u, Unit target, float dist)
+	{
+		if (u == null || target == null || target.unitAI == null || dist < ModDogfight.CatchUpRange)
+		{
+			return false;
+		}
+		AIAction a = target.unitAI.currentAIAction;
+		bool routing = a == AIAction.Follow_Nav_Points || a == AIAction.Retreat || a == AIAction.Nav_Done || target.unitAI.retreating;
+		bool runningAway = Vector3.Angle(target.transform.forward, target.transform.position - u.transform.position) < 50f;
+		return runningAway && (routing || target.unitAI.focusedUnit != u);
+	}
+
 	public static float TopSpeedNow(ModAirFlight.Row r)
 	{
 		return r.maxSpeed * Mathf.Pow(Mathf.Max(0.05f, r.thrustScale) / Mathf.Max(0.5f, r.dragScale), 1f / 3f);

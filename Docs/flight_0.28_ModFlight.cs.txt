@@ -701,13 +701,15 @@ public static class ModFlight
 	// A fighter lining up a shot may swing its nose sideways with the rudder, without banking. The nose points at the target while the plane keeps
 	// flying where it was going (a slip). The slip then bleeds away, which turns the flight path onto the nose. Slipping costs a little speed.
 	// Pilot rank scales it: Green half, Trained 3/4, Veteran full, Elite 1.25 times.
-	public const float YawRate = 30f;      // degrees per second the rudder can swing the nose
-	public const float SlipMax = 8f;       // the most the nose may point off the flight path, degrees
+	public const float YawRate = 12f;      // degrees per second the rudder can swing the nose (v0.28.7: was 30, the nose snapped left and right)
+	public const float SlipMax = 4f;       // the most the nose may point off the flight path, degrees (v0.28.7: was 8)
 	public const float YawReach = 12f;     // the rudder is only used when the aim error is this small, degrees
+	public const float YawDeadband = 1.5f; // v0.28.7: no rudder for an aim error smaller than this, degrees (was 0.5)
+	public const float YawMaxTurn = 3f;    // v0.28.7: no rudder while the plane is in a banked turn faster than this (deg/s): the bank and the rudder used to fight over the same error
 	public const float SlipBleed = 6f;     // degrees per second the flight path catches up with the nose
 	// 0.26.5.9: how much pilot rank changes the rudder (0 = every pilot the same, 1 = Green half to Elite 1.25 times)
 	public const float YawRankEffect = 0.25f;
-	public const float SlipDrag = 0.6f;    // speed lost per second at full slip
+	public const float SlipDrag = 0.3f;    // speed lost per second at full slip (v0.28.7: was 0.6)
 	private static Dictionary<int, float> slip = new Dictionary<int, float>();
 	private static Dictionary<int, float> yawErr = new Dictionary<int, float>();
 	private static Dictionary<int, float> yawUntil = new Dictionary<int, float>();
@@ -734,7 +736,7 @@ public static class ModFlight
 		float ds = 0f;
 		float until;
 		float err;
-		if (fighter && speed > stall * 1.3f && yawUntil.TryGetValue(id, out until) && Time.time <= until && yawErr.TryGetValue(id, out err) && Mathf.Abs(err) > 0.5f && Mathf.Abs(err) <= YawReach)
+		if (fighter && speed > stall * 1.3f && Mathf.Abs(ua.currentTurnRate) < YawMaxTurn && yawUntil.TryGetValue(id, out until) && Time.time <= until && yawErr.TryGetValue(id, out err) && Mathf.Abs(err) > YawDeadband && Mathf.Abs(err) <= YawReach)
 		{
 			float skill = Mathf.Lerp(1f, 0.5f + 0.25f * (float)ModFlight.Rank(ua.unitAI.parentUnit), YawRankEffect);
 			float step = YawRate * skill * duration;

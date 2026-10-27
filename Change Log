@@ -10,6 +10,13 @@ The mod is in alpha, so every version is 0.x. Version numbers group the work in 
 Numbering: a major change gets a whole number (v0.25 = new map locations); the minor changes under it are v0.25.1, v0.25.2 and so on. What used to be called v0.24.3 to v0.24.6 is now v0.25 to v0.25.3.
 NOTE: the in-game logbook (ModGuide class, What's New page) still uses the old numbers and must be updated to match.
 
+v0.28.7 - Lone enemy fighters fight, runners are chased straight, rudder calmed (pending test)
+-----------------------------------------------------------
+* The stock game retreats an enemy air group that is a single fighter, so every 1v1 test was against a plane flying away. One-word edit in EngagementAI.CheckDefensiveConditions (3_hook_lone_fighter.txt).
+* A target that is running away (route, retreat, or busy with someone else) is now chased straight in level flight at full power; no climb for energy and no zoom away after a 30 s run (ModDogfight.Fleeing).
+* The rudder is only used to line up a shot inside 600 m, at 12 deg/s and up to 4 deg of slip, never in a banked turn, with half the drag. The nose no longer wags left and right on a chase.
+* Install: v0.28.7_update (Edit Class ModDogfight, ModFlight; one word in EngagementAI). Log review: Docs/0.28.6_log_review_27Oct.md.
+
 v0.28.6 - Fixes from the full review (pending test)
 -----------------------------------------------------------
 * Time compression no longer speeds up the flight physics: speed, pitch, roll, turn and the collision look-ahead run on battle seconds at x2 to x10 (fuel already did since 0.28.4). Nothing changes at x1.

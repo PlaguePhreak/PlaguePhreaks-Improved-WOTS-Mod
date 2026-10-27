@@ -1,0 +1,16 @@
+v0.28.7 hook: one word in the game's own code, so a lone enemy fighter does not run away.
+========================================================================================
+
+The stock game (EngagementAI.CheckDefensiveConditions) makes an enemy air group retreat when it is a scout, OR when it is a single fighter.
+That is why every 1v1 test so far had the enemy on a nav route and never fighting: it was retreating 15 km away at full speed.
+
+In dnSpy: class EngagementAI, method CheckDefensiveConditions, right-click > Edit Method. Near the end of the method find this line:
+
+    if (otherAir[j].unitData.unitSubtype == UnitSubType.Scout || (otherAir.Count == 1 && otherAir[j].unitData.unitSubtype == UnitSubType.Fighter))
+
+and change the "== 1" to "== 0":
+
+    if (otherAir[j].unitData.unitSubtype == UnitSubType.Scout || (otherAir.Count == 0 && otherAir[j].unitData.unitSubtype == UnitSubType.Fighter))
+
+Compile, OK, File > Save Module. Scouts still retreat; a lone fighter now fights.
+(If you would rather keep the stock behaviour in the campaign, do not do this and test with at least 2 enemy fighters instead.)
