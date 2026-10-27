@@ -68,7 +68,7 @@ public static class ModVersion
 			// Top right: changelog box (below the compass).
 			RectTransform box = NewRect("Changelog", holder.transform, new Vector2(1f, 1f));
 			box.sizeDelta = new Vector2(430f, 250f);
-			box.position = new Vector3(c[2].x - Margin * s, c[2].y - 230f * s, c[2].z);
+			box.position = new Vector3(c[2].x, c[2].y, c[2].z);
 			Image back = box.gameObject.AddComponent<Image>();
 			back.color = new Color(0.07f, 0.12f, 0.19f, 0.75f);
 			back.raycastTarget = false;
