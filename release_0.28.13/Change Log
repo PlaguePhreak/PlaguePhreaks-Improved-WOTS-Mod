@@ -1,0 +1,688 @@
+War on the Sea Mod - Change Log
+================================
+
+Current version: v0.28.13 (27 Oct 2026). Air combat and auto resolve update, for testers.
+Built for War on the Sea v1.09a.
+Changes are made in Assembly-CSharp.dll (dnSpy) and in the game's text files (Override folder).
+
+The mod is in alpha, so every version is 0.x. Version numbers group the work in the order it was built, and each follow-on part of a feature area gets a point number (v0.17.1, v0.17.2 and so on). Earlier test builds called v0.10 to v0.19 "v1.0" to "v1.9" (for example v1.8.4 is now v0.18.4).
+
+
+Numbering: a major change gets a whole number (v0.25 = new map locations); the minor changes under it are v0.25.1, v0.25.2 and so on. What used to be called v0.24.3 to v0.24.6 is now v0.25 to v0.25.3.
+NOTE: the in-game logbook (ModGuide class, What's New page) still uses the old numbers and must be updated to match.
+
+v0.28.13 - Air auto resolve pulls in nearby air groups (in this build)
+---------------------------------------------------------------------
+* The auto resolve window now gathers the fight like a real engagement: every other air group within 50 km of our engaged group joins, both sides, up to the game's air limit per side.
+* Unspotted enemy groups show as "+ N unknown aircraft" but still count in the points and the dice. Losses are written back to every group that took part.
+* Found from a test log: a 24-Sam auto resolve left 8, and a second 12-Sam group on the same spot joined the real fight, giving 20. Now the window would show "24 x A7M2 Sam + 12 unknown aircraft".
+
+v0.28.12 - Air auto resolve: points and dice (in this build)
+------------------------------------------------------------
+* Fix: "nobody is armed" for two fighter groups (planes were only marked alive inside the fight roll).
+* New model: each side gets points (gun damage + toughness x armour per plane, summed, / 6) and a multiplier 1 + points/1000. Resolve rolls Attacked (1-6), Defended (1-6) and Shot down (0 to the side's planes, pulled toward the better points) for each side; score = sum x multiplier, higher wins; all planes shot down = immediate loss. Loser loses the planes shot down against it, the winner 1/2 to 3/4 of them.
+* Window: enemy and our aircraft with points, chance of victory, then the rolls and the result. Knobs at the top of ModAirResolve.
+
+v0.28.11 - Realistic fuel, bingo at 10%, fighters let a leaving plane go (in this build, first tests clean)
+------------------------------------------------------------
+* Every aircraft row carries its real endurance at full power from the internal tanks (ModAirFlight fuelMinutes; Zero 140, Wildcat 100, Hellcat 100, Corsair 95, P-51D 160 and so on). Before, every fighter had 26 minutes.
+* Bingo fuel 10% (was 15%); a plane at bingo leaves at once and cruises to the edge.
+* A target that has left the battle is dropped for the best enemy still in the fight unless it is the last one (ModDogfight.Candidates, Fly, Repick); counted in the [BATTLE] line.
+
+v0.28.10 - Leavers head for the edge at cruise, no emergency power below 40% fuel (in this build, first tests clean)
+------------------------------------------------------------
+* A plane leaving the battle heads straight away from the middle of the area once 1 km clear of its enemy, at cruise throttle when short of fuel or clear (a bingo-fuel Wildcat ditched 280 s after leaving at full throttle).
+* The chase boost (emergency power) is not used below 40% fuel (four Wildcats chased two leaving Zeros to bingo fuel).
+
+v0.28.9 - Fire key and wingman-cover bursts no longer cancelled, Wildcat tactics (tested)
+------------------------------------------------------------
+* A burst the mod did not start (fire key on the selected plane, wingman cover, barrel roll attack) was cancelled on the next tick as "too old". Now adopted as a new burst (ModDogfight.GunsOn, GunRun).
+* Threat range 250 m to 400 m (320 m for a plane not aimed at us): Zeros fire from 270 to 300 m and were never seen on the tail.
+* A target busy with someone else counts as running away only beyond 800 m (Fleeing); boom and zoom holds down to 90% of corner speed (Decide). Ends the 4 s mode flip-flop.
+* The worse turner keeps the flaps in except for a snap shot (GunRun). No Immelmann or barrel roll attack with an enemy on the tail.
+* [BATTLE] line: "collisions collisions" fixed.
+
+v0.28.8 - Zoom-climb loop fixed, air collisions off (tested)
+------------------------------------------------------------
+* A gun pass only ends in a zoom climb above 1.1 x corner speed; a slow plane extends level to build speed first, then climbs (ModDogfight.Attack). A zoom gets 1.5 s before it counts as spent (ModDogfight.Zoom). The 4v4 log had Wildcats zooming at 190 km/h every pass and stalling.
+* Plane-to-plane collisions switched off (ModAirCollide.On = false): a quarter of the 4v4 losses were collisions. Code kept, switch it back on with On = true.
+* "[DOGFIGHT] fly failed" is logged at most 20 times a session, with a stack trace.
+* Collision look-ahead passed in real seconds at time compression (ModFlight.End); no per-tick array in the energy sampler (ModFlight.AddSample); Plane objects reused in ModAirCollide.Build.
+
+v0.28.7 - Lone enemy fighters fight, runners are chased straight, rudder calmed (tested)
+-----------------------------------------------------------
+* The stock game retreats an enemy air group that is a single fighter, so every 1v1 test was against a plane flying away. One-word edit in EngagementAI.CheckDefensiveConditions (3_hook_lone_fighter.txt).
+* A target that is running away (route, retreat, or busy with someone else) is now chased straight in level flight at full power; no climb for energy and no zoom away after a 30 s run (ModDogfight.Fleeing).
+* The rudder is only used to line up a shot inside 600 m, at 12 deg/s and up to 4 deg of slip, never in a banked turn, with half the drag. The nose no longer wags left and right on a chase.
+* Install: v0.28.7_update (Edit Class ModDogfight, ModFlight; one word in EngagementAI). Log review: Docs/0.28.6_log_review_27Oct.md.
+
+v0.28.6 - Fixes from the full review (tested)
+-----------------------------------------------------------
+* Time compression no longer speeds up the flight physics: speed, pitch, roll, turn and the collision look-ahead run on battle seconds at x2 to x10 (fuel already did since 0.28.4). Nothing changes at x1.
+* Friends on a collision course: the plane with the right of way only holds course if the other can give way; two friends closing above 100 m/s both break.
+* The fighter you have selected stops firing at the end of a burst again (it used to fire until out of ammunition).
+* Scissors is not cut short by a new defence and reverses every 2.8 to 3.6 s. Chase power only when the target is flying away and the chaser is near top speed. Being the selected unit alone no longer counts as hand-flown.
+* Install: v0.28.6_update folder (Edit Class ModFlight, ModAirDamage, ModAirCollide, ModDogfight, ModPlayerOverride; no hooks). Review behind it: Docs/full_review_0.28.5_23Oct.md.
+
+v0.28.5 - Formation yields, player controls win, chasers catch up (tested)
+-----------------------------------------------------------
+* A follower in a formation no longer breaks out when a flight mate is on a collision course: it shifts its slot 50 m sideways and 20 m up or down for 2.5 s and comes back. Two other friends no longer both break at once: one gives way. Only a real collision course still breaks both. Enemies are avoided as before.
+* Player controls override the AI: moving a turn, height or speed slider (or the keys) on your own plane or ship takes it off its route, formation, attack, evasion or break. A plane flown by hand is not steered by the collision avoidance, and a ship you steer is not taken over by the AA evasion for 30 s after your last slider move.
+* Chase power: a fighter chasing a target farther than 300 m that it is not gaining on (less than 12% faster) runs emergency power: about +10% top speed for up to 240 s per sortie, rested at 0.15 s per second, 1.8 times the fuel burn. The 1v1 log had the chaser 3 km behind an equally fast target for 7 minutes.
+* New log lines: [PLAYER], [CHASE], "gives way to flight mate" in [FORMATION]; the [BATTLE] line gains chase boosts, flights yielded and taken by the player.
+* Install: v0.28.5_update folder (new class ModPlayerOverride, 5 edited classes, 4 one-line hooks in CombatInterface and ModAAEvade).
+
+v0.28.4 - Fuel lasts (tested)
+-----------------------------------------------------------
+* Fuel was burned about 8 times too fast at high time compression (a full tank gone in 3.5 minutes in the 1v1 test at x8). Fuel, fuel leaks and the break-up chance now run on battle clock seconds, so a fighter has about 26 minutes of full-power fuel at any time compression (about 87 minutes at cruise).
+* Install: Edit Class ModAirDamage only.
+
+v0.28.3 - Chasing fighters catch up (tested)
+-----------------------------------------------------------
+* A turn fighter (Zero, Sam and others) used to match its target's speed in a gun run, so it trailed a little behind and never closed. It now flies flat out until 300 m behind the target, then 15% faster than it.
+* Install: Edit Class ModDogfight only (steps in v0.28.1_step_by_step/README_START_HERE.md).
+
+v0.28.2 - Out-of-fuel planes ditch, slower fuel leaks (tested)
+-----------------------------------------------------------
+* A plane with an empty tank (engine quit) now glides down and is lost when it reaches the sea. Before, it hung at the same height in the fight for minutes (seen in the third test log). Credit for the fuel system idea: Kiko.
+* Fuel leaks drain about 2.5 times slower, so a leaking plane that decides to leave the battle can get away.
+* Install: Edit Class ModDogfight and ModAirDamage only. Steps: v0.28.1_step_by_step/README_START_HERE.md.
+
+v0.28.1 - Fixes from the first 0.28 test log (tested)
+-----------------------------------------------------------
+* Friendly planes no longer crash into each other head-on: they always see each other coming and only die in a head-on above 200 m/s. Avoidance looks 2 s ahead.
+* Fighters defend sooner: an enemy on the tail inside 250 m counts as a threat, a close threat is noticed twice as fast, and a new defence can start 4 s after the last. No more extending in a straight line with an enemy behind.
+* Parts falling off pick real wing and tail pieces (not the rear flap or the wing root fitting). Credit: Avaricles.
+* The flight readout is on F8 now (F10 is the game's hide-UI key). One last [FLIGHT] log line per destroyed plane.
+* Install: paste the new ALL_IN_ONE file into ModFlight (Edit Class). No new hooks. Steps: Docs/flight_0.28.md.
+
+v0.28 - Air combat update: the rest of the 0.26 roadmap (tested)
+-----------------------------------------------------------
+* Credits: fuel fires are Kiko's idea, parts falling off a damaged plane is Avaricles' idea.
+* All 135 aircraft have a flight row, toughness, gun damage, armour and gunner values. The stock Hellcat, Corsair, Dauntless and Helldiver follow the new rows.
+* Fighters carrying bombs fly worse and drop them when an enemy fighter is near, when attacked, or when leaving (waits while a friendly ship is below). Log [BOMBS].
+* Aircraft collide: scrape, bad hit or head-on loss. Pilots see it coming and break away. Log [COLLIDE].
+* New manoeuvres: Immelmann, pitchback, high-g barrel roll, barrel roll attack, scissors, decoy, recover, combat spread. Wired into the sandwich and defensive split.
+* Formation flying: followers keep a slot off the leader, the leader slows for the slowest follower, escorts fly 400 m above bombers.
+* Damage affects flight: engine, wing, fuel leak and fire, tail. Planes leave the battle when out of ammo, at bingo fuel or when too damaged. Altitude performance curves. F8 in battle shows a flight readout.
+* Per-aircraft flight file: unit/air/<key>/<key>_flight.txt overrides that aircraft's flight row.
+* The hard speed limit is gone. Planes that stay far above their structural speed lose their wings and parts fall off.
+* Air auto resolve: an air meeting can be auto resolved from a window that shows the percent chance of victory.
+* Fixes from the last log: Wildcats regain energy (recover move), bomber chasing capped, [BATTLE] energy now shows the last 60 s and the whole battle separately.
+* ModFlightLog Interval is back to 10 seconds.
+* dnSpy: add 5 classes (ModAirDamage, ModAirCollide, ModAirFormation, ModAirResolve, ModAirReadoutUI), edit 5 (ModAirFlight, ModAirStats, ModFlight, ModDogfight, ModFlightLog), plus 3 one-line hooks. Steps: Docs/flight_0.28.md. Compiled but not run in the game.
+
+v0.27.1 - Energy model fixes (tested)
+--------------------------------------
+* Fixes from the first 0.27 logs: a fighter low on energy only runs when it can (top speed about the same or better, or above 2500 m), otherwise it turns with flaps; the energy decision is held for 4 s so it does not flip.
+
+v0.27 - Energy combat (tested)
+------------------------------
+* Every aircraft has its own performance table (ModAirFlight): top speed, corner speed, stall speed, sustained and instantaneous turn rates, climb, roll rate, wing loading, flaps, dive speed and gun convergence. Hand-set rows for the fighters and bombers that matter, formulas for the rest.
+* Pilots judge energy (height plus speed) against their target and pick a fight: energy lead = boom and zoom (dive, one pass, zoom away); better turner = turn fight with flaps; low on energy = disengage or turn; a Green pilot just chases.
+* Turn limits by speed (lift below corner speed, airframe above), flaps that lower the corner speed and add drag, throttle by mode.
+* Guns converge where the aircraft's wing guns cross (PrefabBuilder.SetParticleGun, one line). The gun run aims at the lead point and fires inside the cone and range.
+* Logs: [ENERGY] every 10 s, [BATTLE] every 60 s, [GUNSTAT].
+
+v0.26 - Aircraft overhaul: the flight model (tested in parts 0.26.1 to 0.26.5.9)
+---------------------------------------------------------------------------------
+* 0.26.1 flight core: dives gain speed, climbs lose it, dive speed limits, stall, heavy controls at speed.
+* 0.26.2 pitch control: the nose follows the aim angle. 0.26.3 banking and eased turns; dive bomber numbers for 13 newer dive bombers.
+* 0.26.4 pilot rank (Green, Trained, Veteran, Elite; crew off = all Elite) and acrobatics: roll-over attack, split-S, barrel roll. 0.26.4.2 manoeuvre pool: low yo-yo, wingover, lag displacement roll, out-of-plane, spiral, extension; one special move per 1-2 minutes; one target held for 5 minutes; height band; [LOSS] and [STATUS] logs.
+* 0.26.4.5 squads stay together (EngagementAI.AttackUnit and AIRvsAIR). 0.26.4.6 shooting fix and the hand-set aircraft table. 0.26.4.7 and 0.26.4.8 American pilots stay in the fight; team work (sandwich, defensive split, wingman cover, Thach weave).
+* 0.26.5 bombers and torpedo planes on the new model; 0.26.5.1 to 0.26.5.7 bomber attack fix, US toughness x1.3, A7M Sam rebalance, wider US fire cone, [GUNSTAT] log. 0.26.5.8 rudder (yaw) for lining up a shot. 0.26.5.9 flight fixes.
+
+v0.25.4 - Campaign names and win conditions (tested)
+----------------------------------------------------
+* The two campaigns are Counterattack on the Australian Front (Allies) and Defending Japan's Southwest Pacific Interests (Japan), with new descriptions.
+* To win, hold all of: Rabaul, Lae, Guadalcanal (rank 5 airfield), Cooktown, New Hebrides and Rennell Island. Cooktown has a level 1 port and is an Allied home port; Rennell Island starts Allied.
+
+v0.25.2 - Starting task forces and new formations (tested)
+----------------------------------------------------------
+* Both sides start with many more task forces built like the real ones (carrier forces, battleship groups, cruiser forces, destroyer patrols, submarines), because ordered ships take time to build.
+* 10 new formations (9 to 18): Escorted Wedge, Box, Diamond, Ring, Echelon, Double Column, Kido Butai 2 and 4 carriers, Surface Action Line, Supply Event. Wider formation list.
+
+v0.25.1 - Air base rework (tested)
+----------------------------------
+* The new aircraft fly from the air bases around the map, each base with its own historical mix. Up to 6 types per base, more unlocked by air base level, 4 to 24 per type. Shortland Islands and Rekata Bay fly floatplanes only. A captured base flies the captor's planes.
+
+v0.25 - The New Guinea front (tested; was v0.24.3 before the renumbering)
+-------------------------------------------------------------------------
+* Ten new locations along Papua New Guinea, the Bismarck Sea and the Torres Strait. Lae, Buna and Gasmata start Japanese; Cairns and Horn Island Allied; Finschhafen, Kiriwina, Madang, Wewak and Manus Island empty. Start a NEW campaign to see them.
+
+v0.24.2 - New aircraft from RamZ's catalogue and TTE (tested)
+-----------------------------------------------------------
+* 22 more aircraft from the TTE mod, used with credit to the TTE team (P-39D, P-38E, J2F, PBY, PBM, A-20G, B-24D, B-25J, Kittyhawk, Beaufighter, Beaufort, Sunderland, A5M4, A6M2-N, Ki-43, Ki-45, Ki-49, J1N1, E14Y, H6K, H8K2, G3M2). 115 new aircraft in total.
+* 93 new aircraft (Japan, USA, Australia) from RamZ's public Unit Catalog: fighters, dive and torpedo bombers, floatplanes, patrol aircraft and bombers. They are RamZ's work and used with credit to him. Three British types (Corsair Mk II, Firebrand Mk 4, Walrus Mk I) are included because the new Australian ships carry them.
+* Files: unit/air/allUnitsList.txt, airUnits.txt for both campaigns, 115 aircraft name files. Models and RamZ's materials/ammunition.txt come from Extras/copy_v0.24_files.bat (your old ammunition.txt is saved as ammunition_original.txt).
+* Aircraft resource costs and dates are my estimates. Install ships and aircraft together (carriers carry the new aircraft). Steps: Docs/new_ships_v0.24.md.
+
+
+v0.24.1 - New ships from RamZ's catalogue and the TTE mod (tested)
+-------------------------------------------------------------------------
+* 84 new warships (Japan, USA, Australia) from RamZ's public Unit Catalog, used with credit to RamZ. They are his work, not mine. He is also credited for the TTE merchant ships, which are believed to be his.
+* "Australia" ships: Perth, County, Leander, N Class, T/U/V Class, Battle class and Colossus class (British designs that served with the RAN).
+* 20 more warships from the TTE mod (Colorado, New Mexico, Pennsylvania, Tennessee, Bogue, Omaha, Clemson and Wickes, Hiyo, Chitose, Taiyo, Ryuho, Hosho, Nisshin, Akitsu Maru, Kamikawa Maru, Kitakami, Yubari, Type-A, Type-C, Tribal). Credit to the TTE team.
+* Shipyard order: inside each nation the ships are listed by class: submarine, destroyer escort, destroyer, light cruiser, heavy cruiser, battlecruiser, battleship, light carrier, carrier, then merchants and auxiliaries (unit/sea/allUnitsList.txt and seaUnits.txt of both campaigns; the buy menu follows the order of seaUnits.txt, so both must match).
+* The in-game book has a new page "Custom ships" (first title "RamZ Catalogue Ships", listed by ship class) and a page "Custom aircraft". dnSpy steps are in Docs/guide_book.md.
+* All new ships on the player side must be ordered (50% deposit and a build wait) instead of bought straight away: every name of each new class is added to the unavailable ship list in setup.txt of both campaigns (65 classes in campaign 001, 39 in campaign 002). The AI side is not listed.
+* All new ships, for the player and the AI, ignore historical dates: available is 1 Jan 1900 and orderAvailable is removed, so only the normal build times apply (sub 10 days, escort and destroyer 7, light cruiser 14, heavy cruiser 18, battleship and battlecruiser 35, carriers 42). The "Ship Orders" rules popup (modrules1.txt) no longer says ships arrive on their historical date.
+* Costs, supply cost, sunk value and dates are my estimates (cost is RamZ's value, doubled for battleships, battlecruisers and carriers). Both campaigns get the ships. Some RamZ ships duplicate stock ones (Essex, Iowa); both show in the shipyard.
+* Files: allUnitsList.txt, mountData.txt (+56), weapons.txt (+134), seaUnits.txt for both campaigns, 104 ship name files. Models are copied by Extras/copy_v0.24_files.bat. Steps: Docs/new_ships_v0.24.md.
+
+
+v0.23.2 - Ship list order (tested)
+----------------------------------------
+* In the shipyard and Museum lists the Manley (the only destroyer escort) now sits between the submarines and the destroyers (after Tench, before Farragut). The new US merchants and oilers sit right after the stock Cimarron, and the hospital ship after the Kent. The game lists ships in the order of unit/sea/allUnitsList.txt, so this is the only file that changed.
+
+
+v0.23.1 - Limited number of the new TTE ships (tested)
+------------------------------------------------------------
+* Each new TTE ship type now has a fixed pool of 10-30 ships (random per type, fixed in the files), for both the player and the AI. A ship that is built or sunk is gone from the pool for good. The stock merchants (c3_cargo, nippon_maru, kamogawa_maru) stay unlimited, so convoys can still form when the new pools run out.
+* Player side: text files only. Every class lists namesInClass / instancesInClass in language/english/unit/sea/<id>.txt, and one name is one ship you can own. The Manley keeps its existing 15 names.
+* AI side: the game never counted AI merchants and oilers, so CampaignAI.GetMissionPrefabs was edited in dnSpy (pickLimited). Steps and pool sizes are in Docs/ship_limits.md.
+
+
+v0.23 - TTE merchant ships, oilers and transports (tested)
+----------------------------------------------------------------
+* 23 new ships taken from the TTE mod (WOTS 1.08g7): ALL custom merchant ships in the game are made by the TTE team and are used with credit to them. They are not my own creation. The TTE mod is about 4 years old and the team is no longer active; I will remove the assets at the request of any TTE member. Ship names are TTE's. A version with the ONI 209 index names is in Extras/ONI_209_names.
+* Allied: Heywood, President Jackson, Attack Transport, Hospital Ship (Australia), Arcturus, Harris, Mount Hood, McCawley, Patapsco (oiler) and Manley (destroyer escort / transport). Japanese: Generic Maru, Type 1B, 1C, 1K, 2TL, 3A, Type A Merchant, Ural Maru, Akita Maru, Kasagisan Maru, Taihosan Maru, Hakushika Maru and Aratama Maru.
+* The AI picks a random Merchant or Oiler for its convoys, so the new ships join the random mix by themselves. The hospital ship counts as a merchant, so it can turn up in a convoy.
+* Files: allUnitsList.txt, mountData.txt (one new gun, 4in50Mark14), weapons.txt, seaUnits.txt for both campaigns, and 23 ship name files. The 3D models (about 17 MB each) are not in the repo; Extras/copy_tte_ships.bat copies them from the TTE folder. Install steps are in Docs/tte_merchants.md.
+* Supply and fuel costs in the campaign are estimates matched to similar stock ships. Kamikawa Maru and Akitsu Maru were left out on purpose (they are carriers in TTE).
+
+
+v0.22.5 - Features and change log book (tested)
+-----------------------------------------------
+* A book button at the top left of the campaign map (the fuel barrel moved down one slot). Hover: "Features and change log". Click: a popup with a scroll bar and Previous / Close / Next buttons. Page 1 is What's new, then one page per area of the mod (events, supply, repair, crews, fuel, AI, air, torpedoes, battle UI and keys). Nothing is saved (ModGuide, [GUIDE] log line, guidebook.png).
+* The text lives in the DLL (ModGuide), not in an Override file. Docs/guide_book.md has the full class and the steps to update it.
+
+
+v0.22.4 - Admiralty supply convoy event (found in testing: does NOT sail by itself yet, fix planned as v0.22.6)
+------------------------------------------------------
+* Supply convoy: every 20-30 days (random) the Admiralty sends a convoy of 3 transports, 1 oiler and 1-3 destroyers. It appears at a random spot on the northern edge of the map (one of the 40 northernmost sea waypoints) and sails to your first home port by itself. (ModConvoy, [CONVOY] log lines)
+* Cargo is random but never below 2,000 troops, 2,000 supplies, 100 engineering and 100 fuel, capped by what each ship can carry. At 12 km from the port the cargo is unloaded; ships that were sunk take their cargo down, so you only get what survives.
+* The enemy is told where the convoy is for the first 6 hours and will hunt it. It is a player-side task force because the game has no neutral side. It is not saved: after a save and reload it stays on the map as a normal task force and a new timer starts.
+* Popups with pictures for the convoy spawning, arriving and being lost (convoyspawn, convoyarrived, convoylost and the rules_convoy / rules_convoylost pictures, both campaigns). First drafted as v0.22.1.
+
+
+v0.22 - Troop supply upkeep and AI convoys (tested)
+---------------------------------------------------
+* Troops use supplies: every campaign day each location with troops (yours and the AI's) spends 3% of its troop number in supplies (the base game only spends supplies in ground fights). A garrison that cannot pay loses 2% of its troops a day, scaled by how much was missing, and never drops below 1 troop (ModSupply, [SUPPLY] log lines).
+* The location panel shows the days of supply left next to the supply number, for example 4,000 (133 d).
+* AI convoys: before anything else, the AI sends a Convoy task force to the non-home-port location with the fewest days of supply left, if under 10 days. A location is only sent one every 12 days. You can sink these convoys.
+* Numbers: weekly supplies at home ports 4,000 -> 6,000, and outposts start with 1 supply per troop (was 2) in both campaigns (setup.txt, mapLandLocations.txt).
+
+
+v0.21.5 - Rules popups updated (files only)
+-------------------------------------------
+* New rules pages Torpedoes (modrules8), Extra UI Parts (modrules9) and Extra Features (modrules10), each with a picture, placed before Testers!. Events (modrules6) now points to Torpedoes. Crews and Home Ports got a picture. Both campaigns.
+* The pages are short and only use pictures that exist in the mod.
+
+
+v0.21.4 - Task force overlay and fuel button (tested)
+-----------------------------------------------------
+* Fuel barrel button at the top left of the campaign map (or press F11) switches the overlay on and off. Hovering the button shows its own tip. Future mod buttons stack down the left side (ModTFOverlay, [TFOVERLAY]).
+* Every one of your task forces gets a small label under it: name, days of fuel left and speed in knots (orange below 5 days, red below 3).
+* The selected task force also gets a ring showing how far it sails in 1 day at its current speed, or less if it has less than a day of fuel left.
+* Nothing is saved and nothing changes in the game.
+
+
+v0.21.3 - Hit log tweaks (tested)
+---------------------------------
+* Torpedo bounces now appear in the Hit log.
+* Torpedo and bomb hit lines no longer appear in the General tab (the hit sounds still play). Dud messages still show in General (ModHitLog, MessageLog.SendMessageToLog).
+
+
+v0.21.2 - Torpedo hit angle and bouncing (tested: a Mark 13 bounced off Yorktown at 11 degrees)
+-----------------------------------------------------------------------------------------------
+* Glancing hits under 15 degrees always bounce off (fading to none at 25 degrees). The torpedo runs on and can hit another ship (Ammunition.OnTriggerEnter).
+* Mark 13 / 14 / 15 dud more on a square hit near 90 degrees (up to +25%) and less on angled hits (40% fewer under 45 degrees), like their real contact pistols (Ammunition.ExplodeAmmunition). Only active with the game's 'dud torpedoes' option on.
+* [TORPHIT] log lines.
+
+
+v0.21.1 - Historical torpedo dud rates (tested, data only)
+----------------------------------------------------------
+* Dud rates from real wartime reliability: Mark 14 and Mark 15 0.6, Mark 13 0.5, Mark 18 0.1, Type 91 0.03, Type 93 / 95 / 96 0.05, 6th Year / 8th Year 0.06 (Override/ammunition/torpedo_*.txt). Only active with the game's 'dud torpedoes' option on.
+
+
+v0.21 - Faster ship buying (i broke this when "ship building" was added, refixed it here)
+-----------------------------------
+* After ordering a ship, the name dropdown moves on to the next ship of that class that can still be bought, so you can keep pressing the buy button (CampaignInterface.AddShipToTaskForce, [BUY]).
+
+
+v0.20.9 - AI super overhaul: aimed gun runs, formations keep combing torpedoes (FAILED test) - Currently putting all air changes on hold
+--------------------------------------------------------------------------------------------
+* Fighters aim properly: fighters now fly their own gun run, aiming at where the target will be and pointing the nose up or down at it too (the game only tilts the nose by the height a plane is chasing, so diving fighters never had the target in their sights and never fired). They may dive at up to 45 degrees while lining up a shot, and fire under the game's own rule (within 5 degrees, in gun range). A pass now ends when the fighter has flown past its target, not after a fixed 8 s (which ended Wildcat dives before they reached gun range) (ModDogfight).
+* Formations keep combing torpedoes: ships turn together with a leader that is combing torpedo tracks, and hold their evasive heading for the rest of the hold time when she is done, instead of going straight back to station across the tracks (ModAAEvade).
+* Fewer [FIGHTRULE] lines.
+* FAILED the test, so aircraft work is on hold. Air combat needs a full rework once we understand how the game handles aircraft. Fixes from here go under v0.21 and up.
+
+
+v0.20.8 - AI super overhaul: fighter rules (tested)
+---------------------------------------------------
+* Aircraft before ships: fighters (both sides) sent at a ship go for enemy aircraft instead while there are any in sight within 20 km, and fighters already strafing switch to air targets when they turn up. The fighter you are commanding still strafes when you order it to (ModFighterRules, EngagementAI.AttackUnit, UnitAIAir.StrafeApproach).
+* At most 4 fighters on one plane: if a target already has 4 attackers, the next fighter takes the nearest other enemy plane (EngagementAI.GetBestDogfightTarget).
+* [FIGHTRULE] log lines.
+
+
+v0.20.7 - AI super overhaul: Wildcats attack properly (tested)
+--------------------------------------------------------------
+* US fighters make their passes again: a gun run could end the moment it started if the enemy was behind the fighter (always the case after a zoom climb), so Wildcats kept climbing and never attacked. A run now only ends after the target has been in front of the fighter, gives up after 20 s if it never was, and zoom climbs stop 1 km above the target (ModDogfight).
+* The 600 m torpedo drop check now only works on the run in, and the astern / ahead decision no longer flickers at the edge (ModTorpRun).
+
+
+v0.20.6 - AI super overhaul: fighters spread out, stuck ships separate (tested, improved in v0.20.7)
+----------------------------------------------------------------------------------------------------
+* Fighters spread out: between passes, and every 12 s in a turning fight, fighters pick their target again. They no longer all chase the first enemy plane that was spotted (in the test all 24 escort Wildcats went for one Zero) (ModDogfight).
+* Stuck ships separate properly: only one of two stuck ships backs off (the one further astern, or the smaller one if they are alongside); the other goes ahead, and then both turn away from each other before going back to their orders (ModAAEvade).
+* [DOGFIGHT] lines now include each plane's id and the battle time.
+
+
+v0.20.5 - AI super overhaul: torpedo bomber runs (tested)
+---------------------------------------------------------
+* No more torpedoes dropped on top of ships: a torpedo is never dropped closer than 600 m to its target. From dead astern, the game's aim could put the drop point right on top of a fast ship (ModTorpRun, UnitAIAir.TorpedoApproach).
+* Getting ahead: torpedo flights that find themselves astern of their target fly round to get ahead of her beam before going in, instead of chasing her from behind. Only if they can't get ahead within 2 minutes do they attack from astern (UnitAIAir.ModTorpedoSetup).
+* [TORPRUN] log lines. The [TORP] line that was written every tick (about 20,000 lines per battle) is removed; the 5-second [TORP] status line stays.
+
+
+v0.20.4 - AI super overhaul: fighter manoeuvres (tested, improved in v0.20.6)
+-----------------------------------------------------------------------------
+* US fighters fly boom and zoom: climb above the enemy, dive in for one pass, zoom climb away, set up again. They don't turn-fight Zeros. Under attack they break and dive away, and a wingman nearby turns in on the attacker (the Thach Weave).
+* Zeros turn-fight: they stay in the turning fight, pull up into a high yo-yo instead of overshooting, and make hard climbing break turns when attacked. Their controls get heavy at high speed, so a diving Wildcat can escape.
+* Against bombers both sides make slashing passes from above and to the side, then pull away from the gunners.
+* Energy: diving builds speed past level top speed and climbing costs it, plus a small wobble so planes don't fly perfect lines (ModDogfight, UnitAIAir.DogfightApproach).
+* [DOGFIGHT] log lines.
+
+
+v0.20.3 - AI super overhaul: realistic air attack heights and bomb aim (tested)
+-------------------------------------------------------------------------------
+* Historical heights: aircraft enter battle at the heights real ones flew: fighters 4,500-5,500 m, dive bombers 4,000-4,500 m (push over about 2.6 km out, release 600-700 m), torpedo bombers 800-1,200 m, Bettys 4,000-5,000 m, B-17s 6,000-7,000 m. Level bombers bomb from that height. The altitude slider for your aircraft now goes up to 8,000 m (was 3,330 m) (ModAirRealism, EngagementData.CreateUnitGroup, CombatInterface.SetUnitNavigationPanel, dive bomber data files).
+* Bomb aim error: every bomb now leaves the aircraft slightly off the aim instead of perfectly on it. The spread depends on how it was dropped (dive, high level, low level), the crews' nation and year (elite 1942 Japanese crews, then worse; US crews improving), and whether the ship was turning hard. Dive bombing hits drop from about 90% to historical levels, and high level bombing rarely hits a ship at sea (AmmunitionMoveBallistic.InitialiseBallistics).
+* Ships see dive bombers coming from 4.5 km (was 3 km).
+* [BOMBAIM] log line for every bomb.
+
+
+v0.20.2 - AI super overhaul: anti-air manoeuvres, fixes (tested)
+----------------------------------------------------------------
+* Stuck ships back off first: a ship pressed against another ship's hull and barely moving backs straight off for 10 seconds, then goes ahead at her old speed. Works for every ship.
+* Evasion keeps going through the game's short collision-avoidance turns instead of being cancelled, and formations turn together with their leader so ships don't turn into each other.
+* Earlier warning: torpedo planes are noticed from 4 km once they head in (2.5 km whatever they do), and dive bombers from 3 km.
+* Combing torpedo tracks: a ship that sees enemy torpedoes within 1 km that will pass close turns to run parallel to them. This comes first.
+* Rudder reversal against dive bombers: when a bomber pushes over, the ship reverses her rudder so the bomber's aim (which allows for her turn) falls where she would have been, and again for the next bomber.
+* More [AAEVADE] log lines.
+
+
+v0.20.1 - AI super overhaul: anti-air manoeuvres (tested, improved in v0.20.2)
+------------------------------------------------------------------------------
+* Ships dodge air attacks: yours and the AI's now take evasive action when aircraft start their run on them, before anything is released. Against torpedo bombers (and low-level bombers) inside 3 km they go to full speed and turn bow or stern on to comb the torpedoes, holding that heading while the torpedoes run. Against dive bombers about to push over, and high level bombers inside 4 km, they go to full speed and turn hard. Your ships only do this with their evasion toggle on, and collision avoidance comes first. Afterwards each ship goes back to her orders, formation or manual settings (ModAAEvade, UnitAI.FixedUpdate, UnitAI.UpdateUnitAI).
+* [AAEVADE] log lines.
+
+
+v0.20 - AI super overhaul: stuck attackers (tested)
+---------------------------------------------------
+* AI ships no longer circle instead of attacking: an AI leader (or a ship on her own) that is ordered to attack but hasn't closed in after a minute, for example because she keeps turning round a waypoint she can't reach, drops her waypoints and steers straight at her target for 3 minutes. Her formation follows her. She never steers straight into land or shallows: if the way is blocked, the stuck waypoint is dropped so the game plans a new path round it (ModAIMove, UnitAISea.AttackUnit).
+* [AIMOVE] log lines whenever a ship is caught.
+
+
+v0.19.5 - UI Overhaul: minimap upgrades (tested)
+------------------------------------------------
+* Torpedo tracks: a fading track behind each torpedo shown on the map, and a faint line ahead to the end of its run (blue yours, red enemy).
+* Smoke screens: grey patches on the map where smoke is laid, growing and drifting with it.
+* Rings: the current ship's lookout range (white) and surface radar range when the radar is on (green), for the current weather and light.
+* Last seen: a faded red X with the name and minutes since an enemy ship was last seen, kept for up to 20 minutes.
+* Each layer has an on/off button at the bottom right, just above the map toolbar, remembered between battles. F11 switches them all (ModMinimap, [MINIMAP] log lines).
+
+
+v0.19.4 - UI Overhaul: group numbers on the roster (tested)
+-----------------------------------------------------------
+* Ships in a saved group (Ctrl+Shift+1-5) show the group number in yellow on their roster entry, for example "1" or "1 3" for a ship in two groups. The game's formation colours are unchanged (ModGroups.UpdateBadges).
+
+
+v0.19.3 - UI Overhaul: faster group orders (tested)
+---------------------------------------------------
+* Selection keys in battle: Ctrl+A ticks all your ships, Ctrl+D destroyers, Ctrl+C cruisers, Ctrl+B battleships and carriers. Ctrl+Shift+1-5 saves the ticked ships as a group, and Ctrl+1-5 selects it again. The game's own keys are ignored while Ctrl is held (ModGroups, InputManager.Update).
+* Group movement: the speed slider, the turn slider and map waypoints now go to every ticked ship, not just the one you're looking at. Waypoints keep the group's shape. Ships keeping station in a formation follow their leader as before (CombatInterface.SpeedSlider, TurnSlider, ClickedMap, SelectCurrentUnit).
+* [GROUPS] log lines.
+
+
+v0.19.2 - UI Overhaul: Crew tab and cleaner hit log (tested)
+------------------------------------------------------------
+* Crew tab on the battle message log: casualties for each of your ships (one line per ship once the hits stop), short-handed warnings, lost damage control parties, ships starting short-handed, and the survivor and rescue messages (moved from General). F2 now steps through General, Hit log and Crew (ModLogTabs, ModCrew.FlushLosses).
+* Cleaner hit log: lines now read attacker, action, target, result, for example "Monaghan hit Dale with an HE shell: armour held, fire, flooding". Damage numbers are gone from the panel (still in the [HITLOG] lines in output_log.txt).
+
+
+v0.19.1 - UI Overhaul: message log tabs (tested)
+------------------------------------------------
+* Tabs on the battle message log: two tabs sit on the edge of the game's message log. General shows the game's own messages as before, and Hit log shows the hit log, which now lives there instead of in its own panel. F2 switches between them (ModLogTabs).
+* A closed tab shows how many new lines arrived since you last looked, for example "Hit log (3)".
+* The hit log keeps the last 25 hits, uses the game's own message timestamp, and is cleared at the start of each battle.
+* [LOGTABS] log lines when the tabs are added and when you switch tab.
+
+
+v0.19 - UI Overhaul: hit log (tested)
+-------------------------------------
+* Hit log panel (top right in battle, F2 to show or hide; moved into a message log tab in v0.19.1): the last 9 hits on ships, with the target, the weapon (AP or HE shell, torpedo, bomb, depth charge), who fired, compartments damaged, total damage, destroyed compartments, fires and flooding. It shows "armour held" when a hit does little, and a SINKING line when a ship goes down. Your ships are blue and enemy ships red. Damage, destroyed compartments, fire, flooding and armour held each have their own colour, and unidentified enemies stay unnamed (ModHitLog, DamageableSea.ApplyDamage, ApplyDamageToCell).
+* [HITLOG] log lines with the exact numbers.
+
+
+v0.18.5 - Crews: short-handed from 80% (tested)
+-----------------------------------------------
+* A ship is now short-handed below 80% of her crew (was 90%). Above that she works normally and keeps all her damage control parties. At half crew the slowdown is the same as before (about 30%) (ModCrew.ShortCrewStart, ShortCrewFactor, Parties).
+* The hover panel's Men line turns orange below 80%, and the Crews and Home Ports rules page is updated (MobileMapObject.AppendShipInfoFromKey, modrules5.txt).
+
+
+v0.18.4 - Crews: rescue missions on the campaign map (tested)
+-------------------------------------------------------------
+* Survivors left behind after a battle stay on the campaign map as a marker for 24 hours instead of being lost (orange for yours, red for the enemy's).
+* Random events: every 3 to 7 days (random each time), a ship is reported sunk somewhere at sea, with its survivors marked on the map.
+* Rescue: any task force within 12 km picks them up. Your own men join short-handed crews with no loss of experience, and spare men give 1 command point per 20. Enemy survivors become prisoners for 1 command point per 10 (CampaignManager.CheckHourly, ModCampaignRescue).
+* Survivors lose about 4% an hour, and markers are saved with the campaign (CampaignData.modSurvivors). They are redrawn as soon as a save loads (CampaignInterface.Update).
+* The campaign message box widens to fit long messages and shrinks back for short ones.
+* Markers use a lifebuoy icon (interface/images/map/survivors.png), tinted orange or red. Hovering shows the survivors left and hours remaining.
+* F4 (testers): creates a survivor event straight away on the campaign map.
+* New campaign messages (campaign_message.txt) and [RESCUE] log lines.
+
+
+v0.18.3 - Crews: rescue survivors in battle (tested)
+----------------------------------------------------
+* Survivors in the water: sinking ships leave survivors where they went down (60% of the men aboard, 25% after a magazine explosion, 90% when scuttled), announced in the message log (DamageableSea.SinkShip, ModCrew.OnShipSunk).
+* Rescue: your ships within 300 m going 5 knots or slower pick up 4 men a second. Your own men refill the crew without costing experience, and spare men join other short ships in the task force after the battle (ModRescue).
+* Prisoners: enemy survivors picked up give 1 command point per 10 prisoners after the battle.
+* Survivors die off at about 3% a minute and are lost when the battle ends.
+* New message-log lines (message_log.txt), in orange for survivors and green for rescues, and [RESCUE] log lines.
+* Rules popups updated: new Veteran Crews page (real fights, experience points, losing progress, port recruits), Crews and Home Ports (crew size, casualties, short-handed ships) and a new Events page (survivors in the water). Testers! moves to the last page (modrules4-modrules7, both campaigns).
+
+
+v0.18.2 - Crews: short-crew effects (tested)
+--------------------------------------------
+* Short crews work slower: below 90% crew a ship loses efficiency (-30% at half crew), so reloads and damage control take longer (Utilities.SetSeaEfficiency).
+* Fewer damage control parties: parties scale with the crew left, with a minimum of 1 (DamageControlInterface.SelectCell, UpdateDamageControlPartiesLeft, DamageableSea.CheckAutoDamageControl).
+* Both effects update live as men are lost in battle, and apply to enemy ships too.
+* New [CREW] lines for short-handed ships and party changes.
+
+
+v0.18.1 - Crews: crew numbers and losses (tested)
+-------------------------------------------------
+* Every ship has a crew: its historical crew size, shown as a new Men line on the hover panel. It turns orange below 90% and red below 50% (ModCrew, MobileMapObject.AppendShipInfoFromKey).
+* Battle casualties: destroyed compartments, new fires and flooding kill men, with more for magazines, the bridge, engine rooms and turrets. A ship afloat keeps at least 15% of its crew (DamageableSea.DestroyCell, SetFire, FloodCompartment).
+* Experience points: veterancy counts in points (+1 per real fight) with the same ranks. Crew losses take away the same share of progress towards the next rank, but never a rank.
+* Port recruits: Rearm at a port refills the crew. It resets progress towards the next rank, or drops a rank if there was no progress. Top-ups of 3% or less are free (ResupplyShips.ResetAircraft).
+* Old saves keep their veterancy, and every ship starts at full crew.
+* [CREW] log lines for crew at battle start, each loss, battle totals and port top-ups.
+
+
+v0.18 - Crews: veterancy only from real fights (tested)
+-------------------------------------------------------
+* No more free veterancy: a task force only gains veterancy if an enemy ship or aircraft was in the battle and at least one enemy was sunk or shot down. Before, ending any battle gave every surviving ship a battle of experience, even with no enemy there (MobileMapObject.AwardVeterancy).
+* Each player task force writes a [VET] line to output_log.txt after a battle.
+
+
+v0.17.12 - Campaign clock fix (tested)
+--------------------------------------
+* Daily refreshes happen at 12:00 again: supplies, command points, repairs and the other daily, hourly and weekly campaign updates used their own counters, which ran fast at slow time speeds (about 28 minutes a day at x1), so the refresh came earlier every day while the day counter stayed at 12:00. They now follow the campaign clock, and existing saves are put right when loaded (ModClock, CampaignManager.FixedUpdate).
+* [CLOCK] log lines.
+
+
+v0.17.11 - Repair rework (tested)
+---------------------------------
+* New damage control colours: yellow light damage (60%+), orange heavy damage but working, red knocked out (fixable at sea), black destroyed or needs a port, grey patched as far as damage control can go (working, needs a port) (DamageControlInterface.UpdateCellIcons, ModRepair.SetStatus).
+* Engine rooms can always be repaired at sea, also when knocked out in an earlier battle, but only back to 50% health and half power until a port repair (DamageableSea.RepairCompartment, CheckUpdateCellIcons, GetSpeedPenalty).
+* [REPAIR] log lines.
+
+
+v0.17.10 - Torpedo break-back crash fix (tested)
+------------------------------------------------
+* Torpedoes no longer fail to do damage: in the vanilla game, a torpedo whose first compartment hit was a deck or superstructure compartment crashed the break-back check (IndexOutOfRangeException in DamageableSea.ApplyDamage), and the torpedo did no damage at all. It now skips the break-back roll in that case and does its normal damage.
+
+
+v0.17.9 - Developer view key (tested)
+-------------------------------------
+* The testers' developer view moved from F10 to F3 (EngagementManager.Update, panel title in ObjectPoolManager.OnGUI). F10 is the game's Hide UI key, so it also hid the interface. The Testers! rules page is updated (modrules5.txt).
+
+
+v0.17.8 - Retreat fix (tested)
+------------------------------
+* Retreating AI ships turn away from you: a vanilla bug left the north-south part of the "average player position" undivided, so retreating ships could steer straight into your line (EngagementAI.GetAveragePositionKnownPlayerSea).
+* [RETREAT] log lines show what each retreat steers away from.
+
+
+v0.17.7 - Submarine ambush fix (tested)
+---------------------------------------
+* Enemy subs no longer spawn right next to your fleet: when the chosen ambush spot was land, shallow water or past the edge of the battle area, the sub wasn't moved and stayed about 1-1.5 km from your ships. Now it tries the other side and then closer spots until it finds open water (EngagementData.PutSubsIntoPosition).
+* Enemy subs now wait 5-8 km ahead and 1-2.5 km to the side, so your fleet passes within their 2.5 km ambush trigger (config.txt enemySubAmbushOffset [5000,8000,1000,2500], was [10000,16000,4000,8000]).
+* [SUBAMBUSH] log lines show where each sub was placed.
+
+
+v0.17.6 - Damage control priorities (tested)
+--------------------------------------------
+* Auto damage control picks the most urgent job instead of a random one in each group. Priority order: magazine fires, then flooding when the ship is near sinking, then fires next to magazines, by the torpedoes, in the hangar, in machinery, in command spaces and by the guns, then other fires and flooding, then knocked-out machinery, guns and fire control, then structural damage, and rebuilding last (DamageableSea.GetCoordsToRepair).
+* Each dispatch writes a [DC] line to output_log.txt.
+
+
+v0.17.5 - Balance and QOL
+-------------------------
+* Fires under control don't spread (tested): a fire with a damage control party fighting it can no longer spread to the compartments around it. Before, the party only stopped it burning its own compartment (DamageableSea.SpreadFires).
+* Hold to add aircraft (tested): in Create New Air, holding + or - keeps changing the count until you let go, stopping at the most you can launch or at 0. A normal click still changes it by one (ModAirHold, CampaignInterface.OpenCreateAirStrike).
+* Zero rebalance (tested): Zeros were losing about 20 to 1 against Wildcats. Zero toughness 18 -> 24, .50 hits 3 -> 2.5 (a Wildcat wing of three .50s now does 7.5 instead of 9), and 20 mm hits 6.5 -> 8. Head to head, Zeros and Wildcats now kill each other at about the same rate (DamageableAir).
+* US bombers less tough, Zero nose guns harder-hitting (tested): a 72-plane US strike lost only 3 aircraft to 24 Zeros. Dauntless 36 -> 30, Helldiver 42 -> 36, Avenger 54 -> 44, Devastator 30 -> 26, and the Zero's fast-firing 7.7 mm nose guns 1 -> 1.5 per hit (DamageableAir).
+* Fighters spread out (tested): once 2 fighters are on a target, others look elsewhere unless every other target is much further away. Before, CAP could pile 5+ fighters onto one bomber (EngagementAI.GetBestDogfightTarget).
+* Carrier CAP follows its carrier (tested): AI carrier fighter cover now escorts its own task force on the campaign map instead of circling the spot it launched from, so it is overhead when a strike arrives (CampaignAI.OnRequestAirCover). Writes a [CAPFOLLOW] line to output_log.txt.
+* Torpedo bombers don't give up when they lose sight of the target: they fly to where the ship was last seen and circle there. Flights on auto switch to another ship they can see. Before, they flew off to an old aim point without dropping (UnitAIAir.ModTorpedoSetup).
+
+
+v0.17.4 - Balanced starting forces (tested)
+-------------------------------------------
+* Both sides start with the same forces in both campaigns: a carrier task force (1 carrier, 1 battleship, 2 cruisers, 5 destroyers), a cruiser task force (1 heavy cruiser, 1 light cruiser, 3 destroyers), 3 destroyer patrols of 2-4 ships, and 2-3 single submarines near the middle of the map.
+* Your starting ships are the historical August 1942 ones: Enterprise's group and San Francisco's cruisers for the US, Shokaku's group and Chokai's cruisers for Japan. Your destroyer patrols are a random mix (CampaignAI.CreateStandingMissions).
+* AI carrier and cruiser task forces no longer respawn for free once sunk. Destroyer and submarine patrols still do (sea_missions.txt).
+* Each of your starting groups writes a [STARTFLEET] line to output_log.txt.
+* Needs a new campaign.
+
+
+v0.17.3 - Air Rework (tested)
+-----------------------------
+* Toughness instead of 3 hits: every aircraft type now has its own toughness, based on its real size, structure, armour plate and self-sealing tanks. It smokes at 1/3 damage, smokes twice at 2/3, and goes down at full damage. Before, every plane went down on its 3rd hit, from a Zero to a B-17 (DamageableAir.ApplySmallCalibreDamageToAir).
+* Real gun calibres: 7.7 mm / .30 hits do 1, .50 hits do 3 and 20 mm hits do 6.5. Each bullet now does its damage once, instead of counting as several hits (AAAParticleCollisions.OnParticleCollision).
+* Zeros no longer shred everything: the Zero's guns used to count each bullet as up to 2 hits, against 1 for a whole wing of Wildcat .50s. Now a Wildcat's 3 guns per wing hit far harder, and US planes with armour and self-sealing tanks take a lot of 7.7 mm punishment. Zeros still burn after a few hits (WeaponParticle.Start).
+* Armour depends on calibre: pilot armour stops most rifle-calibre hits, some .50s and few cannon shells.
+* Rear gunners by calibre: 7.7 mm on Japanese bombers, twin .30 on Dauntless and Helldiver, .50 on B-17 and B-25 (WeaponAAA.InitialiseAAA).
+* Ship light AA does 7 per hit, so it stays about as deadly to Japanese aircraft and a bit less to the tougher US types.
+* Heavy AA: a burst within 10 m does 40 damage instead of an instant kill. It still kills Japanese aircraft, Wildcats and Dauntlesses, but Hellcats, Avengers and bombers can survive it (DamageableAir.ApplyDamageToAIR).
+* Bombs and torpedoes were checked against their real explosive charges and left unchanged.
+* Bigger air battles: up to 72 aircraft per side in a battle at once (was 48) (config.txt maxAirPerSide).
+* Debug log lines ([AIRDMG]) show each plane's guns, toughness and armour when it spawns, and every smoke and kill.
+
+
+v0.17.2 - Fighter AI: escorts and CAP (tested)
+----------------------------------------------
+* Escorts protect their bombers: while their side still has loaded bombers, fighters go for enemy fighters first, above all those attacking their bombers. They mostly leave enemy bombers alone, and lose interest in planes more than 5 km from the bombers they protect (EngagementAI.GetBestDogfightTarget).
+* Defending fighters (CAP) go for the bombers: loaded torpedo bombers first, then dive bombers, then level bombers. Planes within 10 km of their own ships come first, and bombers that have already dropped are mostly ignored.
+* Self-defence: a fighter strongly prefers a plane that is attacking it.
+* Spreading out: each fighter already on a target makes it less attractive to the next one, so fighters split up instead of piling on. A fighter slightly prefers its current target, so it doesn't keep switching.
+* No more dogpile: when AI escorts spot one of your planes, each AI fighter now picks its own target, instead of every AI fighter in the battle chasing the one plane spotted (EngagementAI.OnDetectUnit).
+* Applies to both sides, including your fighters on auto.
+* Every pick writes a [FIGHTER] line to output_log.txt.
+
+
+v0.17.1 - Air strike AI
+-----------------------
+* Real dive bombing: dive bombers enter battle at about 2,000-2,200 m and push over 1,100-1,200 m from the target, for a steep dive with release at 450-550 m (data files plus EngagementData.CreateUnitGroup).
+* Auto attack: your bomber flights with no orders pick their own ship and attack. Manual orders and waypoints always win (UnitAIAir.ModCheckAutoStrike).
+* Smarter target choice (both sides): carriers first, then battleships and cruisers. Flights spread over the big ships instead of all piling onto one, torpedo bombers avoid destroyers, and sinking ships are ignored (EngagementAI.ModPickStrikeTarget).
+* Break off: a flight whose target is already sinking switches ship before it commits to its run.
+* Hammer and anvil: torpedo flights on the same ship split to both bows. The far-side flight goes round well ahead of the ship, and the flights wait for each other (up to 300 s) before all turning in together (UnitAIAir.ModTorpedoSetup).
+* Units fix: battle distances are in 10 m game units. The formation break (1,200 m), torpedo grouping (3 km), sub ambush (2.5 km), sub return (600 m) and minimum torpedo distance (150 m) now work at the intended distances, and F10 shows real metres.
+* Debug log lines ([AIRAI], [TORP]) are written to output_log.txt and stay in the release.
+* Polish: torpedo flights only start waiting within 5 km of their set-up point and remember their assigned side, so a lost flight no longer leaves its partner waiting the full 300 s. The [TORP] log is limited to one line every 5 seconds.
+
+
+v0.17 - Smarter AI: weighs the odds
+-----------------------------------
+* Before chasing one of your task forces, an AI force compares strength: warship tonnage, with carriers counted x1.5 and damaged ships counted less (CampaignAI.WarshipTonnage, ShouldChaseSpotted).
+* It counts its own strength plus every other aggressive AI force within 200 km of your fleet, since they converge and join the same battle.
+* It only attacks if that combined strength is at least 75% of yours; otherwise it carries on with its mission (CampaignAI.GetNewSpottedWaypoint).
+* Merchants, oilers and submarines don't count as strength, so the AI still hunts lone supply ships.
+
+
+v0.16 - Faster battle time
+--------------------------
+* The battle speed button cycles x1 > x2 > x5 > x10 (was x1 / x5). The top speed comes from config.txt timeCompressionFactor (now 10) (CombatInterface.SetTimeCompression).
+* Speeding up is still blocked during an incoming air attack.
+* The physics step stays at the x5 size, so hits stay accurate at x10.
+
+
+v0.15 - Lasting damage
+----------------------
+* Auto damage control skips equipment that needs a port repair, and rebuilds destroyed hull compartments once nothing else needs doing (DamageableSea.GetCoordsToRepair).
+* Knocked-out equipment stays broken between battles: guns, engine rooms, propellers and other equipment that end a battle knocked out (red) stay offline until the ship is repaired at a port. Before, the game switched them back on for free after every battle (EngagementData.GetCellVariables).
+* Damage parties can't bring that carried-over equipment back online at sea. Equipment knocked out in the new battle can still be repaired (DamageableSea.RepairCompartment, GetRepairTime).
+* Knocked-out engine rooms and propellers also keep the task force slow on the campaign map.
+* Applies to the AI too.
+
+
+v0.14 - Night fighting (pending test)
+-------------------------------------
+* Fires act as a detection beacon: a burning ship is much easier to spot at night (x1.45 with one fire, up to x1.8), and slightly easier by day from the smoke (x1.1). This works both ways (SensorManager.GetVisibilityModifier).
+* Darker nights: night visibility is 25% of daylight (was 50%), so lookouts see about 7 km instead of 15 km. Dawn and dusk are slightly darker (config.txt visibilityByHour).
+* Light matters: ships lit by star shells or searchlights are seen 80% further (was 20%).
+* Closer night encounters: night battles start at up to 10 km (was 15) (config.txt nightEncounterMaxRange).
+* Radar is unchanged, so radar-equipped ships gain a real night advantage.
+
+
+v0.13 - Air strike packages
+---------------------------
+* One wave: a strike's flights spread out side by side instead of trailing behind each other, so the whole strike arrives together (EngagementData.BreakUpAirGroup).
+* Mixed strike packages: Create New Air counters start at 0. Every type you raise with + launches when you press Done, and the faster groups escort the slowest so the package flies as one. The highlighted type uses the chosen payload; the others use their standard load.
+
+
+v0.12 - AI fleets hold formation in battle
+------------------------------------------
+* AI surface ships keep their formation place while attacking, instead of each charging its own target. The leader steers, the group moves as one, and guns and torpedoes fire as normal (UnitAISea.AttackUnit, KeepStationInBattle).
+* Destroyers still break off for torpedo runs, then rejoin.
+* Formation breaks into a melee when an enemy is within 1,200 m, or when the leader is sunk or retreating (the group forms up on the game's new leader).
+
+
+v0.11 - Bigger air strikes and multi task force battles
+-------------------------------------------------------
+* Up to 24 aircraft per launch (was 12), for you and the AI's carrier strikes (config.txt maxInFlight).
+* Up to 48 aircraft per side in a battle at once (was 24) (config.txt maxAirPerSide).
+* Multi task force battles (pincers): every task force from either side within 50 km joins the battle (before: only one surface force per side), up to 40 ships per side, each starting from its real direction (CampaignManager.GetValidNeighbouringMobiles).
+* No surface cooldown after battle: setup.txt postEngageSeaCooldown 1800 -> 0, so forces can fight or reinforce again straight away.
+
+
+v0.10 - Large task forces and new formations
+--------------------------------------------
+* Task forces can hold up to 20 ships (was 10), for you and the AI (setup.txt maxShipsInTaskForce).
+* All six formations now have places for 25 ships. The first 10 places are unchanged, so ships 11+ no longer start stacked on the leader.
+* Three new formations:
+  * Battle Line + Screen: capital ships in line, destroyer columns on both flanks.
+  * Cruising Disposition: carriers or battleships in the middle, two rings of escorts.
+  * Convoy Box: transports and oilers in a 3x3 box, escorts round the outside.
+* Bigger AI fleets in both campaigns:
+  * Surface Intercept and Bombard groups: 14-16 ships (was 6-9).
+  * Carrier groups: 16-18 ships (was 9-10).
+  * Invasions and convoys: 14-15 ships (same transports, more escorts).
+  * Large fast troop runs: 14 ships (was 10).
+* AI fleets use the formation that suits them and list their ships in formation order.
+
+
+v0.9 - Combat damage package
+----------------------------
+* Damaged ships slow their task force on the campaign map. Destroyed propellers or engine rooms reduce a ship's speed (never below 25%), and the force moves at its slowest ship's speed. It is recalculated after every battle and when ships join or leave a force.
+* List and capsize: uneven flooding makes a ship list. At 60% of its sinking limit it capsizes and sinks.
+* Automatic counter-flooding with a safety net: the crew floods a compartment on the high side to level the ship. It never takes total flooding above 80% of the sinking limit, and pumps its own water out if the list swings back. AI ships always; your ships when Auto damage control is on.
+* Water and fire: a flooded compartment can't catch fire, and flooding a burning compartment puts the fire out.
+* Fire no longer floods the compartment it is burning in.
+* Bigger fires spread faster: each burning fire adds 10% to the spread chance, up to triple.
+* Destroyed hull compartments can be rebuilt at sea: 10 minutes on a destroyer up to 30 minutes on a battleship. Destroyed deck items (guns, AA, bridge) stay destroyed until port repair, as a balance choice.
+* Harder damage control (config): fires burn hotter (15 per tick instead of 10), fires and flooding take 180 s instead of 120 s to fight, and both spread a little more easily.
+
+
+v0.8 - Torpedoes and fuel warnings
+----------------------------------
+* Torpedo coordination: AI destroyers and cruisers within 3 km of each other hold fire and launch together, so their spreads arrive at the same time. A ship fires anyway after 40 seconds, or when its target comes within 60% of torpedo range.
+* Second torpedo salvo: AI surface ships can attack with torpedoes again once their tubes are half reloaded (before, they only ever fired once per battle).
+* Type 93 "Long Lance": decisive against destroyers. It no longer breaks a ship's back above about 5,150 t (config torpBreakBackValues).
+* LOW / EMPTY fuel flags on the task force hover panel.
+
+
+v0.7 - Smarter AI submarines
+----------------------------
+* Subs ambush from 1,000-1,600 m ahead and 400-800 m to the side (was 150-250 m).
+* The ambush starts when one of your surface ships comes within 2,500 m.
+* Split salvos: a sub divides its ready tubes between up to 3 targets, most valuable first (for example 3 / 2 / 1).
+* Hit, run and reload: after firing, a sub slips away quietly for 2 minutes, then reloads. After 4 minutes, with tubes ready and no ship within 600 m, it comes back for another attack.
+* A damaged sub never comes back.
+
+
+v0.6 - Rules popups and tester tools
+------------------------------------
+* Rules popups: 5 pages with custom images in both campaigns (Ship Orders, Shipyards and Economy, Repair and Fuel, Veteran Crews and Home Ports, Testers!).
+* F9 - Reveal enemies (testers): shows every enemy task force on the campaign map. It only changes what you see.
+* F10 - Developer view (testers): a battle panel listing each enemy ship's distance, depth, speed in real knots, and AI action. Press Tab to bring back the interface.
+
+
+v0.5 - Strategic AI v1
+----------------------
+* More persistent pursuit: the AI tries to intercept spotted fleets on 50% of its decisions (was 25%).
+* Supply-line raids: the AI hunts single spotted merchants and oilers (before, only groups of more than two).
+* Smarter bombardment: 60% of the time the AI bombards your highest-level port or airfield instead of a random one.
+
+
+v0.4 - Veteran crews and home ports
+-----------------------------------
+* Veteran crews: ships gain experience for each battle survived.
+  * Green: 0-1 battles.
+  * Trained: 2-4 battles, +4% efficiency.
+  * Veteran: 5-8 battles, +8% efficiency.
+  * Elite: 9 or more battles, +12% efficiency.
+* Higher efficiency means faster reloads and damage control. Promotions are announced on the map, and a sunk ship loses its experience.
+* Hover panel: shows each ship's crew rank and fuel.
+* Home ports: a ship belongs to the shipyard that ordered it and can only be recruited there. Disbanding at a shipyard makes that its new home port, and a captured home port blocks recruiting until you retake it.
+
+
+v0.3 - Repair and fuel
+----------------------
+* Repair cost: releasing a damaged ship at a port costs command points in proportion to the damage, up to half the ship's cost. The full refund still arrives when repairs finish, and higher-level ports repair faster.
+* Fuel system:
+  * Every task force carries 10 days of fuel. It drains while sailing, and an empty force can only crawl.
+  * The Rearm order refuels at a port (level 3 or higher, or a home port) from the port's stockpile.
+  * It also refuels at sea from an oiler or supply ship carrying fuel, in calm weather during operating hours.
+  * Only home ports start with fuel.
+
+
+v0.2 - Shipyards and economy
+----------------------------
+* Only the main base (Rabaul for Japan) can build ships.
+* Port level limits ship size:
+  * Destroyers: level 1.
+  * Light cruisers: level 2.
+  * Heavy cruisers: level 3.
+  * Battleships, battlecruisers and light carriers: level 4.
+  * Fleet carriers: level 5.
+* Command points:
+  * At least 75 a week, plus points for every location, port rank and airfield rank held.
+  * Sinking an enemy ship pays half its cost.
+  * Battleships and carriers cost twice as much.
+
+
+v0.1 - Ship ordering
+--------------------
+* Every ship (apart from the starting task forces) must be ordered before use.
+* Deposits: ordering costs a 50% deposit in command points, which isn't refunded.
+* Build times:
+  * Destroyers: 7 days.
+  * Submarines: 10 days.
+  * Light cruisers: 14 days.
+  * Heavy cruisers: 18 days.
+  * Light carriers: 30 days.
+  * Battleships: 35 days.
+  * Fleet carriers: 42 days.
+* Ships that did not exist yet arrive on their historical date.
+* Delivered ships wait at the ordering shipyard; recruit them there for their full cost.
+* Pending orders are listed in the Campaign Summary (F5), ORDERS & REPAIR tab.
+* One combined message lists all ships delivered on the same day.
+
+
+Before a public release: remove the Testers! popup page and the F9 / F3 / F4 keys.

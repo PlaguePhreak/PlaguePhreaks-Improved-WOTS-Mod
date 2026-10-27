@@ -1,7 +1,7 @@
 War on the Sea Mod - Change Log
 ================================
 
-Current version: v0.28.11 (27 Oct 2026). Air combat update, for testers.
+Current version: v0.28.13 (27 Oct 2026). Air combat and auto resolve update, for testers.
 Built for War on the Sea v1.09a.
 Changes are made in Assembly-CSharp.dll (dnSpy) and in the game's text files (Override folder).
 
@@ -11,14 +11,13 @@ The mod is in alpha, so every version is 0.x. Version numbers group the work in 
 Numbering: a major change gets a whole number (v0.25 = new map locations); the minor changes under it are v0.25.1, v0.25.2 and so on. What used to be called v0.24.3 to v0.24.6 is now v0.25 to v0.25.3.
 NOTE: the in-game logbook (ModGuide class, What's New page) still uses the old numbers and must be updated to match.
 
-v0.28.13 - Air auto resolve pulls in nearby air groups (pending test)
+v0.28.13 - Air auto resolve pulls in nearby air groups (in this build)
 ---------------------------------------------------------------------
 * The auto resolve window now gathers the fight like a real engagement: every other air group within 50 km of our engaged group joins, both sides, up to the game's air limit per side.
 * Unspotted enemy groups show as "+ N unknown aircraft" but still count in the points and the dice. Losses are written back to every group that took part.
-* The shot-down die has a floor of 1 for an armed side and the winner always loses at least one plane when anything was shot down against it (a 0/36 roll gave "the enemy lost nothing").
 * Found from a test log: a 24-Sam auto resolve left 8, and a second 12-Sam group on the same spot joined the real fight, giving 20. Now the window would show "24 x A7M2 Sam + 12 unknown aircraft".
 
-v0.28.12 - Air auto resolve: points and dice (pending test)
+v0.28.12 - Air auto resolve: points and dice (in this build)
 ------------------------------------------------------------
 * Fix: "nobody is armed" for two fighter groups (planes were only marked alive inside the fight roll).
 * New model: each side gets points (gun damage + toughness x armour per plane, summed, / 6) and a multiplier 1 + points/1000. Resolve rolls Attacked (1-6), Defended (1-6) and Shot down (0 to the side's planes, pulled toward the better points) for each side; score = sum x multiplier, higher wins; all planes shot down = immediate loss. Loser loses the planes shot down against it, the winner 1/2 to 3/4 of them.

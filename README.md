@@ -3,7 +3,7 @@ PLAGUE'S BETTER WOTS MOD
 
 Everything here is a work in progress and still in testing.
 This is for game version 1.09a (the newest version of the game).
-Current mod version: v0.28.11 (see the Change Log for everything that is in it, and the BOOK button in game for a plain-words version).
+Current mod version: v0.28.13 (see the Change Log for everything that is in it, and the BOOK button in game for a plain-words version).
 
 This build is the air combat update. Dogfights, the flight model, aircraft damage and fuel are new since v0.25, and that is what I most want tested right now (see TESTING NOTES below).
 
@@ -64,6 +64,9 @@ MAIN FEATURES
   pilots who judge energy and choose boom-and-zoom, turn fighting or disengaging, dogfight manoeuvres (yo-yos, Immelmann, split-S, scissors, Thach weave,
   wingman cover), pilot ranks, damage that changes how a plane flies (engine, wings, fuel leaks, fires, parts falling off), realistic fuel, and planes
   that leave the fight when out of ammunition, short of fuel or too damaged
+- Air auto resolve (v0.28.12 and v0.28.13): a new window for air-to-air meetings on the campaign map. Both sides get points from their planes,
+  dice are rolled (attacked, defended, shot down) and the higher score wins. Nearby air groups join the fight like a real engagement, and
+  unspotted enemy groups show as unknown aircraft
 - Battle UI: message log tabs, group orders, minimap layers, a fuel overlay on the campaign map, an in-game book, and a flight readout (F8)
 - Darker nights, and battle speed up to x10
 
@@ -84,6 +87,8 @@ TESTING NOTES FOR THIS BUILD
 - A plane at bingo fuel (10%), out of ammunition, or too damaged leaves the battle on its own and flies to the edge of the area.
 - Fighters do not chase a plane that is leaving while there are others still fighting.
 - Your fire key works on the plane you have selected, for a short burst, as long as the nose is on the target.
+- Auto resolve (air against air on the campaign map) is new. Try it a few times and tell me if the chance of victory and the losses feel right.
+  The log line starts with [AUTORESOLVE].
 
 -------------------------------------------------
 FOUND A BUG?
@@ -94,7 +99,7 @@ Send me this file:
 
 Send it BEFORE you start the game again. It gets wiped every time the game starts.
 The mod writes notes into it (lines starting with things like [DOGFIGHT], [GUN], [BATTLE], [FLIGHT], [DAMAGE], [FUEL], [CREW], [RESCUE], [VET], [TORP],
-[AIRAI], [TFJOIN], [HITLOG], [AIMOVE], [REPAIR], [TORPHIT], [TFOVERLAY], [SUPPLY], [CONVOY]) that help me find what went wrong.
+[AUTORESOLVE], [AIRAI], [TFJOIN], [HITLOG], [AIMOVE], [REPAIR], [TORPHIT], [TFOVERLAY], [SUPPLY], [CONVOY]) that help me find what went wrong.
 Tell me the time compression you were running at and roughly what the fight was (how many planes of what type on each side).
 
 Tester keys:
