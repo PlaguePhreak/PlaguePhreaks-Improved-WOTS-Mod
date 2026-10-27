@@ -1,0 +1,849 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+// v0.28.15 NEW CLASS. Fly your own aircraft with the keys, and a flight panel with quick buttons and readouts.
+// STICK MODE (G, on the selected plane of yours): the keys fly the plane directly instead of nudging the sliders.
+//   Turn keys (A / D):   bank and turn while held. A fresh press asks for BankStart of the turn the plane can pull right now, holding it builds up
+//                        to the full turn limit over BankBuild seconds. Let go and the plane rolls level and flies straight.
+//   Height keys (W / S): move the nose up / down while held (InvertPitch swaps them, like a joystick). Let go and the plane holds the height it is at.
+//   Speed keys (R / E):  throttle, between just above the stall speed and the top speed.
+//   Stop key (the game's ZeroControls key): wings level, hold this height.
+//   Left Shift:          guns fire while held. J split-S, K Immelmann, U barrel roll (the mod's own moves, only where they can be flown).
+//   The keys are whatever the player bound in the game's options (WASD or numpad). While stick mode is on the game's own use of them (moving the sliders)
+//   is switched off; the keys go back to the game when stick mode ends, when the pause menu opens and when another unit is selected.
+//   The mod's flight model still flies the plane: a climb costs speed, a dive gains it, the nose cannot be pulled up further than the engine
+//   or the speed can pay for, a stall drops the nose. The AI lets go of the plane (route, formation, attack are cleared like a slider move, see
+//   ModPlayerOverride) and the collision avoidance does not steer it. Any new order (attack, waypoint, follow) ends stick mode.
+// FLIGHT PANEL (I hides / shows it, drag it by its title): speed, height, climb rate, heading, set speed, fuel, guns, damage, warnings and what the
+//   plane is doing; quick buttons for speed (Cruise, Climb, Combat, Max) and height (300 m, 1500 m, 3000 m, 6000 m, Ceiling); stick and move buttons.
+//   Without stick mode the quick buttons move the game's own sliders, so they work exactly like dragging them.
+// Started from ModAirPanel.Limits (one new line, see the README), which runs when a unit is selected.
+public class ModAirStick : MonoBehaviour
+{
+	public const bool On = true;
+	public const KeyCode StickKey = KeyCode.G;
+	public const KeyCode PanelKey = KeyCode.I;
+	public const KeyCode FireKey = KeyCode.LeftShift;
+	public const KeyCode SplitSKey = KeyCode.J;
+	public const KeyCode ImmelmannKey = KeyCode.K;
+	public const KeyCode RollKey = KeyCode.U;
+	public const bool InvertPitch = false;        // false: the height-up key (W) raises the nose. true: W pushes the nose down, like a joystick
+	public const float PitchStickRate = 30f;      // degrees per second the nose is moved while W / S is held (real seconds)
+	public const float PitchLead = 15f;           // the nose wish never runs further than this ahead of where the nose really is (degrees)
+	public const float BankStart = 0.4f;          // share of the turn limit a fresh A / D press asks for
+	public const float BankBuild = 1.0f;          // seconds of holding A / D until it asks for the full turn limit
+	public const float ThrottleRate = 0.25f;      // share of the top speed per second the speed keys change the set speed
+	public const float TakeEvery = 1f;            // seconds between telling ModPlayerOverride the plane is hand flown
+	public const float SyncEvery = 0.25f;         // seconds between copying the stick into the game's sliders (so they show what the plane does)
+
+	private static readonly string[] FlightButtons = new string[] { "LeftRudder", "RightRudder", "MoveUp", "MoveDown", "IncreaseSpeed", "DecreaseSpeed", "ZeroControls" };
+	private static readonly float[] Heights = new float[] { 300f, 1500f, 3000f, 6000f };
+
+	private static GameObject host;
+	private static bool failed;
+	public static Unit stickUnit;
+	public static int stickOns;
+	private static Dictionary<string, KeyCode> saved = new Dictionary<string, KeyCode>();
+	private static bool keysTaken;
+	private static KeyCode kLeft, kRight, kUp, kDown, kFaster, kSlower, kLevel;
+	private static bool pitchHeld;
+	private static float pitchTarget;
+	private static int bankDir;
+	private static float bankSince;
+	private static bool firing;
+	private static float nextTake;
+	private static float nextSync;
+	private static string note = "";
+	private static float noteUntil;
+	private static bool panelHidden;
+	private static Unit climbUnit;
+	private static float lastY;
+	private static float lastYTime;
+	private static float climbRate;
+	private static Rect win;
+	private static bool winSet;
+	private GUIStyle sText;
+	private GUIStyle sBig;
+	private GUIStyle sWarn;
+	private GUIStyle sButton;
+	private GUIStyle sButtonOn;
+	private int fontFor = -1;
+
+	public static void Ensure()
+	{
+		if (host == null && On)
+		{
+			host = new GameObject("ModAirStick");
+			UnityEngine.Object.DontDestroyOnLoad(host);
+			host.AddComponent<ModAirStick>();
+		}
+	}
+
+	// The selected unit if it is one of the player's aircraft that can be flown, else null.
+	private static Unit Current()
+	{
+		CombatInterface ci = CombatInterface.instance;
+		if (ci == null || MuseumInterface.instance != null)
+		{
+			return null;
+		}
+		Unit u = ci.currentUnit;
+		if (u == null || u.unitAir == null || u.unitData == null || u.unitAI == null || u.isDestroyed || u.unitAir.shootDown || u.isParked || u.faction != Faction.Player)
+		{
+			return null;
+		}
+		return u;
+	}
+
+	// Why stick mode cannot go on (null = it can).
+	private static string NotFlyable(Unit u)
+	{
+		if (u.isDestroyed || u.unitAir.shootDown)
+		{
+			return "the plane is going down";
+		}
+		UnitAI ai = u.unitAI;
+		if (ai.retreating)
+		{
+			return "the plane is leaving the battle";
+		}
+		Maneuvre m = ai.currentManeuvre;
+		if (m == Maneuvre.Shot_Down || m == Maneuvre.Kamikaze || m == Maneuvre.Dive_Bomb || m == Maneuvre.DiveBomb_Dive)
+		{
+			return "the plane is in a " + m + " dive";
+		}
+		return null;
+	}
+
+	private void Update()
+	{
+		if (!On || failed)
+		{
+			return;
+		}
+		try
+		{
+			Unit u = Current();
+			ClimbRate(u);
+			if (stickUnit != null)
+			{
+				string why = null;
+				if (u != stickUnit)
+				{
+					why = "another unit was selected";
+				}
+				else
+				{
+					why = NotFlyable(u);
+					AIAction a = u.unitAI.currentAIAction;
+					if (why == null && a != AIAction.Nothing && a != AIAction.Nav_Done)
+					{
+						why = "the plane was given an order (" + a + ")";
+					}
+				}
+				if (why != null)
+				{
+					StickOff(why);
+				}
+			}
+			bool paused = PauseMenu.instance != null && ((Component)PauseMenu.instance).gameObject.activeSelf;
+			bool input = InputManager.instance != null && ((Behaviour)InputManager.instance).enabled;
+			if (u == null || paused || !input)
+			{
+				ReturnKeys();
+				return;
+			}
+			if (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))
+			{
+				return;   // Ctrl + key belongs to ModGroups
+			}
+			if (Input.GetKeyDown(PanelKey))
+			{
+				panelHidden = !panelHidden;
+			}
+			if (Input.GetKeyDown(StickKey))
+			{
+				if (stickUnit == null)
+				{
+					StickOn(u);
+				}
+				else
+				{
+					StickOff("G pressed");
+				}
+			}
+			if (stickUnit == null)
+			{
+				ReturnKeys();
+				return;
+			}
+			TakeKeys();
+			Fly(u);
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[STICK] stick mode failed and stopped: " + ex.Message + " " + ex.StackTrace));
+			try
+			{
+				ReturnKeys();
+			}
+			catch (Exception)
+			{
+			}
+		}
+	}
+
+	private static void StickOn(Unit u)
+	{
+		string why = NotFlyable(u);
+		if (why != null)
+		{
+			Note("Stick mode not possible: " + why);
+			return;
+		}
+		UnitAI ai = u.unitAI;
+		// the same as moving a slider (ModPlayerOverride.Take): off the route, out of the formation, the attack and a break turn are dropped
+		if (ai.currentManeuvre == Maneuvre.Break_Left || ai.currentManeuvre == Maneuvre.Break_Right)
+		{
+			ai.currentManeuvre = Maneuvre.None;
+		}
+		AIAction a = ai.currentAIAction;
+		if (a != AIAction.Nothing && a != AIAction.Nav_Done)
+		{
+			ai.navPoints.Clear();
+			ai.followingUnit = null;
+			ai.directFollow = false;
+			ai.previousAIAction = AIAction.Nothing;
+			EngagementAI.instance.ChangeAIAction(u, AIAction.Nothing);
+		}
+		stickUnit = u;
+		stickOns++;
+		pitchHeld = false;
+		bankDir = 0;
+		firing = false;
+		nextTake = 0f;
+		nextSync = 0f;
+		u.wantedTurnRate = 0f;
+		u.wantedHeight = ((Component)u).transform.position.y;
+		TakeKeys();
+		Note("Stick mode ON: " + Name(kUp) + "/" + Name(kDown) + " nose, " + Name(kLeft) + "/" + Name(kRight) + " bank, " + Name(kFaster) + "/" + Name(kSlower) + " throttle, Shift guns, G off");
+		Debug.Log((object)("[STICK] " + u.unitData.unitName + " id " + u.GetInstanceID() + ": stick mode on (was " + a + ") at " + (((Component)u).transform.position.y * 10f).ToString("F0") + " m, " + (u.currentSpeed * 36f).ToString("F0") + " km/h; keys nose " + kUp + "/" + kDown + ", bank " + kLeft + "/" + kRight + ", throttle " + kFaster + "/" + kSlower + ", level " + kLevel));
+	}
+
+	private static void StickOff(string why)
+	{
+		Unit u = stickUnit;
+		stickUnit = null;
+		pitchHeld = false;
+		bankDir = 0;
+		if (u != null && !u.isDestroyed)
+		{
+			if (firing)
+			{
+				Guns(u, false);
+			}
+			// a plane let go of flies straight and level, unless an order has just taken it
+			AIAction a = (u.unitAI != null) ? u.unitAI.currentAIAction : AIAction.Nothing;
+			if (a == AIAction.Nothing || a == AIAction.Nav_Done)
+			{
+				u.wantedTurnRate = 0f;
+				u.wantedHeight = ((Component)u).transform.position.y;
+			}
+			Debug.Log((object)("[STICK] " + u.unitData.unitName + " id " + u.GetInstanceID() + ": stick mode off, " + why));
+		}
+		firing = false;
+		ReturnKeys();
+		Note("Stick mode OFF: " + why);
+	}
+
+	// Takes the game's turn, height, speed and stop keys away from the sliders while stick mode is on (the stick reads them itself).
+	private static void TakeKeys()
+	{
+		InputManager im = InputManager.instance;
+		if (keysTaken || im == null || im.buttonKeys == null)
+		{
+			ReadKeys();
+			return;
+		}
+		saved.Clear();
+		for (int i = 0; i < FlightButtons.Length; i++)
+		{
+			KeyCode k;
+			if (im.buttonKeys.TryGetValue(FlightButtons[i], out k))
+			{
+				saved[FlightButtons[i]] = k;
+				im.buttonKeys[FlightButtons[i]] = KeyCode.None;
+			}
+		}
+		keysTaken = true;
+		ReadKeys();
+	}
+
+	private static void ReturnKeys()
+	{
+		if (!keysTaken)
+		{
+			return;
+		}
+		keysTaken = false;
+		InputManager im = InputManager.instance;
+		if (im == null || im.buttonKeys == null)
+		{
+			return;
+		}
+		foreach (KeyValuePair<string, KeyCode> kv in saved)
+		{
+			im.buttonKeys[kv.Key] = kv.Value;
+		}
+	}
+
+	// The player's own key for each flight button (the saved one while the game's copy is switched off).
+	private static KeyCode KeyOf(string button)
+	{
+		KeyCode k;
+		if (keysTaken && saved.TryGetValue(button, out k))
+		{
+			return k;
+		}
+		InputManager im = InputManager.instance;
+		if (im != null && im.buttonKeys != null && im.buttonKeys.TryGetValue(button, out k))
+		{
+			return k;
+		}
+		return KeyCode.None;
+	}
+
+	private static void ReadKeys()
+	{
+		kLeft = KeyOf("LeftRudder");
+		kRight = KeyOf("RightRudder");
+		kUp = KeyOf("MoveUp");
+		kDown = KeyOf("MoveDown");
+		kFaster = KeyOf("IncreaseSpeed");
+		kSlower = KeyOf("DecreaseSpeed");
+		kLevel = KeyOf("ZeroControls");
+	}
+
+	private static bool Held(KeyCode k)
+	{
+		return k != KeyCode.None && Input.GetKey(k);
+	}
+
+	private static string Name(KeyCode k)
+	{
+		return (k == KeyCode.None) ? "-" : k.ToString();
+	}
+
+	private static void Note(string text)
+	{
+		note = text;
+		noteUntil = Time.unscaledTime + 5f;
+	}
+
+	// Nose angle in degrees, positive = nose down (the same sign as ModFlight.Aim).
+	private static float NoseDown(Unit u)
+	{
+		return Mathf.Asin(Mathf.Clamp(-((Component)u).transform.forward.y, -1f, 1f)) * Mathf.Rad2Deg;
+	}
+
+	// Slowest and fastest speed the throttle and the quick buttons may ask for (the same range as the speed slider, ModAirPanel.Limits).
+	private static void SpeedRange(Unit u, out float low, out float top)
+	{
+		ModAirFlight.Row r = ModAirFlight.Of(u);
+		top = (r != null && r.maxSpeed > 0f) ? r.maxSpeed : u.unitData.maxSpeed;
+		low = (r != null) ? Mathf.Min(r.stallSpeed * ModAirPanel.MinSpeedOverStall, top * 0.6f) : top * 0.4f;
+	}
+
+	private static void Guns(Unit u, bool on)
+	{
+		firing = on;
+		WeaponParticle wp = u.weaponParticle;
+		if (wp == null)
+		{
+			return;
+		}
+		if (on && wp.secondsFiring > 0f)
+		{
+			EngagementAI.instance.CancelPlayerDisengage();
+			wp.FireAll(true);
+		}
+		else
+		{
+			wp.FireAll(false);
+		}
+	}
+
+	// One frame of stick flying.
+	private static void Fly(Unit u)
+	{
+		UnitAir ua = u.unitAir;
+		float now = Time.unscaledTime;
+		float dt = Mathf.Min(Time.unscaledDeltaTime, 0.1f);
+		float y = ((Component)u).transform.position.y;
+		if (now >= nextTake)
+		{
+			nextTake = now + TakeEvery;
+			ModPlayerOverride.Take(u);   // keeps the plane counted as hand flown (no collision avoidance steering it)
+		}
+		bool acro = ModFlight.AcroActive(ua);
+
+		// guns: fire while the key is held
+		bool fire = Input.GetKey(FireKey);
+		if (fire != firing)
+		{
+			Guns(u, fire);
+		}
+
+		// throttle
+		int thr = (Held(kFaster) ? 1 : 0) - (Held(kSlower) ? 1 : 0);
+		if (thr != 0)
+		{
+			float low;
+			float top;
+			SpeedRange(u, out low, out top);
+			u.wantedSpeed = Mathf.Clamp(u.wantedSpeed + (float)thr * ThrottleRate * top * dt, low, top);
+		}
+
+		if (acro)
+		{
+			// the move flies itself; the stick takes over again when it is done
+			pitchHeld = false;
+			bankDir = 0;
+			Sync(u);
+			return;
+		}
+		if (Input.GetKeyDown(SplitSKey))
+		{
+			Move(u, ModFlight.StartSplitS(ua), "split-S", "needs at least 1100 m of air under the plane");
+		}
+		else if (Input.GetKeyDown(ImmelmannKey))
+		{
+			Move(u, ModFlight.StartImmelmann(ua), "Immelmann", "needs more speed, at least 600 m of height and room below 6500 m");
+		}
+		else if (Input.GetKeyDown(RollKey))
+		{
+			ModFlight.StartBarrelRoll(ua);
+			Move(u, ModFlight.AcroActive(ua), "barrel roll", "not possible right now");
+		}
+		if (ModFlight.AcroActive(ua))
+		{
+			Sync(u);
+			return;
+		}
+
+		// level out
+		if (kLevel != KeyCode.None && Input.GetKeyDown(kLevel))
+		{
+			pitchHeld = false;
+			bankDir = 0;
+			u.wantedTurnRate = 0f;
+			u.wantedHeight = y;
+			Note("Level: wings level, holding " + (y * 10f).ToString("F0") + " m");
+		}
+
+		// bank and turn
+		int bank = (Held(kRight) ? 1 : 0) - (Held(kLeft) ? 1 : 0);
+		if (bank != 0)
+		{
+			if (bank != bankDir)
+			{
+				bankDir = bank;
+				bankSince = now;
+			}
+			float share = Mathf.Lerp(BankStart, 1f, (now - bankSince) / BankBuild);
+			u.wantedTurnRate = (float)bank * share * ModFlight.TurnLimitNow(u);
+		}
+		else if (bankDir != 0)
+		{
+			bankDir = 0;
+			u.wantedTurnRate = 0f;
+		}
+
+		// nose up and down
+		int up = (Held(kUp) ? 1 : 0) - (Held(kDown) ? 1 : 0);
+		if (InvertPitch)
+		{
+			up = -up;
+		}
+		if (up != 0)
+		{
+			float nose = NoseDown(u);
+			if (!pitchHeld)
+			{
+				pitchHeld = true;
+				pitchTarget = nose;
+			}
+			pitchTarget -= (float)up * PitchStickRate * dt;
+			pitchTarget = Mathf.Clamp(pitchTarget, nose - PitchLead, nose + PitchLead);
+			pitchTarget = Mathf.Clamp(pitchTarget, -ModFlight.MaxAimUp, ModFlight.MaxAimDown);
+			ModFlight.Aim(ua, pitchTarget);
+			u.wantedHeight = y;
+		}
+		else if (pitchHeld)
+		{
+			// let go: hold the height the plane is at now (the game eases the nose back to level)
+			pitchHeld = false;
+			u.wantedHeight = y;
+		}
+		Sync(u);
+	}
+
+	private static void Move(Unit u, bool started, string name, string why)
+	{
+		if (started)
+		{
+			pitchHeld = false;
+			bankDir = 0;
+			Note(name);
+			Debug.Log((object)("[STICK] " + u.unitData.unitName + " id " + u.GetInstanceID() + ": the player flies a " + name));
+		}
+		else
+		{
+			Note("No " + name + " here: " + why);
+		}
+	}
+
+	// Copies what the stick asks for into the game's sliders, without the sliders writing anything back (lockSliderInput).
+	private static void Sync(Unit u)
+	{
+		float now = Time.unscaledTime;
+		if (now < nextSync)
+		{
+			return;
+		}
+		nextSync = now + SyncEvery;
+		CombatInterface ci = CombatInterface.instance;
+		if (ci == null || ci.currentUnit != u)
+		{
+			return;
+		}
+		bool was = u.lockSliderInput;
+		u.lockSliderInput = true;
+		try
+		{
+			ci.speedChange.value = u.wantedSpeed;
+			ci.heightChange.value = Imperial() ? u.wantedHeight * 3.28084f : u.wantedHeight;
+			if (Config.instance != null && u.unitData.maxTurnRate > 0f)
+			{
+				ci.turnChange.value = Mathf.Round(u.wantedTurnRate / u.unitData.maxTurnRate * Config.instance.turnIncrements);
+			}
+		}
+		finally
+		{
+			u.lockSliderInput = was;
+		}
+	}
+
+	private static bool Imperial()
+	{
+		return OptionsManager.instance != null && !OptionsManager.instance.optionsData.useMetric;
+	}
+
+	// Climb rate in metres per second of battle time, measured over half-second steps.
+	private static void ClimbRate(Unit u)
+	{
+		if (u == null)
+		{
+			climbUnit = null;
+			return;
+		}
+		float y = ((Component)u).transform.position.y;
+		if (u != climbUnit)
+		{
+			climbUnit = u;
+			lastY = y;
+			lastYTime = Time.time;
+			climbRate = 0f;
+			return;
+		}
+		float gap = Time.time - lastYTime;
+		if (gap >= 0.5f)
+		{
+			climbRate = (y - lastY) * 10f / gap;
+			lastY = y;
+			lastYTime = Time.time;
+		}
+	}
+
+	// ---------------- quick buttons ----------------
+	private static void SetSpeed(Unit u, float speed)
+	{
+		float low;
+		float top;
+		SpeedRange(u, out low, out top);
+		speed = Mathf.Clamp(speed, low, top);
+		if (stickUnit == u)
+		{
+			u.wantedSpeed = speed;
+			nextSync = 0f;
+		}
+		else
+		{
+			CombatInterface.instance.speedChange.value = speed;   // the game's slider handler (and ModPlayerOverride) does the rest
+		}
+	}
+
+	private static void SetHeight(Unit u, float metres)
+	{
+		float game = metres * 0.1f;
+		if (stickUnit == u)
+		{
+			pitchHeld = false;
+			u.wantedHeight = game;
+			nextSync = 0f;
+		}
+		else
+		{
+			CombatInterface.instance.heightChange.value = Imperial() ? game * 3.28084f : game;
+		}
+	}
+
+	// ---------------- the panel ----------------
+	private void Styles(float k)
+	{
+		int size = (int)(13f * k);
+		if (sText != null && fontFor == size)
+		{
+			return;
+		}
+		fontFor = size;
+		sText = new GUIStyle(GUI.skin.label);
+		sText.fontSize = size;
+		sText.wordWrap = false;
+		sText.normal.textColor = Color.white;
+		sBig = new GUIStyle(sText);
+		sBig.fontSize = (int)(18f * k);
+		sBig.fontStyle = FontStyle.Bold;
+		sWarn = new GUIStyle(sText);
+		sWarn.fontStyle = FontStyle.Bold;
+		sWarn.normal.textColor = new Color(1f, 0.35f, 0.25f);
+		sButton = new GUIStyle(GUI.skin.button);
+		sButton.fontSize = size;
+		sButtonOn = new GUIStyle(sButton);
+		sButtonOn.fontStyle = FontStyle.Bold;
+		sButtonOn.normal.textColor = new Color(0.4f, 1f, 0.4f);
+		sButtonOn.hover.textColor = new Color(0.4f, 1f, 0.4f);
+	}
+
+	private void OnGUI()
+	{
+		if (!On || failed || panelHidden)
+		{
+			return;
+		}
+		try
+		{
+			Unit u = Current();
+			CombatInterface ci = CombatInterface.instance;
+			if (u == null || !((Component)ci).gameObject.activeInHierarchy || ci.thisCanvas == null || !((Behaviour)ci.thisCanvas).enabled)
+			{
+				return;
+			}
+			float k = Mathf.Clamp((float)Screen.height / 900f, 0.8f, 2f);
+			Styles(k);
+			float w = 450f * k;
+			float h = 290f * k;
+			if (!winSet)
+			{
+				winSet = true;
+				win = new Rect(10f, (float)Screen.height * 0.42f, w, h);
+			}
+			win.width = w;
+			win.height = h;
+			win.x = Mathf.Clamp(win.x, 0f, Mathf.Max(0f, (float)Screen.width - w));
+			win.y = Mathf.Clamp(win.y, 0f, Mathf.Max(0f, (float)Screen.height - h));
+			GUI.depth = -900;
+			win = GUI.Window(28150, win, Draw, "Flight  (" + PanelKey + " hides, drag here)");
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[STICK] flight panel failed and stopped: " + ex.Message + " " + ex.StackTrace));
+		}
+	}
+
+	private void Draw(int id)
+	{
+		Unit u = Current();
+		if (u == null)
+		{
+			return;
+		}
+		float k = Mathf.Clamp((float)Screen.height / 900f, 0.8f, 2f);
+		UnitAir ua = u.unitAir;
+		Transform tr = ((Component)u).transform;
+		bool imp = Imperial();
+		float y = tr.position.y;
+		ModAirFlight.Row r = ModAirFlight.Of(u);
+		bool flaps = ModFlight.FlapsOut(u);
+		float low;
+		float top;
+		SpeedRange(u, out low, out top);
+
+		GUILayout.BeginArea(new Rect(10f * k, 22f * k, win.width - 20f * k, win.height - 28f * k));
+		// big numbers
+		GUILayout.BeginHorizontal();
+		GUILayout.Label(ModAirPanel.SpeedString(u.currentSpeed), sBig, GUILayout.Width(130f * k));
+		GUILayout.Label(imp ? ((y * 10f * 3.28084f).ToString("F0") + " ft") : ((y * 10f).ToString("F0") + " m"), sBig, GUILayout.Width(110f * k));
+		GUILayout.Label((climbRate >= 0f ? "+" : "") + (imp ? (climbRate * 3.28084f).ToString("F0") + " ft/s" : climbRate.ToString("F0") + " m/s"), sBig, GUILayout.Width(80f * k));
+		GUILayout.Label(Utilities.GetTransformHeading(tr), sBig);
+		GUILayout.EndHorizontal();
+		// state of the plane
+		float guns = (u.weaponParticle != null) ? u.weaponParticle.secondsFiring : 0f;
+		string line = "set " + ModAirPanel.SpeedString(u.wantedSpeed) + "   fuel " + (ModAirDamage.FuelOf(u) * 100f).ToString("F0") + "%   guns " + guns.ToString("F0") + " s   damage " + (ModAirDamage.DamageFraction(u) * 100f).ToString("F0") + "%";
+		GUILayout.Label(line, sText);
+		GUILayout.Label(Doing(u), sText);
+		string warn = "";
+		if (r != null && u.currentSpeed < ModAirFlight.StallSpeed(r, flaps) * 1.1f && y > 2f)
+		{
+			warn += "STALL  ";
+		}
+		if (ModAirDamage.OverspeedRatio(u) > 0.9f)
+		{
+			warn += "OVERSPEED  ";
+		}
+		if (ModAirDamage.IsFire(u))
+		{
+			warn += "FIRE  ";
+		}
+		if (ModAirDamage.FuelOf(u) <= 0.15f)
+		{
+			warn += "LOW FUEL  ";
+		}
+		if (guns <= 0f && u.weaponParticle != null)
+		{
+			warn += "NO AMMO  ";
+		}
+		if (flaps)
+		{
+			warn += "flaps  ";
+		}
+		if (ModAirDamage.CarriesBombs(u))
+		{
+			warn += "bombs on  ";
+		}
+		GUILayout.Label(warn, sWarn);
+
+		// speed buttons
+		GUILayout.BeginHorizontal();
+		GUILayout.Label("Speed", sText, GUILayout.Width(55f * k));
+		if (GUILayout.Button("Cruise", sButton))
+		{
+			SetSpeed(u, top * 0.65f);
+		}
+		if (GUILayout.Button("Climb", sButton))
+		{
+			SetSpeed(u, top * ModAirFlight.BestClimbShare * 1.25f);
+		}
+		if (GUILayout.Button("Combat", sButton))
+		{
+			SetSpeed(u, (r != null) ? r.cornerSpeed : top * 0.8f);
+		}
+		if (GUILayout.Button("Max", sButton))
+		{
+			SetSpeed(u, top);
+		}
+		GUILayout.EndHorizontal();
+		// height buttons
+		GUILayout.BeginHorizontal();
+		GUILayout.Label("Height", sText, GUILayout.Width(55f * k));
+		float ceiling = ModAirPanel.CeilingOf(r);
+		for (int i = 0; i < Heights.Length; i++)
+		{
+			float m = Mathf.Min(Heights[i], ceiling);
+			if (GUILayout.Button(imp ? ((m * 3.28084f / 1000f).ToString("F1") + "k ft") : (m.ToString("F0") + " m"), sButton))
+			{
+				SetHeight(u, m);
+			}
+		}
+		if (GUILayout.Button("Ceiling", sButton))
+		{
+			SetHeight(u, ceiling);
+		}
+		GUILayout.EndHorizontal();
+		// stick and moves
+		GUILayout.BeginHorizontal();
+		bool on = stickUnit == u;
+		if (GUILayout.Button(on ? "Stick ON (G)" : "Stick (G)", on ? sButtonOn : sButton, GUILayout.Width(110f * k)))
+		{
+			if (on)
+			{
+				StickOff("panel button");
+			}
+			else
+			{
+				StickOn(u);
+			}
+		}
+		GUI.enabled = on;
+		if (GUILayout.Button("Split-S (J)", sButton))
+		{
+			Move(u, ModFlight.StartSplitS(ua), "split-S", "needs at least 1100 m of air under the plane");
+		}
+		if (GUILayout.Button("Immelmann (K)", sButton))
+		{
+			Move(u, ModFlight.StartImmelmann(ua), "Immelmann", "needs more speed, at least 600 m of height and room below 6500 m");
+		}
+		if (GUILayout.Button("Roll (U)", sButton))
+		{
+			ModFlight.StartBarrelRoll(ua);
+			Move(u, ModFlight.AcroActive(ua), "barrel roll", "not possible right now");
+		}
+		GUI.enabled = true;
+		GUILayout.EndHorizontal();
+		// help or the last message
+		if (Time.unscaledTime < noteUntil)
+		{
+			GUILayout.Label(note, sText);
+		}
+		else if (on)
+		{
+			GUILayout.Label(Name(kUp) + "/" + Name(kDown) + " nose   " + Name(kLeft) + "/" + Name(kRight) + " bank   " + Name(kFaster) + "/" + Name(kSlower) + " throttle   " + Name(kLevel) + " level   Shift guns", sText);
+		}
+		else
+		{
+			GUILayout.Label("G: fly this plane with the keys", sText);
+		}
+		GUILayout.EndArea();
+		GUI.DragWindow(new Rect(0f, 0f, win.width, 22f * k));
+	}
+
+	// What the plane is doing, in words.
+	private static string Doing(Unit u)
+	{
+		if (stickUnit == u)
+		{
+			return ModFlight.AcroActive(u.unitAir) ? "Doing: " + ModFlight.AcroName(ModFlight.AcroKind(u.unitAir)) : "Doing: flown by you (stick)";
+		}
+		UnitAI ai = u.unitAI;
+		if (ModFlight.AcroActive(u.unitAir))
+		{
+			return "Doing: " + ModFlight.AcroName(ModFlight.AcroKind(u.unitAir));
+		}
+		if (ai.retreating)
+		{
+			return "Doing: leaving the battle";
+		}
+		switch (ai.currentAIAction)
+		{
+		case AIAction.Attack_Unit:
+			if (ModDogfight.IsFighter(u) && ai.focusedUnit != null && ai.focusedUnit.unitAir != null)
+			{
+				string t = ModDogfight.ReadoutText(u);
+				int cut = t.IndexOf('\n');
+				return "Doing: attacking " + ModDogfight.Name(ai.focusedUnit) + ", " + ((cut > 0) ? t.Substring(0, cut) : t);
+			}
+			return (ai.focusedUnit != null) ? "Doing: attacking " + ModDogfight.Name(ai.focusedUnit) : "Doing: attacking";
+		case AIAction.Follow_Nav_Points:
+			return "Doing: flying its route";
+		case AIAction.Follow_Unit:
+			return "Doing: in formation";
+		case AIAction.Retreat:
+			return "Doing: retreating";
+		default:
+			return ModPlayerOverride.IsManual(u) ? "Doing: flying your slider settings" : "Doing: holding course";
+		}
+	}
+}
