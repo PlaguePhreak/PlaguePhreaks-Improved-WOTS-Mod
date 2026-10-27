@@ -1,0 +1,442 @@
+using System;
+using System.Collections.Generic;
+using System.Reflection;
+using UnityEngine;
+
+// v0.28.12: Air auto resolve, points and dice (Aaron's design).
+//   Each side gets POINTS: for every plane, gun damage + toughness x armour (+ 3 x gunner for a plane with gunners), summed and divided by PointDivisor.
+//   The multiplier is 1 + points / 1000 (104 points = 1.104x).
+//   Resolve rolls three dice for each side: Attacked (1-6), Defended (1-6), Shot down (0 to the side's own plane count, never more than the enemy has,
+//   pulled toward the side with the better points). Score = (attacked + defended + shot down) x multiplier; the higher score wins. A side whose planes are all shot down loses at once.
+//   Losses: the loser loses the planes shot down against it; the winner loses 1/2 to 3/4 of the planes shot down against it.
+//   The window shows the groups, the points, the chance of victory (1000 dice rehearsals) and, after Resolve, the rolls and the result.
+// v0.28.12 fix: the old version showed "nobody is armed" for two fighter groups because the planes were only marked alive inside the fight.
+public static class ModAirResolve
+{
+	private class Craft
+	{
+		public string name;
+		public float value;     // points of this one plane before the divisor
+		public bool armed;
+		public bool alive;
+	}
+
+	private class Side
+	{
+		public List<Craft> craft = new List<Craft>();
+		public MobileMapObject mmo;
+		public bool player;
+		public Dictionary<string, int> counts = new Dictionary<string, int>();
+		public float points;
+		public float mult;
+		// the last roll
+		public int attacked;
+		public int defended;
+		public int shotDown;     // enemy planes this side shot down
+		public float score;
+		public int lost;
+
+		public int Count()
+		{
+			return craft.Count;
+		}
+
+		public int Armed()
+		{
+			int n = 0;
+			for (int i = 0; i < craft.Count; i++)
+			{
+				if (craft[i].armed)
+				{
+					n++;
+				}
+			}
+			return n;
+		}
+	}
+
+	public const bool On = true;
+	public const float PointDivisor = 6f;      // Wildcat: (15 guns + 36 toughness x 0.3 armour) x 24 planes / 6 = 103 points
+	public const float GunnerWeight = 3f;      // a plane with gunners adds 3 x its gunner value
+	public const int Rehearsals = 1000;        // dice rehearsals for the chance of victory
+	public const float WinnerLossMin = 0.5f;   // the winner loses between 1/2 and 3/4 of the planes shot down against it
+	public const float WinnerLossMax = 0.75f;
+	public const float ShotDownShare = 1f;     // the shot-down die runs from 0 to this share of the side's own planes (1 = as designed; 0.5 = at most half)
+
+	public static bool windowOpen;
+	public static string resultText;
+	public static string rollText;
+	public static float chance;
+	public static bool noFight;
+	public static float expectedLossPlayer;
+	public static float expectedLossEnemy;
+
+	private static Side player;
+	private static Side enemy;
+	private static GameObject host;
+
+	public static bool CanResolve(MobileMapObject a, MobileMapObject b)
+	{
+		try
+		{
+			if (a == null || b == null || a.type != 1 || b.type != 1 || a.unitPrefabs == null || b.unitPrefabs == null || a.unitPrefabs.Count == 0 || b.unitPrefabs.Count == 0)
+			{
+				return false;
+			}
+			UnitData da;
+			UnitData db;
+			return EngagementManager.instance.unitDataDictionary.TryGetValue(a.unitPrefabs[0], out da) && EngagementManager.instance.unitDataDictionary.TryGetValue(b.unitPrefabs[0], out db) && da.unitType == UnitType.Air && db.unitType == UnitType.Air;
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[AUTORESOLVE] check failed: " + ex.Message);
+			return false;
+		}
+	}
+
+	public static bool Open()
+	{
+		try
+		{
+			CampaignData cd = CampaignManager.instance.campaignData;
+			if (cd.playerObjectEngaged < 0 || cd.otherObjectEngaged < 0)
+			{
+				return false;
+			}
+			MobileMapObject pm = CampaignManager.instance.playerMobile[cd.playerObjectEngaged].mobileMapObject;
+			MobileMapObject em = CampaignManager.instance.otherMobile[cd.otherObjectEngaged].mobileMapObject;
+			if (!CanResolve(pm, em))
+			{
+				return false;
+			}
+			player = Build(pm, true);
+			enemy = Build(em, false);
+			resultText = null;
+			rollText = null;
+			Estimate();
+			windowOpen = true;
+			Ensure();
+			Debug.Log("[AUTORESOLVE] window opened: ours " + Describe(player) + " (" + player.points.ToString("F0") + " points, " + player.mult.ToString("F3") + "x) against " + Describe(enemy) + " (" + enemy.points.ToString("F0") + " points, " + enemy.mult.ToString("F3") + "x)" + (noFight ? ", nobody is armed: the groups just pass" : (", chance of victory " + chance.ToString("F0") + "%, expected losses about " + expectedLossPlayer.ToString("F1") + " of ours, " + expectedLossEnemy.ToString("F1") + " of theirs")));
+			return true;
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[AUTORESOLVE] could not open: " + ex.Message + " " + ex.StackTrace);
+			windowOpen = false;
+			return false;
+		}
+	}
+
+	public static void Close()
+	{
+		windowOpen = false;
+	}
+
+	private static void Ensure()
+	{
+		if (host == null)
+		{
+			host = new GameObject("ModAirResolveWindow");
+			UnityEngine.Object.DontDestroyOnLoad(host);
+			host.AddComponent<ModAirResolveWindow>();
+		}
+	}
+
+	private static Side Build(MobileMapObject mmo, bool isPlayer)
+	{
+		Side s = new Side();
+		s.mmo = mmo;
+		s.player = isPlayer;
+		float sum = 0f;
+		for (int i = 0; i < mmo.unitPrefabs.Count; i++)
+		{
+			Craft c = MakeCraft(mmo.unitPrefabs[i]);
+			s.craft.Add(c);
+			sum += c.value;
+			int n;
+			s.counts.TryGetValue(c.name, out n);
+			s.counts[c.name] = n + 1;
+		}
+		s.points = sum / PointDivisor;
+		s.mult = 1f + s.points / 1000f;
+		return s;
+	}
+
+	// One plane's worth: gun damage + toughness x armour share (+ gunners). From the ModAirStats table (toughness, guns, armour, gunner).
+	private static Craft MakeCraft(string prefab)
+	{
+		Craft c = new Craft();
+		string key = prefab.ToLowerInvariant();
+		UnitData d;
+		EngagementManager.instance.unitDataDictionary.TryGetValue(prefab, out d);
+		c.name = (d != null && !string.IsNullOrEmpty(d.unitName)) ? d.unitName : prefab;
+		bool fighter = d != null && d.unitSubtype == UnitSubType.Fighter;
+		float[] row = ModAirStats.RowFor(key);
+		float toughness = (row != null && row[0] > 0f) ? row[0] : 25f;
+		float guns = (row != null && row[1] > 0f) ? row[1] : (fighter ? 10f : 0f);
+		float armour = Mathf.Clamp((row != null && row[2] >= 0f) ? row[2] : 0.1f, 0f, 0.6f);
+		float gunner = (row != null && row[3] > 0f) ? row[3] : ((row == null && !fighter) ? 1f : 0f);
+		c.value = guns + toughness * armour + gunner * GunnerWeight;
+		c.armed = guns > 0f || gunner > 0f;
+		c.alive = true;
+		return c;
+	}
+
+	private static string Describe(Side s)
+	{
+		string t = "";
+		foreach (KeyValuePair<string, int> kv in s.counts)
+		{
+			t += (t.Length > 0 ? ", " : "") + kv.Value + " x " + kv.Key;
+		}
+		return t;
+	}
+
+	public static string DescribeSide(bool playerSide)
+	{
+		Side s = playerSide ? player : enemy;
+		if (s == null)
+		{
+			return "";
+		}
+		string t = "";
+		foreach (KeyValuePair<string, int> kv in s.counts)
+		{
+			t += kv.Value + " x " + kv.Key + "\n";
+		}
+		return t;
+	}
+
+	public static string PointsLine(bool playerSide)
+	{
+		Side s = playerSide ? player : enemy;
+		if (s == null)
+		{
+			return "";
+		}
+		return s.points.ToString("F0") + " points\n" + s.mult.ToString("F3") + "x";
+	}
+
+	// ---- the dice
+	// Shot down: 0 to this side's own plane count (x ShotDownShare), never more than the enemy has, and pulled toward the side with more points
+	// (the ratio of the points: 103 against 74 points makes the better side roll high about 40% more often).
+	private static int RollShotDown(Side me, Side them)
+	{
+		int top = Mathf.Min(them.Count(), Mathf.RoundToInt(me.Count() * ShotDownShare));
+		float edge = Mathf.Clamp(me.points / Mathf.Max(1f, them.points), 0.5f, 2f);
+		float r = Mathf.Pow(UnityEngine.Random.value, 1f / edge);
+		return Mathf.Clamp(Mathf.RoundToInt(r * top), 0, them.Count());
+	}
+
+	private static void Roll(Side a, Side b)
+	{
+		a.attacked = UnityEngine.Random.Range(1, 7);
+		b.attacked = UnityEngine.Random.Range(1, 7);
+		a.defended = UnityEngine.Random.Range(1, 7);
+		b.defended = UnityEngine.Random.Range(1, 7);
+		a.shotDown = a.Armed() > 0 ? RollShotDown(a, b) : 0;
+		b.shotDown = b.Armed() > 0 ? RollShotDown(b, a) : 0;
+		a.score = (a.attacked + a.defended + a.shotDown) * a.mult;
+		b.score = (b.attacked + b.defended + b.shotDown) * b.mult;
+	}
+
+	// true = the player won. Sets the losses on both sides.
+	private static bool Judge(Side p, Side e)
+	{
+		bool playerWins;
+		if (e.shotDown >= p.Count() && p.shotDown < e.Count())
+		{
+			playerWins = false;             // all of ours shot down
+		}
+		else if (p.shotDown >= e.Count() && e.shotDown < p.Count())
+		{
+			playerWins = true;              // all of theirs shot down
+		}
+		else if (Mathf.Abs(p.score - e.score) < 0.001f)
+		{
+			playerWins = UnityEngine.Random.value < 0.5f;
+		}
+		else
+		{
+			playerWins = p.score > e.score;
+		}
+		Side winner = playerWins ? p : e;
+		Side loser = playerWins ? e : p;
+		loser.lost = Mathf.Clamp(winner.shotDown, 0, loser.Count());
+		float share = UnityEngine.Random.Range(WinnerLossMin, WinnerLossMax);
+		winner.lost = Mathf.Clamp(Mathf.RoundToInt(loser.shotDown * share), 0, winner.Count());
+		return playerWins;
+	}
+
+	private static void Estimate()
+	{
+		noFight = player.Armed() == 0 && enemy.Armed() == 0;
+		if (noFight)
+		{
+			chance = 50f;
+			expectedLossPlayer = 0f;
+			expectedLossEnemy = 0f;
+			return;
+		}
+		int wins = 0;
+		float lp = 0f;
+		float le = 0f;
+		for (int i = 0; i < Rehearsals; i++)
+		{
+			Roll(player, enemy);
+			if (Judge(player, enemy))
+			{
+				wins++;
+			}
+			lp += player.lost;
+			le += enemy.lost;
+		}
+		chance = 100f * wins / Rehearsals;
+		expectedLossPlayer = lp / Rehearsals;
+		expectedLossEnemy = le / Rehearsals;
+		player.lost = 0;
+		enemy.lost = 0;
+	}
+
+	public static string Band()
+	{
+		if (noFight)
+		{
+			return "No fight: nobody is armed";
+		}
+		if (chance >= 80f)
+		{
+			return "Very likely";
+		}
+		if (chance >= 60f)
+		{
+			return "Likely";
+		}
+		if (chance >= 40f)
+		{
+			return "Even";
+		}
+		if (chance >= 20f)
+		{
+			return "Unlikely";
+		}
+		return "Very unlikely";
+	}
+
+	public static void Resolve()
+	{
+		try
+		{
+			if (player == null || enemy == null)
+			{
+				Close();
+				return;
+			}
+			bool won = true;
+			if (noFight)
+			{
+				player.lost = 0;
+				enemy.lost = 0;
+				rollText = null;
+				resultText = "The groups passed each other. Nobody was hurt.";
+			}
+			else
+			{
+				Roll(player, enemy);
+				won = Judge(player, enemy);
+				rollText = "Attacked!   " + player.attacked + "/6  --  " + enemy.attacked + "/6\n" +
+					"Defended   " + player.defended + "/6  --  " + enemy.defended + "/6\n" +
+					"Shot down  " + player.shotDown + "/" + enemy.Count() + "  --  " + enemy.shotDown + "/" + player.Count() + "\n" +
+					"Score  " + player.score.ToString("F1") + " (" + (player.attacked + player.defended + player.shotDown) + " x " + player.mult.ToString("F3") + ")  --  " + enemy.score.ToString("F1") + " (" + (enemy.attacked + enemy.defended + enemy.shotDown) + " x " + enemy.mult.ToString("F3") + ")";
+				KillPlanes(player, player.lost);
+				KillPlanes(enemy, enemy.lost);
+				string lp = LostText(player);
+				string le = LostText(enemy);
+				resultText = (won ? "VICTORY. " : "DEFEAT. ") + "You lost " + (lp.Length > 0 ? lp : "nothing") + "; the enemy lost " + (le.Length > 0 ? le : "nothing") + ".";
+			}
+			Debug.Log("[AUTORESOLVE] resolved (chance was " + chance.ToString("F0") + "%): " + (rollText != null ? rollText.Replace("\n", " | ") + " | " : "") + resultText);
+			Finish(player);
+			Finish(enemy);
+			if (EngagementPanel.instance != null)
+			{
+				EngagementPanel.instance.ClearEncounterData();
+				EngagementPanel.instance.gameObject.SetActive(false);
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[AUTORESOLVE] resolve failed: " + ex.Message + " " + ex.StackTrace);
+			resultText = "Auto resolve failed (see the log). Nothing was changed.";
+		}
+		player = null;
+		enemy = null;
+	}
+
+	// marks n random planes of the side as lost
+	private static void KillPlanes(Side s, int n)
+	{
+		List<int> alive = new List<int>();
+		for (int i = 0; i < s.craft.Count; i++)
+		{
+			s.craft[i].alive = true;
+			alive.Add(i);
+		}
+		for (int k = 0; k < n && alive.Count > 0; k++)
+		{
+			int pick = UnityEngine.Random.Range(0, alive.Count);
+			s.craft[alive[pick]].alive = false;
+			alive.RemoveAt(pick);
+		}
+	}
+
+	private static string LostText(Side s)
+	{
+		Dictionary<string, int> lost = new Dictionary<string, int>();
+		for (int i = 0; i < s.craft.Count; i++)
+		{
+			if (!s.craft[i].alive)
+			{
+				int n;
+				lost.TryGetValue(s.craft[i].name, out n);
+				lost[s.craft[i].name] = n + 1;
+			}
+		}
+		string t = "";
+		foreach (KeyValuePair<string, int> kv in lost)
+		{
+			t += (t.Length > 0 ? ", " : "") + kv.Value + " " + kv.Key;
+		}
+		return t;
+	}
+
+	// Writes the losses into the map object and lets the game's own post-combat code remove them.
+	private static void Finish(Side s)
+	{
+		MobileMapObject mmo = s.mmo;
+		if (mmo == null)
+		{
+			return;
+		}
+		int count = mmo.unitPrefabs.Count;
+		mmo.cellVariables = new List<string>();
+		for (int i = 0; i < count; i++)
+		{
+			mmo.cellVariables.Add((i < s.craft.Count && !s.craft[i].alive) ? "DESTROYED" : string.Empty);
+		}
+		if (mmo.ammunitionRemaining == null)
+		{
+			mmo.ammunitionRemaining = new List<string>();
+		}
+		while (mmo.ammunitionRemaining.Count < count)
+		{
+			mmo.ammunitionRemaining.Add(string.Empty);
+		}
+		MethodInfo m = typeof(CampaignManager).GetMethod("ProcessMobileObjectPostCombat", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+		if (m == null)
+		{
+			Debug.LogError("[AUTORESOLVE] CampaignManager.ProcessMobileObjectPostCombat not found: the losses were not applied");
+			return;
+		}
+		m.Invoke(CampaignManager.instance, new object[] { mmo });
+	}
+}

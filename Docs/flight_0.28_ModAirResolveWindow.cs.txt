@@ -1,0 +1,98 @@
+using UnityEngine;
+
+// v0.28.12: the auto resolve window. Enemy aircraft and our aircraft side by side with their points, the chance of victory, and after Resolve the dice.
+public class ModAirResolveWindow : MonoBehaviour
+{
+	private GUIStyle big;
+	private GUIStyle normal;
+	private GUIStyle title;
+	private GUIStyle mono;
+
+	private void OnGUI()
+	{
+		if (!ModAirResolve.windowOpen && ModAirResolve.resultText == null)
+		{
+			return;
+		}
+		float k = Mathf.Max(0.75f, Screen.height / 1080f);
+		if (big == null)
+		{
+			normal = new GUIStyle(GUI.skin.label);
+			big = new GUIStyle(GUI.skin.label);
+			title = new GUIStyle(GUI.skin.label);
+			mono = new GUIStyle(GUI.skin.label);
+			normal.wordWrap = true;
+			big.wordWrap = true;
+			mono.wordWrap = false;
+		}
+		normal.fontSize = (int)(15f * k);
+		big.fontSize = (int)(22f * k);
+		big.fontStyle = FontStyle.Bold;
+		title.fontSize = (int)(16f * k);
+		title.fontStyle = FontStyle.Bold;
+		mono.fontSize = (int)(17f * k);
+		GUI.depth = -1000;
+		float w = 600f * k;
+		float h = 460f * k;
+		Rect r = new Rect((Screen.width - w) * 0.5f, (Screen.height - h) * 0.5f, w, h);
+		GUI.Box(r, GUIContent.none);
+		GUI.Box(r, GUIContent.none);
+		GUILayout.BeginArea(new Rect(r.x + 12f * k, r.y + 10f * k, r.width - 24f * k, r.height - 20f * k));
+		GUILayout.Label("Auto resolve", big);
+		if (ModAirResolve.windowOpen)
+		{
+			GUILayout.BeginHorizontal();
+			GUILayout.BeginVertical(GUILayout.Width(r.width * 0.46f));
+			GUILayout.Label("Enemy aircraft", title);
+			GUILayout.Label(ModAirResolve.DescribeSide(false), normal);
+			GUILayout.Label(ModAirResolve.PointsLine(false), title);
+			GUILayout.EndVertical();
+			GUILayout.BeginVertical();
+			GUILayout.Label("Our aircraft", title);
+			GUILayout.Label(ModAirResolve.DescribeSide(true), normal);
+			GUILayout.Label(ModAirResolve.PointsLine(true), title);
+			GUILayout.EndVertical();
+			GUILayout.EndHorizontal();
+			GUILayout.Space(8f * k);
+			if (ModAirResolve.noFight)
+			{
+				GUILayout.Label(ModAirResolve.Band(), big);
+			}
+			else
+			{
+				GUILayout.Label("Chance of victory: " + ModAirResolve.chance.ToString("F0") + "%  (" + ModAirResolve.Band() + ")", big);
+				GUILayout.Label("Expected losses: about " + ModAirResolve.expectedLossPlayer.ToString("F1") + " of ours, " + ModAirResolve.expectedLossEnemy.ToString("F1") + " of theirs. Points: gun damage + toughness x armour for every plane. Resolve rolls the dice (attacked, defended, shot down) for each side; the higher total x points wins.", normal);
+			}
+			GUILayout.FlexibleSpace();
+			GUILayout.BeginHorizontal();
+			if (GUILayout.Button("Resolve", GUILayout.Height(36f * k)))
+			{
+				ModAirResolve.windowOpen = false;
+				ModAirResolve.Resolve();
+			}
+			if (GUILayout.Button("Fight it out", GUILayout.Height(36f * k)))
+			{
+				ModAirResolve.Close();
+			}
+			GUILayout.EndHorizontal();
+		}
+		else
+		{
+			GUILayout.Space(6f * k);
+			if (ModAirResolve.rollText != null)
+			{
+				GUILayout.Label("Ours  --  Enemy", title);
+				GUILayout.Label(ModAirResolve.rollText, mono);
+				GUILayout.Space(8f * k);
+			}
+			GUILayout.Label(ModAirResolve.resultText, big);
+			GUILayout.FlexibleSpace();
+			if (GUILayout.Button("OK", GUILayout.Height(36f * k)))
+			{
+				ModAirResolve.resultText = null;
+				ModAirResolve.rollText = null;
+			}
+		}
+		GUILayout.EndArea();
+	}
+}

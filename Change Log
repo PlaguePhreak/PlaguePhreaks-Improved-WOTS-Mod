@@ -11,6 +11,12 @@ The mod is in alpha, so every version is 0.x. Version numbers group the work in 
 Numbering: a major change gets a whole number (v0.25 = new map locations); the minor changes under it are v0.25.1, v0.25.2 and so on. What used to be called v0.24.3 to v0.24.6 is now v0.25 to v0.25.3.
 NOTE: the in-game logbook (ModGuide class, What's New page) still uses the old numbers and must be updated to match.
 
+v0.28.12 - Air auto resolve: points and dice (pending test)
+------------------------------------------------------------
+* Fix: "nobody is armed" for two fighter groups (planes were only marked alive inside the fight roll).
+* New model: each side gets points (gun damage + toughness x armour per plane, summed, / 6) and a multiplier 1 + points/1000. Resolve rolls Attacked (1-6), Defended (1-6) and Shot down (0 to the side's planes, pulled toward the better points) for each side; score = sum x multiplier, higher wins; all planes shot down = immediate loss. Loser loses the planes shot down against it, the winner 1/2 to 3/4 of them.
+* Window: enemy and our aircraft with points, chance of victory, then the rolls and the result. Knobs at the top of ModAirResolve.
+
 v0.28.11 - Realistic fuel, bingo at 10%, fighters let a leaving plane go (in this build, first tests clean)
 ------------------------------------------------------------
 * Every aircraft row carries its real endurance at full power from the internal tanks (ModAirFlight fuelMinutes; Zero 140, Wildcat 100, Hellcat 100, Corsair 95, P-51D 160 and so on). Before, every fighter had 26 minutes.
