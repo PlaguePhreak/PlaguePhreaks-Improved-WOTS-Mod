@@ -19,7 +19,7 @@ public static class ModVersion
 		"- Damage affects flight: fuel leaks, fires, parts falling off\n" +
 		"- Realistic fuel; planes leave at bingo, out of ammo or too damaged\n" +
 		"- Air Auto Resolve shows the chance of victory, F8 flight readout\n" +
-		"<color=#E0B030><b>0.28.11</b></color>: fire key works, Wildcat tactics, collisions off, fuel and leavers";
+		"- 0.28.11: fire key works, Wildcat tactics, collisions off, fuel and leavers";
 
 	private const float Margin = 30f;
 	private static GameObject root;
@@ -68,7 +68,7 @@ public static class ModVersion
 
 			// Top right: changelog box (below the compass).
 			RectTransform box = NewRect("Changelog", holder.transform, new Vector2(1f, 1f));
-			box.sizeDelta = new Vector2(430f, 250f);
+			box.sizeDelta = new Vector2(600f, 270f);   // 0.28.11: wider so no line wraps
 			box.position = new Vector3(c[2].x, c[2].y, c[2].z);
 			Image back = box.gameObject.AddComponent<Image>();
 			back.color = new Color(0.07f, 0.12f, 0.19f, 0.75f);
@@ -83,7 +83,7 @@ public static class ModVersion
 			body.anchorMin = new Vector2(0f, 1f);
 			body.anchorMax = new Vector2(1f, 1f);
 			body.anchoredPosition = new Vector2(0f, -44f);
-			body.sizeDelta = new Vector2(-24f, 200f);
+			body.sizeDelta = new Vector2(-24f, 220f);
 			NewText(body, font, 17, TextAnchor.UpperLeft, new Color(0.9f, 0.92f, 0.95f, 1f)).text = ChangelogBody;
 
 			// Bottom left: mod name and version.
