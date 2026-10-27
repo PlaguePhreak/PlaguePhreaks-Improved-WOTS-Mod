@@ -16,6 +16,10 @@ ModAirResolveWindow from 0.28.12 is unchanged.
 
 Yesterday's case would now read: "24 x Wildcat" against "24 x A7M2 Sam + 12 unknown aircraft (2 groups)".
 
-## Knob
+- The shot-down die has a floor of 1 for any armed side, and the winner always loses at least one plane when anything was shot down against it. Your 0/36 roll with "the enemy lost nothing" cannot happen now.
+
+## Knobs
+
+- `ShotDownMin = 1`. Raise it to make every fight bloodier.
 
 - `JoinRange = 50000f` metres. Lower it to make the auto resolve narrower than a real engagement.

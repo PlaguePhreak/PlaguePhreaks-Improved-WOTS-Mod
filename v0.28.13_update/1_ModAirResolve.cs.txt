@@ -12,7 +12,8 @@ using WorldMapStrategyKit;
 //   Losses: the loser loses the planes shot down against it; the winner loses 1/2 to 3/4 of the planes shot down against it.
 //   The window shows the groups, the points, the chance of victory (1000 dice rehearsals) and, after Resolve, the rolls and the result.
 // v0.28.13: like a real engagement, the window pulls in every other air group within JoinRange (50 km, the game's own join distance) of our engaged group,
-//   on both sides, up to the game's air limit per side. An enemy group we have not spotted is shown as "N unknown aircraft"; its planes still count
+//   on both sides, up to the game's air limit per side. The shot-down die now has a floor of ShotDownMin (1) for an armed side, and the winner
+//   always loses at least one plane when anything was shot down against it: a 0/36 roll no longer means "the enemy lost nothing". An enemy group we have not spotted is shown as "N unknown aircraft"; its planes still count
 //   in the dice and the points. Losses are applied to every group that took part.
 // v0.28.12 fix: the old version showed "nobody is armed" for two fighter groups because the planes were only marked alive inside the fight.
 public static class ModAirResolve
@@ -74,6 +75,7 @@ public static class ModAirResolve
 	public const float WinnerLossMin = 0.5f;   // the winner loses between 1/2 and 3/4 of the planes shot down against it
 	public const float WinnerLossMax = 0.75f;
 	public const float ShotDownShare = 1f;     // the shot-down die runs from 0 to this share of the side's own planes (1 = as designed; 0.5 = at most half)
+	public const int ShotDownMin = 1;          // an armed side always shoots down at least this many (so the winner can never walk away untouched)
 	public const float JoinRange = 50000f;     // metres; other air groups this close to our engaged group join the fight (the game's own engagement join distance)
 
 	public static bool windowOpen;
@@ -311,7 +313,7 @@ public static class ModAirResolve
 		int top = Mathf.Min(them.Count(), Mathf.RoundToInt(me.Count() * ShotDownShare));
 		float edge = Mathf.Clamp(me.points / Mathf.Max(1f, them.points), 0.5f, 2f);
 		float r = Mathf.Pow(UnityEngine.Random.value, 1f / edge);
-		return Mathf.Clamp(Mathf.RoundToInt(r * top), 0, them.Count());
+		return Mathf.Clamp(Mathf.Max(ShotDownMin, Mathf.RoundToInt(r * top)), 0, them.Count());
 	}
 
 	private static void Roll(Side a, Side b)
@@ -350,7 +352,7 @@ public static class ModAirResolve
 		Side loser = playerWins ? e : p;
 		loser.lost = Mathf.Clamp(winner.shotDown, 0, loser.Count());
 		float share = UnityEngine.Random.Range(WinnerLossMin, WinnerLossMax);
-		winner.lost = Mathf.Clamp(Mathf.RoundToInt(loser.shotDown * share), 0, winner.Count());
+		winner.lost = Mathf.Clamp(Mathf.Max((loser.shotDown > 0) ? 1 : 0, Mathf.RoundToInt(loser.shotDown * share)), 0, winner.Count());
 		return playerWins;
 	}
 
