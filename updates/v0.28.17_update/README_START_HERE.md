@@ -9,7 +9,8 @@ Do them **in this order** (ModFlight uses a new method in ModAirDamage, so ModAi
 2. **ModFlight**: paste `2_ModFlight.cs.txt` (built on the 0.28.8 ModFlight, the newest).
 3. **ModDogfight**: paste `3_ModDogfight.cs.txt` (built on the 0.28.11 ModDogfight, the newest).
 4. **UnitReference.GetAAAText**: one line, see `4_stock_edit_UnitReference.txt`.
-5. Optional: in **ModVersion** change `Current` to `"0.28.17"` so the main menu shows the new version.
+5. **ModAirResolve**: paste `5_ModAirResolve_from_0.28.13.cs.txt` (the 0.28.13 class, unchanged). Aaron's DLL had an incomplete copy: the auto resolve rolled 0/36 shot down, which 0.28.13 rules out.
+6. Optional: in **ModVersion** change `Current` to `"0.28.17"` so the main menu shows the new version.
 
 No new hooks. 0.28.14 (panel), 0.28.15 (stick) and 0.28.16 (chase cam) are not touched.
 
