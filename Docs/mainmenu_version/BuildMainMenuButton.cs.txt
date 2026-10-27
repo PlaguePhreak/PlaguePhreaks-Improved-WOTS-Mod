@@ -1,0 +1,26 @@
+private static void BuildMainMenuButton()
+{
+	MenuSystem ms = MenuSystem.instance;
+	if (ms == null || ms.mainInterface == null)
+	{
+		return;
+	}
+	Button[] all = ms.mainInterface.GetComponentsInChildren<Button>(true);
+	if (all.Length == 0)
+	{
+		return;
+	}
+	Button anchor = all[all.Length - 1];
+	for (int i = 0; i < all.Length; i++)
+	{
+		Text t = all[i].GetComponentInChildren<Text>(true);
+		if (t != null && t.text.ToUpper().Contains("OPTION"))
+		{
+			anchor = all[i];
+			break;
+		}
+	}
+	Button mod = Clone(anchor, "Mod Options", new UnityAction(OpenPanelFromMain));
+	Button ver = Clone(anchor, "Version " + ModVersion.Current, new UnityAction(ModVersion.Open));
+	PlaceAfter(anchor, new Button[2] { mod, ver });
+}

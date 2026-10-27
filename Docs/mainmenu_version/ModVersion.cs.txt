@@ -1,0 +1,268 @@
+using System;
+using UnityEngine;
+using UnityEngine.Events;
+using UnityEngine.UI;
+
+// Main menu "Version X.XX.X" button. Clicking it opens a scrolling Changelog window,
+// grouped by minor version only (Changelog 0.28, Changelog 0.27, ...).
+// To release a new version: change Current, and add or edit lines in the Changelog text below.
+public static class ModVersion
+{
+	public const string Current = "0.28.9";
+
+	private static GameObject panel;
+	private static Font font;
+	private static int fontSize = 16;
+
+	private static readonly Color gold = new Color(0.72f, 0.58f, 0.3f, 1f);
+	private static readonly Color dark = new Color(0.07f, 0.12f, 0.19f, 0.97f);
+
+	private const string H = "<color=#E0B030><b>";
+	private const string E = "</b></color>";
+
+	private static string changelog =
+		H + "Changelog 0.28" + E + "  Air combat update\n" +
+		"- All 135 aircraft have their own flight, toughness, gun damage and armour numbers.\n" +
+		"- Fighters carry and drop bombs. Bomber escorts fly 400 m above the bombers.\n" +
+		"- New moves: Immelmann, pitchback, high-g barrel roll, scissors, decoy, combat spread and Recover.\n" +
+		"- Formation flying: followers keep a slot behind the leader and spread out near a fight.\n" +
+		"- Damage affects flight: engine, wing, fuel and tail hits slow, stall or cripple a plane. Fuel leaks and fires (Kiko's idea), parts falling off (Avaricles' idea), overspeed wing break-up.\n" +
+		"- Planes can collide (switched off in this build). Bingo fuel and out-of-ammo planes leave the fight.\n" +
+		"- Flights keep going after fixes for tail chasing, defence, rudder, zoom climbs and chasing runners.\n" +
+		"- F8 shows a flight readout in battle. Air Auto Resolve shows the chance of victory.\n\n" +
+
+		H + "Changelog 0.27" + E + "  Energy flight, Mod Options, ship AA\n" +
+		"- Planes follow real energy rules: thrust, drag, turn drag, climb limit, flaps and gun convergence.\n" +
+		"- New pause menu with Resume, Save, Load, Settings, Mod Options, Back to Main Menu and Quit.\n" +
+		"- Mod Options window (also on the main menu) with on/off switches for the mod's features.\n" +
+		"- Historical light AA guns for ships, with side arcs and a range, rate and damage for each gun type.\n\n" +
+
+		H + "Changelog 0.26" + E + "  Flight model and pilots\n" +
+		"- Dives gain speed, climbs lose it, planes stall when too slow, turns slow down at high speed.\n" +
+		"- Pitch, banking and rudder control: noses swing onto targets at a realistic rate.\n" +
+		"- Pilot ranks (Green to Elite) and acrobatics: roll-over attack, split-S, barrel roll.\n" +
+		"- Squads stay together, a main target is held for 5 minutes, team tactics, mountain and map-edge safety.\n" +
+		"- Longer gun bursts, American planes 1.3x tougher, gun statistics log.\n\n" +
+
+		H + "Changelog 0.25" + E + "  The New Guinea front\n" +
+		"- Ten new map locations along Papua New Guinea, the Bismarck Sea and the Torres Strait.\n" +
+		"- Every location has its own historical aircraft mix. Captured bases fly your planes.\n" +
+		"- Both sides start with many more task forces (carrier forces, battleship groups, cruisers, destroyer patrols, submarines).\n" +
+		"- 10 new formations. New campaign names and win conditions.\n\n" +
+
+		H + "Changelog 0.24" + E + "  The fleet expansion\n" +
+		"- 84 warships from RamZ's Unit Catalog and 20 from the TTE team.\n" +
+		"- 93 aircraft from RamZ's catalog and 22 from the TTE team.\n\n" +
+
+		H + "Changelog 0.23" + E + "  The merchant fleet\n" +
+		"- 23 TTE merchant ships, transports, a hospital ship, oilers and a destroyer escort, in limited numbers.\n\n" +
+
+		H + "Changelog 0.22" + E + "  Hungry garrisons\n" +
+		"- Troops eat supplies every day. The AI sends convoys to its low outposts.\n" +
+		"- The Admiralty sends a supply convoy to your home port every 20-30 days.\n" +
+		"- The in-game logbook (book button).\n\n" +
+
+		H + "Changelog 0.21" + E + "  Sharper war\n" +
+		"- Faster ship buying, historical torpedo duds, glancing torpedo hits that bounce, the fuel overlay (F11).\n\n" +
+
+		H + "Changelog 0.20" + E + "  AI super overhaul\n" +
+		"- Ships dodge air attacks and comb torpedo tracks, realistic attack heights and bomb aim, fighter manoeuvres, torpedo bomber runs.\n\n" +
+
+		H + "Changelog 0.19" + E + "  UI overhaul\n" +
+		"- Hit log, message log tabs, Crew tab, group orders, group numbers and a better minimap.\n\n" +
+
+		H + "Changelog 0.1 to 0.18" + E + "  The foundations\n" +
+		"- Ship ordering and build times, port levels, fuel, veteran crews, repair and lasting damage, large task forces, multi task force battles, smarter AI, submarines, air damage rework.";
+
+	// Called when the Version button on the main menu is clicked.
+	public static void Open()
+	{
+		try
+		{
+			if (panel == null)
+			{
+				MenuSystem ms = MenuSystem.instance;
+				Canvas c = ms.mainInterface.GetComponentInParent<Canvas>();
+				if (c == null)
+				{
+					Debug.LogError("[VERSION] no canvas found for the changelog");
+					return;
+				}
+				BuildPanel(c.rootCanvas.transform);
+			}
+			panel.transform.SetAsLastSibling();
+			panel.SetActive(true);
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[VERSION] open failed: " + ex.ToString());
+		}
+	}
+
+	private static void Close()
+	{
+		if (panel != null)
+		{
+			panel.SetActive(false);
+		}
+	}
+
+	private static RectTransform NewRect(string name, Transform parent)
+	{
+		GameObject go = new GameObject(name, typeof(RectTransform));
+		go.transform.SetParent(parent, false);
+		return go.GetComponent<RectTransform>();
+	}
+
+	private static void Stretch(RectTransform rt, float left, float bottom, float right, float top)
+	{
+		rt.anchorMin = Vector2.zero;
+		rt.anchorMax = Vector2.one;
+		rt.offsetMin = new Vector2(left, bottom);
+		rt.offsetMax = new Vector2(-right, -top);
+	}
+
+	private static Text NewText(RectTransform rt, int size, TextAnchor anchor, Color colour)
+	{
+		Text t = rt.gameObject.AddComponent<Text>();
+		t.font = font;
+		t.fontSize = size;
+		t.alignment = anchor;
+		t.color = colour;
+		t.supportRichText = true;
+		t.horizontalOverflow = HorizontalWrapMode.Wrap;
+		t.verticalOverflow = VerticalWrapMode.Overflow;
+		t.raycastTarget = false;
+		return t;
+	}
+
+	private static void NewCloseButton(Transform parent, UnityAction action)
+	{
+		RectTransform rt = NewRect("Btn Close", parent);
+		rt.anchorMin = new Vector2(0.5f, 0f);
+		rt.anchorMax = new Vector2(0.5f, 0f);
+		rt.pivot = new Vector2(0.5f, 0f);
+		rt.anchoredPosition = new Vector2(0f, 18f);
+		rt.sizeDelta = new Vector2(150f, 40f);
+		Image edge = rt.gameObject.AddComponent<Image>();
+		edge.color = gold;
+		Button b = rt.gameObject.AddComponent<Button>();
+		b.targetGraphic = edge;
+		b.onClick.AddListener(action);
+		RectTransform inner = NewRect("Back", rt);
+		Stretch(inner, 2f, 2f, 2f, 2f);
+		Image innerImg = inner.gameObject.AddComponent<Image>();
+		innerImg.color = new Color(0.1f, 0.17f, 0.26f, 1f);
+		innerImg.raycastTarget = false;
+		RectTransform txt = NewRect("Text", rt);
+		Stretch(txt, 0f, 0f, 0f, 0f);
+		Text t = NewText(txt, fontSize + 2, TextAnchor.MiddleCenter, Color.white);
+		t.text = "Close";
+	}
+
+	private static void BuildPanel(Transform root)
+	{
+		font = null;
+		fontSize = 16;
+		if (TooltipManager.instance != null && TooltipManager.instance.toolTipText != null)
+		{
+			font = TooltipManager.instance.toolTipText.font;
+			fontSize = TooltipManager.instance.toolTipText.fontSize;
+		}
+		if (font == null)
+		{
+			font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+		}
+
+		// Full screen dimmer that also blocks clicks on the menu behind the window.
+		RectTransform dim = NewRect("ModVersion", root);
+		Stretch(dim, 0f, 0f, 0f, 0f);
+		Image dimImg = dim.gameObject.AddComponent<Image>();
+		dimImg.color = new Color(0f, 0f, 0f, 0.35f);
+		panel = dim.gameObject;
+
+		RectTransform win = NewRect("Window", dim);
+		win.anchorMin = new Vector2(0.25f, 0.12f);
+		win.anchorMax = new Vector2(0.75f, 0.88f);
+		win.offsetMin = Vector2.zero;
+		win.offsetMax = Vector2.zero;
+		Image winEdge = win.gameObject.AddComponent<Image>();
+		winEdge.color = gold;
+		RectTransform winBack = NewRect("Back", win);
+		Stretch(winBack, 2f, 2f, 2f, 2f);
+		Image winBackImg = winBack.gameObject.AddComponent<Image>();
+		winBackImg.color = dark;
+		winBackImg.raycastTarget = false;
+
+		// Title and a thin line under it.
+		RectTransform title = NewRect("Title", win);
+		title.anchorMin = new Vector2(0f, 1f);
+		title.anchorMax = new Vector2(1f, 1f);
+		title.pivot = new Vector2(0.5f, 1f);
+		title.anchoredPosition = new Vector2(0f, -14f);
+		title.sizeDelta = new Vector2(-40f, 40f);
+		Text titleText = NewText(title, fontSize + 10, TextAnchor.MiddleCenter, Color.white);
+		titleText.text = "VERSION " + Current;
+		RectTransform line = NewRect("Line", win);
+		line.anchorMin = new Vector2(0f, 1f);
+		line.anchorMax = new Vector2(1f, 1f);
+		line.pivot = new Vector2(0.5f, 1f);
+		line.anchoredPosition = new Vector2(0f, -58f);
+		line.sizeDelta = new Vector2(-50f, 2f);
+		Image lineImg = line.gameObject.AddComponent<Image>();
+		lineImg.color = gold;
+		lineImg.raycastTarget = false;
+
+		// Scroll area with a scroll bar on the right.
+		RectTransform scroll = NewRect("Scroll", win);
+		Stretch(scroll, 30f, 78f, 30f, 72f);
+		ScrollRect sr = scroll.gameObject.AddComponent<ScrollRect>();
+		RectTransform viewport = NewRect("Viewport", scroll);
+		Stretch(viewport, 0f, 0f, 22f, 0f);
+		Image vpImg = viewport.gameObject.AddComponent<Image>();
+		vpImg.color = new Color(0f, 0f, 0f, 0f);
+		viewport.gameObject.AddComponent<RectMask2D>();
+		RectTransform contentRect = NewRect("Content", viewport);
+		contentRect.anchorMin = new Vector2(0f, 1f);
+		contentRect.anchorMax = new Vector2(1f, 1f);
+		contentRect.pivot = new Vector2(0.5f, 1f);
+		contentRect.anchoredPosition = Vector2.zero;
+		contentRect.sizeDelta = Vector2.zero;
+		Text bodyText = NewText(contentRect, fontSize + 1, TextAnchor.UpperLeft, new Color(0.9f, 0.92f, 0.95f, 1f));
+		bodyText.lineSpacing = 1.1f;
+		bodyText.text = changelog;
+		ContentSizeFitter fit = contentRect.gameObject.AddComponent<ContentSizeFitter>();
+		fit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+		RectTransform bar = NewRect("Scrollbar", scroll);
+		bar.anchorMin = new Vector2(1f, 0f);
+		bar.anchorMax = new Vector2(1f, 1f);
+		bar.pivot = new Vector2(1f, 1f);
+		bar.anchoredPosition = Vector2.zero;
+		bar.sizeDelta = new Vector2(12f, 0f);
+		Image barImg = bar.gameObject.AddComponent<Image>();
+		barImg.color = new Color(0.03f, 0.06f, 0.1f, 1f);
+		RectTransform slide = NewRect("Sliding Area", bar);
+		Stretch(slide, 0f, 0f, 0f, 0f);
+		RectTransform handle = NewRect("Handle", slide);
+		handle.sizeDelta = Vector2.zero;
+		Image handleImg = handle.gameObject.AddComponent<Image>();
+		handleImg.color = gold;
+		Scrollbar sb = bar.gameObject.AddComponent<Scrollbar>();
+		sb.direction = Scrollbar.Direction.BottomToTop;
+		sb.handleRect = handle;
+		sb.targetGraphic = handleImg;
+
+		sr.content = contentRect;
+		sr.viewport = viewport;
+		sr.horizontal = false;
+		sr.vertical = true;
+		sr.movementType = ScrollRect.MovementType.Clamped;
+		sr.scrollSensitivity = 30f;
+		sr.verticalScrollbar = sb;
+		sr.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
+
+		NewCloseButton(win, new UnityAction(Close));
+		panel.SetActive(false);
+	}
+}
