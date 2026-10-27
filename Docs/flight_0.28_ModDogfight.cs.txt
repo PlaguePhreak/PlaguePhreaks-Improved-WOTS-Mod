@@ -237,6 +237,8 @@ public class ModDogfight
 	public const float DecoyEnemyRange = 3000f * 0.1f;
 	// counters for the [BATTLE] line
 	public static int recoverCount;
+	// v0.28.8: the "fly failed" error is logged at most 20 times a session, with a stack trace, so a per-tick failure cannot fill the log
+	public static int flyFailLogged;
 	public static int scissorsCount;
 	public static int scissorsWon;
 	public static int decoyCount;
@@ -655,7 +657,11 @@ public class ModDogfight
 		}
 		catch (System.Exception ex)
 		{
-			UnityEngine.Debug.LogError("[DOGFIGHT] fly failed: " + ex.Message);
+			if (ModDogfight.flyFailLogged < 20)
+			{
+				ModDogfight.flyFailLogged++;
+				UnityEngine.Debug.LogError("[DOGFIGHT] fly failed: " + ex.Message + " " + ex.StackTrace);
+			}
 			return false;
 		}
 	}
@@ -891,9 +897,15 @@ public class ModDogfight
 				s.move = 2;
 				ModDogfight.SetPhase(u, s, 6, now, 3f, "about to overshoot " + ModDogfight.Name(target) + ", lag displacement roll: easing out to the outside of its turn");
 			}
-			else
+			else if (ModDogfight.FastEnough(u, 1.1f))
 			{
 				ModDogfight.SetPhase(u, s, 2, now, 7f, "passing " + ModDogfight.Name(target) + ", zoom climb away");
+			}
+			else
+			{
+				// v0.28.8: too slow to zoom (a zoom from under corner speed stalled the Wildcat on every pass): extend level and build speed instead
+				s.move = 4;
+				ModDogfight.SetPhase(u, s, 6, now, ModDogfight.ExtendMax, "passing " + ModDogfight.Name(target) + " at " + (u.currentSpeed * 36f).ToString("F0") + " km/h, too slow to zoom: extending level to build speed");
 			}
 			return true;
 		}
@@ -918,9 +930,16 @@ public class ModDogfight
 		// (and a pilot who does not judge energy) stays in the fight and turns back in on the target.
 		if (targetIsFighter && (passed || inRun > ModDogfight.RunGiveUp))
 		{
-			if (s.mode == ModDogfight.ModeBoom)
+			if (s.mode == ModDogfight.ModeBoom && ModDogfight.FastEnough(u, 1.1f))
 			{
 				ModDogfight.SetPhase(u, s, 2, now, 7f, "pass on " + ModDogfight.Name(target) + " done, zoom climb with the speed kept (energy " + s.energyDiff.ToString("F0") + " m)");
+				return true;
+			}
+			if (s.mode == ModDogfight.ModeBoom)
+			{
+				// v0.28.8: a boom pass that ends under corner speed extends level instead of zooming (the zoom stalled and the next pass started even slower)
+				s.move = 4;
+				ModDogfight.SetPhase(u, s, 6, now, ModDogfight.ExtendMax, "pass on " + ModDogfight.Name(target) + " done at " + (u.currentSpeed * 36f).ToString("F0") + " km/h, too slow to zoom: extending level to build speed");
 				return true;
 			}
 			s.attackStart = now;
@@ -1083,7 +1102,8 @@ public class ModDogfight
 		ModDogfight.SetHeight(u, Mathf.Min(s.targetHeight, target.transform.position.y + ModDogfight.MaxAbove), s);
 		ModDogfight.Energy(u, japanese);
 		ModAirFlight.Row zr = ModAirFlight.Of(u);
-		bool spent = zr != null && u.currentSpeed < zr.cornerSpeed * 0.9f;
+		// v0.28.8: 1.5 s of grace so a zoom started near corner speed is not called spent on its first tick
+		bool spent = zr != null && u.currentSpeed < zr.cornerSpeed * 0.9f && now - s.phaseStart > 1.5f;
 		if (now > s.phaseUntil || spent)
 		{
 			s.side = -s.side;

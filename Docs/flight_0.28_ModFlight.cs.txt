@@ -125,6 +125,18 @@ public static class ModFlight
 		public float below;
 		public HashSet<int> ids = new HashSet<int>();
 	}
+	private static void AddSample(Acc b, float e, float y, float speed, float dt, bool below, int id)
+	{
+		b.e += e * dt;
+		b.h += y * dt;
+		b.v += speed * dt;
+		b.dt += dt;
+		if (below)
+		{
+			b.below += dt;
+		}
+		b.ids.Add(id);
+	}
 	// index 0 = ours, 1 = enemy. window = since the last [ENERGY] line (10 s), battle = the whole battle.
 	private static Dictionary<string, Acc>[] window = new Dictionary<string, Acc>[] { new Dictionary<string, Acc>(), new Dictionary<string, Acc>() };
 	private static Acc[] battle = new Acc[] { new Acc(), new Acc() };
@@ -289,7 +301,7 @@ public static class ModFlight
 				ua.currentSpeed = bs;
 				ua.percentMaxSpeed = bs / maxSpeed * ua.currentSpeedPenalty;
 				ModAirDamage.Tick(ua, duration, 1f, bs);
-				ModAirCollide.Check(ua, duration);
+				ModAirCollide.Check(ua, duration * Mathf.Max(1f, Time.timeScale));
 				float lastDive;
 				if ((!lastDiveLog.TryGetValue(id, out lastDive) || Time.time - lastDive > 1f) && bombLogged < 300)
 				{
@@ -361,7 +373,7 @@ public static class ModFlight
 			ua.percentMaxSpeed = speed / maxSpeed;
 			// 0.28: fuel, fire and overspeed break-up; then collisions with other aircraft.
 			ModAirDamage.Tick(ua, duration, (boost > 1f) ? throttle * ModAirFlight.ChaseFuel : throttle, speed);
-			ModAirCollide.Check(ua, duration);
+			ModAirCollide.Check(ua, duration * Mathf.Max(1f, Time.timeScale));
 
 			// TURN LIMIT by speed (lift below corner speed, airframe above), flaps included.
 			float cap = ModAirFlight.TurnLimit(r, speed, flaps);
@@ -605,20 +617,9 @@ public static class ModFlight
 			recentA = new Acc[] { new Acc(), new Acc() };
 			recentStart = now;
 		}
-		Acc[] targets = new Acc[] { battle[side], recentA[side] };
-		for (int k = 0; k < targets.Length; k++)
-		{
-			Acc b = targets[k];
-			b.e += e * dt;
-			b.h += y * dt;
-			b.v += speed * dt;
-			b.dt += dt;
-			if (below)
-			{
-				b.below += dt;
-			}
-			b.ids.Add(id);
-		}
+		// v0.28.8: no per-sample array (this ran for every plane every tick)
+		ModFlight.AddSample(battle[side], e, y, speed, dt, below, id);
+		ModFlight.AddSample(recentA[side], e, y, speed, dt, below, id);
 		if (now >= nextEnergyLog)
 		{
 			if (nextEnergyLog > 0f)

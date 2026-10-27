@@ -15,7 +15,9 @@ using UnityEngine;
 // Counts are in [BATTLE] lines (collisions so far) and every collision is logged as [COLLIDE].
 public static class ModAirCollide
 {
-	public const bool On = true;
+	// v0.28.8: plane-to-plane collisions are OFF (a quarter of the 4v4 losses were collisions). With On false, Check and Avoid return at once,
+	// planes pass through each other as in the stock game, and the [BATTLE] collision counts stay 0. Set On back to true to turn them on again.
+	public const bool On = false;
 	public const bool AvoidOn = true;
 	public const float RadiusScale = 0.42f;      // x the longer of length and wingspan, in metres
 	public const float MinRadius = 3f;           // metres
@@ -52,6 +54,8 @@ public static class ModAirCollide
 
 	private static int builtFrame = -1;
 	private static List<Plane> planes = new List<Plane>();
+	private static List<Plane> planePool = new List<Plane>();   // v0.28.8: Plane objects are reused frame to frame
+	private static int planesUsed;
 	private static Dictionary<long, List<Plane>> grid = new Dictionary<long, List<Plane>>();
 	private static List<List<Plane>> listPool = new List<List<Plane>>();
 	private static Dictionary<long, float> pairUntil = new Dictionary<long, float>();
@@ -82,6 +86,7 @@ public static class ModAirCollide
 		}
 		grid.Clear();
 		planes.Clear();
+		planesUsed = 0;
 		byId.Clear();
 		if (EngagementManager.instance == null || EngagementManager.instance.allAirUnits == null)
 		{
@@ -99,7 +104,17 @@ public static class ModAirCollide
 			{
 				continue;
 			}
-			Plane p = new Plane();
+			Plane p;
+			if (planesUsed < planePool.Count)
+			{
+				p = planePool[planesUsed];
+			}
+			else
+			{
+				p = new Plane();
+				planePool.Add(p);
+			}
+			planesUsed++;
 			p.ua = u.unitAir;
 			p.u = u;
 			p.id = u.GetInstanceID();
