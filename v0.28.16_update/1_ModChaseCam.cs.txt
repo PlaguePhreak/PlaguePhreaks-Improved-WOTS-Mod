@@ -1,0 +1,93 @@
+using System;
+using UnityEngine;
+
+// v0.28.16 NEW CLASS. The chase camera sits on the tail of an aircraft.
+// Before: the game's chase camera (C) only swung round to the plane's heading, slowly (1 s smoothing, in battle time). It never went up or down
+// with the nose or tilted with the wings, so in a climb, a dive or a hard turn the plane flew out of the picture.
+// Now, for aircraft only (ships keep the game's chase camera): the camera stays behind the tail and pitches, turns and banks with the plane, so
+// the horizon tilts in a turn like a camera fixed to the tail. The rotation is smoothed a little (FollowRate) so it does not shake; the position
+// never lags, so the plane always stays in the picture, also at time compression.
+//   Zoom (mouse wheel, = / -) still sets the distance. Holding the right mouse button looks around freely as before (the camera swings back
+//   when you let go). The camera keys (arrows) and freeze camera (`) switch chase mode off, as before.
+// Hook: ThirdPersonCamera.LateUpdate (see the README).
+public static class ModChaseCam
+{
+	public const bool On = true;
+	public const bool RollWithPlane = true;   // false: the camera turns and pitches with the plane but keeps the horizon level
+	public const float FollowRate = 6f;       // how fast the camera catches up with the plane's rotation (higher = stiffer, per real second)
+	public const float HeightShare = 0.18f;   // the camera sits this share of the distance above the tail, so it looks slightly down on the plane
+	private static bool failed;
+	private static Transform lastTarget;
+	private static Unit lastUnit;
+	private static Quaternion smooth = Quaternion.identity;
+	private static bool active;
+
+	// First line of ThirdPersonCamera.LateUpdate after the loadComplete check. true = the camera was placed here, the game's own placing is skipped.
+	public static bool Apply(ThirdPersonCamera cam)
+	{
+		if (!On || failed || cam == null)
+		{
+			return false;
+		}
+		try
+		{
+			CombatInterface ci = CombatInterface.instance;
+			Transform t = cam.lookAt;
+			if (ci == null || t == null || cam.freezeCamera || ci.cameraModeToggles == null || ci.cameraModeToggles.Length == 0 || !ci.cameraModeToggles[0].isOn || Input.GetMouseButton(1))
+			{
+				active = false;
+				return false;
+			}
+			if (t != lastTarget)
+			{
+				lastTarget = t;
+				lastUnit = ((Component)t).GetComponent<Unit>();
+				active = false;
+			}
+			Unit u = lastUnit;
+			if (u == null || u.unitAir == null || u.isDestroyed || t.position.y < 0f)
+			{
+				active = false;
+				return false;
+			}
+			Quaternion want = t.rotation;
+			if (!RollWithPlane)
+			{
+				Vector3 f = t.forward;
+				if (Mathf.Abs(f.y) > 0.99f)
+				{
+					f = t.up * -Mathf.Sign(f.y);
+				}
+				want = Quaternion.LookRotation(f, Vector3.up);
+			}
+			if (!active)
+			{
+				// start from where the camera is looking now, so switching chase on is a smooth swing, not a jump
+				active = true;
+				smooth = Quaternion.LookRotation(t.position - ((Component)cam).transform.position, Vector3.up);
+			}
+			smooth = Quaternion.Slerp(smooth, want, 1f - Mathf.Exp(-FollowRate * Mathf.Min(Time.unscaledDeltaTime, 0.1f)));
+			Vector3 target = t.position;
+			Vector3 pos = target + smooth * new Vector3(0f, cam.distance * HeightShare, -cam.distance);
+			Transform ct = ((Component)cam).transform;
+			ct.position = pos;
+			ct.LookAt(target, smooth * Vector3.up);
+			if (ct.position.y < Config.instance.cameraMinHeight)
+			{
+				ct.position = new Vector3(ct.position.x, Config.instance.cameraMinHeight, ct.position.z);
+			}
+			// keep the game's own camera angles in step, so leaving chase mode does not jump
+			Vector3 e = Quaternion.LookRotation(target - ct.position, Vector3.up).eulerAngles;
+			cam.currentX = e.y;
+			cam.currentY = Mathf.Clamp((e.x > 180f) ? e.x - 360f : e.x, -89f, 87f);
+			cam.skyDomeTransform.position = new Vector3(ct.position.x, ct.position.y * -3f, ct.position.z);
+			return true;
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[CAMERA] tail chase camera failed and stopped: " + ex.Message + " " + ex.StackTrace));
+			return false;
+		}
+	}
+}
