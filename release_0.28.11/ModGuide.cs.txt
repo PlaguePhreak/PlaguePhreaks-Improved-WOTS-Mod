@@ -1,0 +1,343 @@
+using System;
+using UnityEngine;
+using UnityEngine.Events;
+using UnityEngine.UI;
+using Object = UnityEngine.Object;
+
+public static class ModGuide
+{
+	private static GameObject button;
+
+	private static GameObject panel;
+
+	private static Text titleText;
+
+	private static Text bodyText;
+
+	private static Text pageText;
+
+	private static RectTransform contentRect;
+
+	private static GameObject prevButton;
+
+	private static GameObject nextButton;
+
+	private static int page;
+
+	private static Font font;
+
+	private static int fontSize = 16;
+
+	private static readonly Color gold = new Color(0.72f, 0.58f, 0.3f, 1f);
+
+	private static readonly Color dark = new Color(0.07f, 0.12f, 0.19f, 0.97f);
+
+	private static string[] titles = new string[15]
+	{
+		"WHAT'S NEW", "EVENTS", "SUPPLY", "CUSTOM SHIPS", "CUSTOM AIRCRAFT", "MAP AND AIR BASES", "STARTING FORCES", "REPAIR AND DAMAGE", "CREWS AND VETERANCY", "FUEL AND SHIPS",
+		"SMARTER AI", "AIR", "TORPEDOES", "BATTLE UI AND KEYS", "CREDITS"
+	};
+
+	private static string[] bodies = new string[15]
+	{
+		"<color=#E0B030><b>VERSION 0.28.11: FUEL AND LEAVERS</b></color>\nEvery aircraft now carries its real fuel: minutes of flight at full power from the internal tanks (a Zero about 140, a Wildcat 100, a Hellcat 100, a P-51 160), and cruising burns a third of that. Bingo fuel is 10%. A plane that has left the fight (damaged, out of ammunition, short of fuel) is let go by the fighters while other enemies are still fighting, and it cruises to the edge of the area.\n\n<color=#E0B030><b>VERSION 0.28.6 TO 0.28.10: FIXES FROM YOUR TEST LOGS</b></color>\nThe flight model now runs on battle clock time, so x8 and x10 speed fly the same as x1. Your fire key works on the plane you have selected (a short burst while the nose is on the target). Wildcat tactics: no zoom climb when too slow, flaps in for the worse turner, a plane on the tail is noticed out to 400 m, no acrobatics with an enemy behind. A lone enemy fighter now fights instead of running. A target that is running is chased straight at full power. The rudder is only used to line up a shot. Plane-to-plane collisions are switched OFF for now.\n\n<color=#E0B030><b>VERSION 0.28: AIR COMBAT UPDATE</b></color>\nAll 135 aircraft have their own flight, toughness, gun damage, armour and gunner values. Fighters carrying bombs fly worse and drop them when an enemy fighter is near. New manoeuvres: Immelmann, pitchback, high-g barrel roll, barrel roll attack, scissors, decoy, recover and combat spread, used by the sandwich and the defensive split. Formation flying: followers keep their slot, the leader slows for the slowest, escorts fly 400 m above the bombers. Damage changes how a plane flies: engine, wings, tail, fuel leaks and fires, parts falling off. Planes leave the battle when out of ammunition, at bingo fuel or too damaged. Altitude performance. The hard speed limit is gone: a plane held far above its structural speed loses its wings. Air auto resolve shows the chance of victory. F8 in battle shows the flight readout of the selected plane. (Fuel fires are Kiko's idea, parts falling off is Avaricles'.)\n\n<color=#E0B030><b>VERSION 0.27: ENERGY</b></color>\nEvery aircraft has its own performance table: top speed, corner speed, stall speed, turn rates, climb, roll, flaps and gun convergence. Pilots judge energy (height plus speed) against their target and choose: energy lead = boom and zoom (dive in, one pass, zoom away); the better turner = turn fight with flaps; low on energy = disengage or turn; a Green pilot just chases. Guns converge where the real aircraft's guns crossed.\n\n<color=#E0B030><b>VERSION 0.26: THE FLIGHT MODEL</b></color>\nDives gain speed and climbs lose it, planes stall, controls get heavy at speed, flaps come out for a hard turn. Pilots have ranks (Green, Trained, Veteran, Elite) that set how they fly and how fast they notice a plane on their tail. Dogfight moves: roll-over attack, split-S, low and high yo-yo, wingover, lag roll, spiral, extension, Thach weave, wingman cover. Squads stay together. Bombers and torpedo planes fly the same model.\n\n<color=#E0B030><b>VERSION 0.25.4: NEW CAMPAIGN NAMES</b></color>\nThe two campaigns have new names to fit the bigger map: Counterattack on the Australian Front (play the Allies) and Defending Japan's Southwest Pacific Interests (play Japan). The descriptions on the start screen were rewritten too.\n\nThe win conditions changed too. To win you must hold all of these at the same time: Rabaul, Lae, Guadalcanal (with a rank 5 airfield), Cooktown, New Hebrides and Rennell Island. In practice the Allies must take Rabaul, the Japanese home port, and Japan must take Cooktown, for a foothold on Australia, and the New Hebrides. Lae (for the Allies) and Rennell Island (for Japan) are labelled secondary objectives, but they still have to be held to win. Cooktown now has a level 1 port and is an Allied home port, and Rennell Island starts in Allied hands. The objectives screen of each campaign lists them.\n\n<color=#E0B030><b>VERSION 0.25.2: STARTING TASK FORCES AND NEW FORMATIONS</b></color>\nBoth sides now start with many more task forces, built to look like the real ones: carrier forces, battleship groups, cruiser forces, destroyer patrols and submarines. Start a NEW campaign to see them. See the page STARTING FORCES.\n\n<color=#E0B030><b>Why more task forces at the start?</b></color>\nBecause ships have to be ordered, built and delivered, and the waiting times are somewhat long. With only a few ships at the start you would spend the first days of the war waiting for new ones to arrive. So each side begins with a real fleet to fight with while the first orders are being built.\n\n<color=#E0B030><b>How long is a campaign?</b></color>\nThe campaign is made for roughly 200 to 400 days of game time. That is the pace the build times, the supply upkeep and the size of the map were set for, so do not expect it to be over in a few weeks. Plan your orders ahead and keep your supplies flowing.\n\n<color=#E0B030><b>10 new formations</b></color>\nFormations 9 to 18 are new: Escorted Wedge, Box, Diamond, Ring, Echelon and Double Column, Kido Butai with 2 carriers and with 4 carriers, Surface Action Line and Supply Event. The ship order in a task force decides who goes where (see the page STARTING FORCES). The formation list is also wider now, so the long names are not cut off.\n\n<color=#E0B030><b>VERSION 0.25.1: AIR BASE REWORK</b></color>\nThe new aircraft now fly from the air bases around the map, each base with its own historical mix. See the page MAP AND AIR BASES.\n\n<color=#E0B030><b>VERSION 0.25: THE NEW GUINEA FRONT</b></color>\n(This was called 0.24.3 before the renumbering.) The map grew. Ten new locations now sit along the coasts of Papua New Guinea, the Bismarck Sea and the Torres Strait, in the places where the real campaign was fought. Start a NEW campaign to see them, because old saves keep the old 22 locations.\n\n<color=#E0B030><b>Held at the start</b></color>\nLae, Buna and Gasmata begin in Japanese hands, and Cairns and Horn Island begin in Allied hands. Lae and Buna sit right on the road to Port Moresby, so the fight for the Papuan coast starts on day one.\n\n<color=#E0B030><b>Empty and there for the taking</b></color>\nFinschhafen, Kiriwina, Madang, Wewak and Manus Island start with nobody in them. Whoever gets a task force there first can claim them and build them up, so expect a race for the air strips.\n\n<color=#E0B030><b>More aircraft, and every base is different</b></color>\nEvery location now has its own historical mix of aircraft, so Rabaul no longer looks like Guadalcanal. A base can field up to 6 types of aircraft, and a higher air base level unlocks more of them. Numbers per type rise with the level too, from 4 up to 24, with heavy bombers kept lower. Some bases are floatplane-only: Shortland Islands and Santa Isabel (Rekata Bay) fly only floatplanes and flying boats, as they did historically. If you capture a base, it flies your side's planes from then on. See the page MAP AND AIR BASES.\n\nThe aircraft lists and positions come from my reading of the history, so some are judgement calls. Tell me what looks wrong.\n\n<color=#E0B030><b>VERSION 0.24: THE FLEET EXPANSION</b></color>\nThe biggest roster update so far. Version 0.24 fills the shipyards and the carrier decks with hundreds of new units, so battles in the Pacific no longer look like the same few ships every time. It came in two parts:\n\n<color=#E0B030><b>0.24.1  New ships</b></color>\n84 warships from RamZ's public Unit Catalog (Japan, USA and Australia) and 20 more from the TTE team. Yamato and Iowa now share the sea with Shimakaze, Fletcher, Gato and many more, from battleships and carriers down to destroyer escorts and submarines. Every ship has its own model, guns and names. See the page CUSTOM SHIPS.\n\n<color=#E0B030><b>0.24.2  New aircraft</b></color>\n93 aircraft from RamZ's catalog and 22 from the TTE team. Hellcats, Corsairs, Zeros, Judys, Avengers and Kates, plus big bombers, flying boats and the late-war jets and prototypes. Carriers and airfields can field a much wider mix, so the sky is far less predictable. See the page CUSTOM AIRCRAFT.\n\nCosts and dates for the new units are estimates. Some may need balancing, so tell me what feels too cheap or too strong.\n\n<color=#E0B030><b>VERSION 0.23: THE MERCHANT FLEET</b></color>\nThe war at sea is also a war of supply, so 0.23 gave both sides a proper merchant navy. 23 new merchant ships, transports, a hospital ship, oilers and a destroyer escort from the TTE team (not made by me), in limited numbers: 10-30 of each type for each side. Once they are gone they are gone, so every loss is felt. The AI mixes them into its convoys, so expect an odd-looking convoy on the horizon. The Manley now sits between the submarines and the destroyers in the ship list. See the page SUPPLY.\n\n<color=#E0B030><b>VERSION 0.22.6: THE CONVOY SAILS</b></color>\nThe Admiralty supply convoy used to appear on the northern edge and just sit there. It now sails to your home port by itself, and it is told to sail again if it ever stops. See the page EVENTS.\n\n<color=#E0B030><b>VERSION 0.22.5: THIS BOOK</b></color>\nThe log you are reading. It lists what the mod has added and what the keys are. Use Next and Previous to turn the pages and scroll down inside a page.\n\n<color=#E0B030><b>VERSION 0.22.4: ADMIRALTY CONVOY</b></color>\nEvery 20-30 days the Admiralty sends a supply convoy to your home port. Guard it well, because the enemy will come looking.\n\n<color=#E0B030><b>VERSION 0.22: HUNGRY GARRISONS</b></color>\nTroops now eat supplies every day, and a garrison that runs dry slowly melts away. The AI sends convoys to its low outposts, which gives you something to hunt. Weekly supplies at home ports went up to 6,000.\n\n<color=#E0B030><b>VERSION 0.21: SHARPER WAR</b></color>\nFaster ship buying, historical torpedo duds, glancing hits that bounce off the hull, and the fuel overlay (button below this one, or F11) so you can see how far each task force can still sail.\n\n<color=#E0B030><b>ON THE WAY (planned, NOT in the game yet)</b></color>\nMore air combat tuning from the test logs (Wildcat tactics against Zeros, escort stations).\n0.25.3  Air range and timers: shorter aircraft range, and realistic launch, landing and rearming times so an airfield or carrier cannot launch non-stop.\nA settings menu where you switch the mod's features on and off as you like.\n\nThe full list is in the Change Log file.", "<color=#E0B030><b>Survivors event</b></color>\nEvery few days a ship is reported sunk somewhere on the campaign map. Sail a task force to the lifebuoy marker within 24 hours to save the survivors. Your own men refill your crews without losing experience. Enemy survivors become prisoners (command points).\n\n<color=#E0B030><b>Supply convoy event</b></color>\nEvery 20-30 days the Admiralty sends a supply convoy. It appears on the northern edge of the map and sails to your home port by itself. If it stops, it is told to sail again. The enemy knows where it is for the first 6 hours.\n\nThe convoy has 1 light cruiser leading, 1-3 destroyers, and 6-12 cargo ships (troops, supplies, engineering and an oiler, the rest random). It sails in its own formation, Supply Event. The cargo is never less than 2,000 troops, 2,000 supplies, 100 engineering and 100 fuel. At 12 km from port the cargo is unloaded.\n\nShips that are sunk take their cargo with them, so you only get what survives. Do not lose it.", "<color=#E0B030><b>Troop supplies</b></color>\nEvery day each location with troops spends 3% of its troop number in supplies. A garrison that runs dry slowly loses troops. The location panel shows how many days of supply are left.\n\n<color=#E0B030><b>AI convoys</b></color>\nThe AI sends convoys to its outposts that are running low. You can sink them.\n\n<color=#E0B030><b>Numbers</b></color>\nWeekly supplies at home ports are 6,000. Outposts start with 1 supply per troop.", "<color=#E0B030><b>RamZ Catalogue Ships</b></color>\n84 ships from RamZ's public Unit Catalog (thank you, RamZ!), listed by ship class. Their model, weapons and names are RamZ's work. Only Japan, USA and Australia are used.\n\n<color=#E0B030><b>Battleships</b></color>\nUSA: Iowa (1944), Iowa (1945), Nebraska, Nevada, North Carolina, South Dakota.\nJapan: Fuso, Kongo, Satsuma, Yamato.\n\n<color=#E0B030><b>Battlecruisers</b></color>\nUSA: Constellation.\n\n<color=#E0B030><b>Aircraft Carriers</b></color>\nUSA: Enterprise, Essex, Hornet, Lexington, Midway (1945), Midway (1946), Ranger, Saratoga (1942), Saratoga (1944), Yorktown.\nAustralia: Colossus.\nJapan: G14, G15, Shokaku, Taiho, Zuikaku.\n\n<color=#E0B030><b>Light Carriers</b></color>\nUSA: Independence, Saipan, Sangamon.\n\n<color=#E0B030><b>Heavy Cruisers</b></color>\nUSA: Alaska, Baltimore, Des Moines, New Orleans(1945), Portland, Puerto Rico, Wichita.\nAustralia: County.\nJapan: Aoba, Maya, Mogami, Myoko, Tone.\n\n<color=#E0B030><b>Light Cruisers</b></color>\nUSA: Atlanta (1942), Atlanta (1944), Austin, Cleveland, Oakland (1943), Oakland (1945), St. Louis, Worcester.\nAustralia: Leander, Perth.\nJapan: Agano, Agano-Kai, Isuzu.\n\n<color=#E0B030><b>Destroyers</b></color>\nUSA: Benson, Fletcher (1942), Fletcher (1943), Gearing, Mahan, Porter (1942), Porter (1944), Somers, Sumner.\nAustralia: Battle, N Class, T,U,V Class.\nJapan: Akizuki, Ayanami, Kagero, Kitakaze, Shimakaze, Shiratsuyu, Yugumo.\n\n<color=#E0B030><b>Destroyer Escorts</b></color>\nUSA: Rudderow, Tacoma.\nJapan: Chidori, Mutsuki.\n\n<color=#E0B030><b>Submarines</b></color>\nUSA: Balao, Balao GUPPY, Gato, Salmon.\nJapan: Type B3.\n\n<color=#E0B030><b>TTE Warships</b></color>\n20 more ships from the TTE team, used with credit to them.\nBattleships: Colorado, New Mexico, Pennsylvania, Tennessee.\nAircraft carriers: Hiyo.\nLight carriers: Akitsu Maru, Bogue, Chitose, Hosho, Kamikawa Maru, Nisshin, Ryuho, Taiyo.\nLight cruisers: Kitakami, Omaha, Yubari.\nDestroyers: Tribal, Clemson & Wickes.\nSubmarines: Type-A, Type-C.\n\n<color=#E0B030><b>TTE Merchant Ships</b></color>\n23 merchant ships, transports, a hospital ship, an oiler (Patapsco) and a destroyer escort (Manley) from the TTE team, in limited pools of 10-30 of each type for each side. They are used with credit to the TTE team. The stock merchants (C3 Cargo, Nippon Maru, Kamogawa Maru) are unlimited, so convoys can still form when the pools run out. The AI builds its convoys from a random mix of merchants and oilers, new ones included.", "<color=#E0B030><b>RamZ Catalogue Aircraft</b></color>\n93 aircraft from RamZ's public Unit Catalog (plus 3 British types that his new Australian carriers use). Japan, USA and Australia only.\n\n<color=#E0B030><b>USA</b></color>\nA-26C-45 Invader\nA2D-1 Skyshark\nAD-2 Skyraider\nAM-1 Mauler\nAU-1 Corsair\nB-17G Flying Fortress\nB-25J-20 Mitchell\nB-26B Marauder\nB-29A Superfortress\nBTD-1 Destroyer\nF2A-3 Buffalo\nF2G-1 Corsair\nF2G-2 Corsair\nF4F-3 Wildcat\nF4F-4 Wildcat\nF4U-1A Corsair\nF4U-1D Corsair\nF4U-2 Corsair\nF4U-4 Corsair\nF4U-4B Corsair\nF6F-3 Hellcat\nF6F-5 Hellcat\nF6F-5N Hellcat\nF7F-3 Tigercat\nF8F-1B Bearcat\nFM-2 Wildcat\nOS2U-3 Kingfisher\nP-38G-10 Lightning\nP-38J-15 Lightning\nP-38K-1 Lightning\nP-38L-5 Lightning\nP-39D Airacobra\nP-40F-10 Warhawk\nP-43A-1 Lancer\nP-47D-28 Thunderbolt\nP-47M-1 Thunderbolt\nP-47N-15 Thunderbolt\nP-51D-20 Mustang\nP-51H-5 Mustang\nP-61C-1 Black Widow\nP-63C-5 Kingcobra\nP-82B Twin Mustang\nPB4Y-2 Privateer\nPBJ-1J Mitchell\nPV-2D Harpoon\nSB2C-1C Helldiver\nSB2C-4 Helldiver\nSB2U-3 Vindicator\nSBD-3 Dauntless\nSBD-5 Dauntless\nSBD-6 Dauntless\nSOC-1 Seagull\nTBD-1 Devastator\nTBF-1C Avenger\nTBM-3 Avenger\n\n<color=#E0B030><b>Australia</b></color>\nBeaufighter Mk VIc\nCorsair F Mk II\nFirebrand TF Mk IV\nWalrus Mk I\n\n<color=#E0B030><b>Japan</b></color>\nA6M2 Mod 21\nA6M3 Mod 22a\nA6M3 Mod 32\nA6M5 Mod 52a\nA6M5 Mod 52c\nA6M6 Mod 53c\nA7M1 Sam\nA7M2 Sam\nA8K1\nB5N2 Kate\nB6N2a Jill\nB7A2 Grace\nD3A1 Val\nD3A2 Val\nD4Y1-C Judy\nD4Y2 Judy\nD4Y3a Judy\nD4Y5 Judy\nE13A1 Jake\nG8N1 Rita\nJ5N2 Tenrai\nJ6K1 Jinpu\nJ7W1 Shinden\nKi-100\nKi-67 Otsu\nKi-83\nKi-84 Frank\nKi-87\nKi-94-II\nN1K1 Rex\nN1K1-Ja George\nN1K2-Ja Shiden-Kai\nP1Y1 Ginga\nR2Y2 Keiun\n\n<color=#E0B030><b>TTE Aircraft</b></color>\n22 aircraft from the TTE team, used with credit to them.\n<color=#9fb0c0>USA</color>\nA-20G Havoc\nB-24D Liberator\nB-25J Mitchell\nJ2F-5 Duck\nP-38E Lightning\nP-39D Airacobra\nPBM-3 Mariner\nPBY-5a Catalina\n\n<color=#9fb0c0>Australia</color>\nBeaufighter Mk21\nBeaufort MkI\nKittyhawk MkIA\nSunderland MkIII\n\n<color=#9fb0c0>Japan</color>\nA5M4 Claude\nA6M2-N Rufe\nE14Y Glen\nG3M2 Nell\nH6K4 Mavis\nH8K2 Emily\nJ1N1 Gekko\nKi-43-II Hayabusa\nKi-45 Toryu\nKi-49-IIb Donryu\n", "<color=#E0B030><b>New locations (0.25)</b></color>\nTen new places on the map. Start a new campaign to see them.\n\n<color=#E0B030><b>Held at the start</b></color>\nLae: Japanese forward air base opposite Port Moresby.\nBuna: Japanese beachhead for the push over the Kokoda Track.\nGasmata: small Japanese airstrip on the south coast of New Britain.\nCairns: Allied port and flying boat base on the Queensland coast.\nHorn Island: Allied fighter strip guarding the Torres Strait.\n\n<color=#E0B030><b>Empty, capture them</b></color>\nFinschhafen, Kiriwina, Madang, Wewak and Manus Island start with nobody in them. Either side can take them.\n\n<color=#E0B030><b>Aircraft at each base</b></color>\nEach location has its own mix of historical aircraft for each side. A base holds up to 6 types. Air base level 1 gives 1 type, level 5 gives all of them.\nAircraft per type rise with the air base level, from 4 up to a cap: fighters 24, single-engine bombers 20, twin-engine types 16, heavy bombers 12, floatplanes 12, flying boats 8.\nThe mix follows whoever holds the base now. Take a base and it flies your planes.\n\n<color=#E0B030><b>Floatplane bases</b></color>\nSome bases have no runway worth the name and fly only floatplanes and flying boats, such as Shortland Islands, Santa Isabel (Rekata Bay), Malaita and Rennell. They cannot field fighters, so guard them with ships.\n\n<color=#E0B030><b>Good to know</b></color>\nOnly 1942-43 aircraft are used, because a base list does not change with the date. Japan flies its own types, the Allies fly US types, and Australian types mix in at Port Moresby, Milne Bay and the Queensland bases.", "<color=#E0B030><b>Why so many task forces (0.25.2)</b></color>\nShips have to be ordered and the wait times are somewhat long, so both sides start with a real fleet. The campaign is made for about 200 to 400 days of play. Start a NEW campaign to see it.\n\n<color=#E0B030><b>Allies (Counterattack on the Australian Front)</b></color>\nEnterprise Carrier Force: Enterprise with a battleship, cruisers and destroyers, modelled on Task Force 16.\nWashington Surface Action Group: two battleships, Washington and South Dakota, with cruisers and destroyers.\nSan Francisco Cruiser Force and Astoria Cruiser Force.\nAustralia Surface Force: HMAS Australia, Canberra and Hobart with destroyers, near Port Moresby.\n4 destroyer patrols and 3-4 submarines.\n\n<color=#E0B030><b>Japan (Defending Japan's Southwest Pacific Interests)</b></color>\nShokaku Carrier Force: both Shokaku and Zuikaku with a battleship, cruisers and destroyers, modelled on the Carrier Striking Force.\nKongo Surface Action Group: Kongo and Fuso with heavy cruisers and destroyers.\nChokai Cruiser Force and Suzuya Cruiser Force.\n4 destroyer patrols and 3-4 submarines.\n\n<color=#E0B030><b>Names</b></color>\nYour forces are named after their lead ship. A destroyer patrol has 2-3 destroyers picked at random and is named after the first one, such as Farragut Destroyer Patrol. The enemy gets matching forces, but they are not named.\n\n<color=#E0B030><b>The 10 new formations</b></color>\n9 Escorted Wedge, 10 Escorted Box, 11 Escorted Diamond, 12 Escorted Ring, 13 Escorted Echelon, 14 Escorted Double Column, 15 Kido Butai (2 Carriers), 16 Kido Butai (4 Carriers), 17 Surface Action Line, 18 Supply Event.\n\n<color=#E0B030><b>Who goes where</b></color>\nShip 1 is the leader. Ships 2-5 take the big-ship places (carriers, battleships, heavy cruisers). Places 6-8 are destroyers at the front and 9-10 on the flanks. Spare ships go astern. List the ships in that order in your task force. In Kido Butai (4 Carriers) list the 4 carriers first.\n\n<color=#E0B030><b>Merchants and oilers</b></color>\nThey retreat when a fight starts and would take the whole task force with them, so none of the starting forces or the supply convoy has one in first place. A rule that covers every task force is planned, but not built yet.\n\nShip names and positions for the forces come from my reading of the history. If a ship or a force looks wrong, tell me.", "<color=#E0B030><b>Lasting damage</b></color>\nKnocked-out equipment stays broken until you get to a port.\n\n<color=#E0B030><b>Damaged ships</b></color>\nDamaged ships slow their task force. Ships can list and capsize, and counter-flooding helps.\n\n<color=#E0B030><b>Damage control</b></color>\nWorks on the most urgent job first, and fires being fought can't spread. Colours: yellow light damage, orange heavy damage, red knocked out (fixable at sea), black destroyed or needs a port, grey patched as far as it can go (needs a port). Engine rooms can always be repaired at sea, but only back to 50% health and half power until a port repair.", "<color=#E0B030><b>Veterancy</b></color>\nOnly counts from real fights (an enemy has to be there, and something has to be sunk or shot down).\n\n<color=#E0B030><b>Crews</b></color>\nEvery ship has its real crew size (hover over a ship to see Men). Ships lose men from hits, fires and flooding, and losing men costs progress towards the next rank. Ships below 80% crew reload and repair slower and have fewer damage control parties.\n\n<color=#E0B030><b>Recruits</b></color>\nTaking on new recruits at port (Rearm) resets your progress, or drops a rank.", "<color=#E0B030><b>Fuel overlay</b></color>\nClick the fuel barrel button (or press F11 on the campaign map). Every task force of yours gets a label with days of fuel left and speed (orange below 5 days, red below 3). The selected one gets a ring showing how far it sails in 1 day.\n\n<color=#E0B030><b>Ordering ships</b></color>\nShips have to be ordered and built, with build times and deposits. After you order a ship, the name list moves on to the next ship of that class you can still buy.\n\n<color=#E0B030><b>Task forces</b></color>\nUp to 20 ships, new formations and bigger AI fleets. Several task forces can join the same battle (pincers).",
+		"<color=#E0B030><b>Formations</b></color>\nAI fleets hold formation.\n\n<color=#E0B030><b>Torpedo attacks</b></color>\nThey coordinate torpedo attacks.\n\n<color=#E0B030><b>Movement</b></color>\nThey think before chasing you and retreat away from you, not into you. Far-away task forces head straight for you instead of sailing in circles.\n\n<color=#E0B030><b>Submarines</b></color>\nSubs ambush from further out and come back for more.", "<color=#E0B030><b>Strikes</b></color>\nUp to 72 planes per side. Mixed strike packages arrive in one wave. Real steep dive bombing, bombers attack on their own, hammer and anvil torpedo attacks.\n\n<color=#E0B030><b>Flight model</b></color>\nDives gain speed, climbs lose it, planes stall, flaps come out for hard turns, controls are heavy at speed. Every aircraft has its own table: top speed, corner speed, stall, turn rates, climb, roll, dive limit and where its guns converge.\n\n<color=#E0B030><b>Fighters</b></color>\nPilots judge energy (height plus speed) and choose: boom and zoom, turn fight with flaps, or disengage. Manoeuvres: yo-yos, wingover, lag roll, Immelmann, split-S, barrel rolls, scissors, decoy, Thach weave, sandwich, wingman cover. Escorts protect their bombers and fly 400 m above them. CAP follows its carrier. Pilot rank (Green to Elite) sets how well they fly and how fast they react.\n\n<color=#E0B030><b>Damage</b></color>\nEvery plane type has its own toughness and armour, and guns do damage by calibre. Damage changes how a plane flies: a bad engine, torn wings, a damaged tail, fuel leaks and fires, parts falling off. A plane held far above its structural speed in a dive loses its wings.\n\n<color=#E0B030><b>Fuel and leaving</b></color>\nAircraft carry their real fuel (minutes at full power from the internal tanks, cruise burns a third). At 10% (bingo), out of ammunition, or too damaged, a plane leaves the battle and cruises to the edge of the area. Fighters let a leaving plane go while others are still fighting.\n\n<color=#E0B030><b>Collisions</b></color>\nPlane-to-plane collisions are switched off in this build.\n\n<color=#E0B030><b>Readout</b></color>\nF8 in battle shows the selected plane: speed, height, energy, damage, fuel and what the pilot is doing.", "<color=#E0B030><b>Duds</b></color>\nHistorical dud rates (US Mark 13/14/15 fail often, Mark 18 about 10%, Japanese torpedoes 3-6%). Only active when the game's dud torpedoes option is on.\n\n<color=#E0B030><b>Glancing hits</b></color>\nTorpedoes that hit a ship at under 15 degrees bounce off and keep running. Early US torpedoes also dud more on a square 90 degree hit. Bounces show in the Hit log.\n\n<color=#E0B030><b>High hits</b></color>\nTorpedoes that hit high on a ship now always do damage.", "<color=#E0B030><b>Message log tabs (battle)</b></color>\nGeneral, Hit log and Crew. Press F2 or click a tab.\n\n<color=#E0B030><b>Group orders (battle)</b></color>\nCtrl+A all ships, Ctrl+D destroyers, Ctrl+C cruisers, Ctrl+B battleships and carriers. Ctrl+Shift+1-5 saves the ticked ships as a group, Ctrl+1-5 selects it again.\n\n<color=#E0B030><b>Minimap (battle)</b></color>\nTorpedo tracks, smoke, lookout and radar rings, enemy last-seen markers. Buttons above the map toolbar, or F11 for all.\n\n<color=#E0B030><b>Keys</b></color>\nF8 battle: flight readout of the selected plane. F11 campaign map: fuel overlay. F11 battle: minimap layers. F2 battle: message log tab.\nTesters: F9 reveal enemies (map), F4 create a survivor event (map), F3 developer view (battle).", "<color=#E0B030><b>Custom ships</b></color>\nAll custom merchant ships in the game (merchants, transports, hospital ship, oilers and the destroyer escort) are from the TTE team and are used with credit to them. They are not the work of the mod author.\nThe TTE mod is about 4 years old and the team is no longer active. Their assets are used with credit, and will be removed at the request of any TTE member.\n\n<color=#E0B030><b>RamZ</b></color>\nThank you to RamZ for his public Unit Catalog: the 84 warships and 93 aircraft in v0.24, and (as far as we know) some of the TTE merchant ships. They are his work, not the work of the mod author.\n\n<color=#E0B030><b>Inspiration</b></color>\nThe events and the survivors system were inspired by Kiko. The Hit log is a copy of the idea from the ADBA Mod Team's Hitlog."
+	};
+
+	public static void Build(Transform root)
+	{
+		//IL_0047: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0053: Expected O, but got Unknown
+		Remove();
+		Sprite val = null;
+		try
+		{
+			val = AssetLoader.instance.ImportSprite("interface/images/map/guidebook.png");
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError((object)("[GUIDE] could not load guidebook.png: " + ex.Message));
+		}
+		button = ModTFOverlay.MakeButton(root, 0, val, "BOOK", "Features and change log", new UnityAction(Toggle), out var _);
+		BuildPanel(root);
+		Debug.Log((object)("[GUIDE] book button added, icon " + (((Object)(object)val != (Object)null) ? "loaded" : "not found")));
+	}
+
+	public static void Remove()
+	{
+		if ((Object)(object)button != (Object)null)
+		{
+			Object.Destroy((Object)(object)button);
+		}
+		if ((Object)(object)panel != (Object)null)
+		{
+			Object.Destroy((Object)(object)panel);
+		}
+		button = null;
+		panel = null;
+	}
+
+	private static void Toggle()
+	{
+		if (!((Object)(object)panel == (Object)null))
+		{
+			bool flag = !panel.activeSelf;
+			if (flag)
+			{
+				page = 0;
+				ShowPage();
+			}
+			panel.SetActive(flag);
+		}
+	}
+
+	private static void Close()
+	{
+		if ((Object)(object)panel != (Object)null)
+		{
+			panel.SetActive(false);
+		}
+	}
+
+	private static void Next()
+	{
+		if (page < titles.Length - 1)
+		{
+			page++;
+			ShowPage();
+		}
+	}
+
+	private static void Previous()
+	{
+		if (page > 0)
+		{
+			page--;
+			ShowPage();
+		}
+	}
+
+	private static void ShowPage()
+	{
+		//IL_009e: Unknown result type (might be due to invalid IL or missing references)
+		titleText.text = titles[page];
+		bodyText.text = bodies[page];
+		pageText.text = "Page " + (page + 1) + " / " + titles.Length;
+		prevButton.SetActive(page > 0);
+		nextButton.SetActive(page < titles.Length - 1);
+		contentRect.anchoredPosition = Vector2.zero;
+	}
+
+	private static RectTransform NewRect(string name, Transform parent)
+	{
+		//IL_0014: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0019: Unknown result type (might be due to invalid IL or missing references)
+		GameObject val = new GameObject(name, new Type[1] { typeof(RectTransform) });
+		val.transform.SetParent(parent, false);
+		return val.GetComponent<RectTransform>();
+	}
+
+	private static void Stretch(RectTransform rt, float left, float bottom, float right, float top)
+	{
+		//IL_0001: Unknown result type (might be due to invalid IL or missing references)
+		//IL_000c: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0019: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0029: Unknown result type (might be due to invalid IL or missing references)
+		rt.anchorMin = Vector2.zero;
+		rt.anchorMax = Vector2.one;
+		rt.offsetMin = new Vector2(left, bottom);
+		rt.offsetMax = new Vector2(0f - right, 0f - top);
+	}
+
+	private static Text NewText(RectTransform rt, int size, TextAnchor anchor, Color colour)
+	{
+		//IL_001e: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0025: Unknown result type (might be due to invalid IL or missing references)
+		Text obj = ((Component)rt).gameObject.AddComponent<Text>();
+		obj.font = font;
+		obj.fontSize = size;
+		obj.alignment = anchor;
+		((Graphic)obj).color = colour;
+		obj.supportRichText = true;
+		obj.horizontalOverflow = (HorizontalWrapMode)0;
+		obj.verticalOverflow = (VerticalWrapMode)1;
+		((Graphic)obj).raycastTarget = false;
+		return obj;
+	}
+
+	private static GameObject NewButton(Transform parent, string label, float anchorX, UnityAction action)
+	{
+		//IL_0019: Unknown result type (might be due to invalid IL or missing references)
+		//IL_002a: Unknown result type (might be due to invalid IL or missing references)
+		//IL_003f: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0054: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0069: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0080: Unknown result type (might be due to invalid IL or missing references)
+		//IL_00eb: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0128: Unknown result type (might be due to invalid IL or missing references)
+		RectTransform val = NewRect("Btn " + label, parent);
+		val.anchorMin = new Vector2(anchorX, 0f);
+		val.anchorMax = new Vector2(anchorX, 0f);
+		val.pivot = new Vector2(0.5f, 0f);
+		val.anchoredPosition = new Vector2(0f, 18f);
+		val.sizeDelta = new Vector2(150f, 40f);
+		Image val2 = ((Component)val).gameObject.AddComponent<Image>();
+		((Graphic)val2).color = gold;
+		Button obj = ((Component)val).gameObject.AddComponent<Button>();
+		((Selectable)obj).targetGraphic = (Graphic)(object)val2;
+		((UnityEvent)obj.onClick).AddListener(action);
+		RectTransform obj2 = NewRect("Back", (Transform)(object)val);
+		Stretch(obj2, 2f, 2f, 2f, 2f);
+		Image obj3 = ((Component)obj2).gameObject.AddComponent<Image>();
+		((Graphic)obj3).color = new Color(0.1f, 0.17f, 0.26f, 1f);
+		((Graphic)obj3).raycastTarget = false;
+		RectTransform rt = NewRect("Text", (Transform)(object)val);
+		Stretch(rt, 0f, 0f, 0f, 0f);
+		NewText(rt, fontSize + 2, (TextAnchor)4, Color.white).text = label;
+		return ((Component)val).gameObject;
+	}
+
+	private static void BuildPanel(Transform root)
+	{
+		//IL_00b5: Unknown result type (might be due to invalid IL or missing references)
+		//IL_00e1: Unknown result type (might be due to invalid IL or missing references)
+		//IL_00f6: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0101: Unknown result type (might be due to invalid IL or missing references)
+		//IL_010c: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0121: Unknown result type (might be due to invalid IL or missing references)
+		//IL_015b: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0181: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0196: Unknown result type (might be due to invalid IL or missing references)
+		//IL_01ab: Unknown result type (might be due to invalid IL or missing references)
+		//IL_01c0: Unknown result type (might be due to invalid IL or missing references)
+		//IL_01d5: Unknown result type (might be due to invalid IL or missing references)
+		//IL_01e8: Unknown result type (might be due to invalid IL or missing references)
+		//IL_020d: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0222: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0237: Unknown result type (might be due to invalid IL or missing references)
+		//IL_024c: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0261: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0276: Unknown result type (might be due to invalid IL or missing references)
+		//IL_02fc: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0331: Unknown result type (might be due to invalid IL or missing references)
+		//IL_034a: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0363: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0372: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0381: Unknown result type (might be due to invalid IL or missing references)
+		//IL_03ac: Unknown result type (might be due to invalid IL or missing references)
+		//IL_03f8: Unknown result type (might be due to invalid IL or missing references)
+		//IL_040e: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0424: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0430: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0446: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0470: Unknown result type (might be due to invalid IL or missing references)
+		//IL_04b3: Unknown result type (might be due to invalid IL or missing references)
+		//IL_04cd: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0555: Unknown result type (might be due to invalid IL or missing references)
+		//IL_056a: Unknown result type (might be due to invalid IL or missing references)
+		//IL_057f: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0594: Unknown result type (might be due to invalid IL or missing references)
+		//IL_05a9: Unknown result type (might be due to invalid IL or missing references)
+		//IL_05b9: Unknown result type (might be due to invalid IL or missing references)
+		//IL_05da: Unknown result type (might be due to invalid IL or missing references)
+		//IL_05e4: Expected O, but got Unknown
+		//IL_05fb: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0605: Expected O, but got Unknown
+		//IL_0618: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0622: Expected O, but got Unknown
+		font = null;
+		fontSize = 16;
+		if ((Object)(object)TooltipManager.instance != (Object)null && (Object)(object)TooltipManager.instance.toolTipText != (Object)null)
+		{
+			font = TooltipManager.instance.toolTipText.font;
+			fontSize = TooltipManager.instance.toolTipText.fontSize;
+		}
+		if ((Object)(object)font == (Object)null)
+		{
+			font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+		}
+		RectTransform val = NewRect("ModGuide", root);
+		Stretch(val, 0f, 0f, 0f, 0f);
+		((Graphic)((Component)val).gameObject.AddComponent<Image>()).color = new Color(0f, 0f, 0f, 0.35f);
+		panel = ((Component)val).gameObject;
+		RectTransform val2 = NewRect("Window", (Transform)(object)val);
+		val2.anchorMin = new Vector2(0.25f, 0.12f);
+		val2.anchorMax = new Vector2(0.75f, 0.88f);
+		val2.offsetMin = Vector2.zero;
+		val2.offsetMax = Vector2.zero;
+		((Graphic)((Component)val2).gameObject.AddComponent<Image>()).color = gold;
+		RectTransform obj = NewRect("Back", (Transform)(object)val2);
+		Stretch(obj, 2f, 2f, 2f, 2f);
+		Image obj2 = ((Component)obj).gameObject.AddComponent<Image>();
+		((Graphic)obj2).color = dark;
+		((Graphic)obj2).raycastTarget = false;
+		RectTransform obj3 = NewRect("Title", (Transform)(object)val2);
+		obj3.anchorMin = new Vector2(0f, 1f);
+		obj3.anchorMax = new Vector2(1f, 1f);
+		obj3.pivot = new Vector2(0.5f, 1f);
+		obj3.anchoredPosition = new Vector2(0f, -14f);
+		obj3.sizeDelta = new Vector2(-40f, 40f);
+		titleText = NewText(obj3, fontSize + 10, (TextAnchor)4, Color.white);
+		RectTransform obj4 = NewRect("Line", (Transform)(object)val2);
+		obj4.anchorMin = new Vector2(0f, 1f);
+		obj4.anchorMax = new Vector2(1f, 1f);
+		obj4.pivot = new Vector2(0.5f, 1f);
+		obj4.anchoredPosition = new Vector2(0f, -58f);
+		obj4.sizeDelta = new Vector2(-50f, 2f);
+		Image obj5 = ((Component)obj4).gameObject.AddComponent<Image>();
+		((Graphic)obj5).color = gold;
+		((Graphic)obj5).raycastTarget = false;
+		RectTransform val3 = NewRect("Scroll", (Transform)(object)val2);
+		Stretch(val3, 30f, 110f, 30f, 72f);
+		ScrollRect obj6 = ((Component)val3).gameObject.AddComponent<ScrollRect>();
+		RectTransform val4 = NewRect("Viewport", (Transform)(object)val3);
+		Stretch(val4, 0f, 0f, 22f, 0f);
+		((Graphic)((Component)val4).gameObject.AddComponent<Image>()).color = new Color(0f, 0f, 0f, 0f);
+		((Component)val4).gameObject.AddComponent<RectMask2D>();
+		contentRect = NewRect("Content", (Transform)(object)val4);
+		contentRect.anchorMin = new Vector2(0f, 1f);
+		contentRect.anchorMax = new Vector2(1f, 1f);
+		contentRect.pivot = new Vector2(0.5f, 1f);
+		contentRect.anchoredPosition = Vector2.zero;
+		contentRect.sizeDelta = Vector2.zero;
+		bodyText = NewText(contentRect, fontSize + 1, (TextAnchor)0, new Color(0.9f, 0.92f, 0.95f, 1f));
+		bodyText.lineSpacing = 1.1f;
+		((Component)contentRect).gameObject.AddComponent<ContentSizeFitter>().verticalFit = (FitMode)2;
+		RectTransform val5 = NewRect("Scrollbar", (Transform)(object)val3);
+		val5.anchorMin = new Vector2(1f, 0f);
+		val5.anchorMax = new Vector2(1f, 1f);
+		val5.pivot = new Vector2(1f, 1f);
+		val5.anchoredPosition = Vector2.zero;
+		val5.sizeDelta = new Vector2(12f, 0f);
+		((Graphic)((Component)val5).gameObject.AddComponent<Image>()).color = new Color(0.03f, 0.06f, 0.1f, 1f);
+		RectTransform val6 = NewRect("Sliding Area", (Transform)(object)val5);
+		Stretch(val6, 0f, 0f, 0f, 0f);
+		RectTransform val7 = NewRect("Handle", (Transform)(object)val6);
+		val7.sizeDelta = Vector2.zero;
+		Image val8 = ((Component)val7).gameObject.AddComponent<Image>();
+		((Graphic)val8).color = gold;
+		Scrollbar val9 = ((Component)val5).gameObject.AddComponent<Scrollbar>();
+		val9.direction = (Direction)2;
+		val9.handleRect = val7;
+		((Selectable)val9).targetGraphic = (Graphic)(object)val8;
+		obj6.content = contentRect;
+		obj6.viewport = val4;
+		obj6.horizontal = false;
+		obj6.vertical = true;
+		obj6.movementType = (MovementType)2;
+		obj6.scrollSensitivity = 30f;
+		obj6.verticalScrollbar = val9;
+		obj6.verticalScrollbarVisibility = (ScrollbarVisibility)0;
+		RectTransform obj7 = NewRect("Page", (Transform)(object)val2);
+		obj7.anchorMin = new Vector2(0.5f, 0f);
+		obj7.anchorMax = new Vector2(0.5f, 0f);
+		obj7.pivot = new Vector2(0.5f, 0f);
+		obj7.anchoredPosition = new Vector2(0f, 66f);
+		obj7.sizeDelta = new Vector2(300f, 26f);
+		pageText = NewText(obj7, fontSize, (TextAnchor)4, gold);
+		prevButton = NewButton((Transform)(object)val2, "Previous", 0.2f, new UnityAction(Previous));
+		NewButton((Transform)(object)val2, "Close", 0.5f, new UnityAction(Close));
+		nextButton = NewButton((Transform)(object)val2, "Next", 0.8f, new UnityAction(Next));
+		panel.SetActive(false);
+	}
+}

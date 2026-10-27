@@ -1,6 +1,7 @@
 War on the Sea Mod - Change Log
 ================================
 
+Current version: v0.28.11 (27 Oct 2026). Air combat update, for testers.
 Built for War on the Sea v1.09a.
 Changes are made in Assembly-CSharp.dll (dnSpy) and in the game's text files (Override folder).
 
@@ -10,18 +11,18 @@ The mod is in alpha, so every version is 0.x. Version numbers group the work in 
 Numbering: a major change gets a whole number (v0.25 = new map locations); the minor changes under it are v0.25.1, v0.25.2 and so on. What used to be called v0.24.3 to v0.24.6 is now v0.25 to v0.25.3.
 NOTE: the in-game logbook (ModGuide class, What's New page) still uses the old numbers and must be updated to match.
 
-v0.28.11 - Realistic fuel, bingo at 10%, fighters let a leaving plane go (pending test)
+v0.28.11 - Realistic fuel, bingo at 10%, fighters let a leaving plane go (in this build, first tests clean)
 ------------------------------------------------------------
 * Every aircraft row carries its real endurance at full power from the internal tanks (ModAirFlight fuelMinutes; Zero 140, Wildcat 100, Hellcat 100, Corsair 95, P-51D 160 and so on). Before, every fighter had 26 minutes.
 * Bingo fuel 10% (was 15%); a plane at bingo leaves at once and cruises to the edge.
 * A target that has left the battle is dropped for the best enemy still in the fight unless it is the last one (ModDogfight.Candidates, Fly, Repick); counted in the [BATTLE] line.
 
-v0.28.10 - Leavers head for the edge at cruise, no emergency power below 40% fuel (pending test)
+v0.28.10 - Leavers head for the edge at cruise, no emergency power below 40% fuel (in this build, first tests clean)
 ------------------------------------------------------------
 * A plane leaving the battle heads straight away from the middle of the area once 1 km clear of its enemy, at cruise throttle when short of fuel or clear (a bingo-fuel Wildcat ditched 280 s after leaving at full throttle).
 * The chase boost (emergency power) is not used below 40% fuel (four Wildcats chased two leaving Zeros to bingo fuel).
 
-v0.28.9 - Fire key and wingman-cover bursts no longer cancelled, Wildcat tactics (pending test)
+v0.28.9 - Fire key and wingman-cover bursts no longer cancelled, Wildcat tactics (tested)
 ------------------------------------------------------------
 * A burst the mod did not start (fire key on the selected plane, wingman cover, barrel roll attack) was cancelled on the next tick as "too old". Now adopted as a new burst (ModDogfight.GunsOn, GunRun).
 * Threat range 250 m to 400 m (320 m for a plane not aimed at us): Zeros fire from 270 to 300 m and were never seen on the tail.
@@ -29,21 +30,21 @@ v0.28.9 - Fire key and wingman-cover bursts no longer cancelled, Wildcat tactics
 * The worse turner keeps the flaps in except for a snap shot (GunRun). No Immelmann or barrel roll attack with an enemy on the tail.
 * [BATTLE] line: "collisions collisions" fixed.
 
-v0.28.8 - Zoom-climb loop fixed, air collisions off (pending test)
+v0.28.8 - Zoom-climb loop fixed, air collisions off (tested)
 ------------------------------------------------------------
 * A gun pass only ends in a zoom climb above 1.1 x corner speed; a slow plane extends level to build speed first, then climbs (ModDogfight.Attack). A zoom gets 1.5 s before it counts as spent (ModDogfight.Zoom). The 4v4 log had Wildcats zooming at 190 km/h every pass and stalling.
 * Plane-to-plane collisions switched off (ModAirCollide.On = false): a quarter of the 4v4 losses were collisions. Code kept, switch it back on with On = true.
 * "[DOGFIGHT] fly failed" is logged at most 20 times a session, with a stack trace.
 * Collision look-ahead passed in real seconds at time compression (ModFlight.End); no per-tick array in the energy sampler (ModFlight.AddSample); Plane objects reused in ModAirCollide.Build.
 
-v0.28.7 - Lone enemy fighters fight, runners are chased straight, rudder calmed (pending test)
+v0.28.7 - Lone enemy fighters fight, runners are chased straight, rudder calmed (tested)
 -----------------------------------------------------------
 * The stock game retreats an enemy air group that is a single fighter, so every 1v1 test was against a plane flying away. One-word edit in EngagementAI.CheckDefensiveConditions (3_hook_lone_fighter.txt).
 * A target that is running away (route, retreat, or busy with someone else) is now chased straight in level flight at full power; no climb for energy and no zoom away after a 30 s run (ModDogfight.Fleeing).
 * The rudder is only used to line up a shot inside 600 m, at 12 deg/s and up to 4 deg of slip, never in a banked turn, with half the drag. The nose no longer wags left and right on a chase.
 * Install: v0.28.7_update (Edit Class ModDogfight, ModFlight; one word in EngagementAI). Log review: Docs/0.28.6_log_review_27Oct.md.
 
-v0.28.6 - Fixes from the full review (pending test)
+v0.28.6 - Fixes from the full review (tested)
 -----------------------------------------------------------
 * Time compression no longer speeds up the flight physics: speed, pitch, roll, turn and the collision look-ahead run on battle seconds at x2 to x10 (fuel already did since 0.28.4). Nothing changes at x1.
 * Friends on a collision course: the plane with the right of way only holds course if the other can give way; two friends closing above 100 m/s both break.
@@ -51,7 +52,7 @@ v0.28.6 - Fixes from the full review (pending test)
 * Scissors is not cut short by a new defence and reverses every 2.8 to 3.6 s. Chase power only when the target is flying away and the chaser is near top speed. Being the selected unit alone no longer counts as hand-flown.
 * Install: v0.28.6_update folder (Edit Class ModFlight, ModAirDamage, ModAirCollide, ModDogfight, ModPlayerOverride; no hooks). Review behind it: Docs/full_review_0.28.5_23Oct.md.
 
-v0.28.5 - Formation yields, player controls win, chasers catch up (pending test)
+v0.28.5 - Formation yields, player controls win, chasers catch up (tested)
 -----------------------------------------------------------
 * A follower in a formation no longer breaks out when a flight mate is on a collision course: it shifts its slot 50 m sideways and 20 m up or down for 2.5 s and comes back. Two other friends no longer both break at once: one gives way. Only a real collision course still breaks both. Enemies are avoided as before.
 * Player controls override the AI: moving a turn, height or speed slider (or the keys) on your own plane or ship takes it off its route, formation, attack, evasion or break. A plane flown by hand is not steered by the collision avoidance, and a ship you steer is not taken over by the AA evasion for 30 s after your last slider move.
@@ -59,23 +60,23 @@ v0.28.5 - Formation yields, player controls win, chasers catch up (pending test)
 * New log lines: [PLAYER], [CHASE], "gives way to flight mate" in [FORMATION]; the [BATTLE] line gains chase boosts, flights yielded and taken by the player.
 * Install: v0.28.5_update folder (new class ModPlayerOverride, 5 edited classes, 4 one-line hooks in CombatInterface and ModAAEvade).
 
-v0.28.4 - Fuel lasts (pending test)
+v0.28.4 - Fuel lasts (tested)
 -----------------------------------------------------------
 * Fuel was burned about 8 times too fast at high time compression (a full tank gone in 3.5 minutes in the 1v1 test at x8). Fuel, fuel leaks and the break-up chance now run on battle clock seconds, so a fighter has about 26 minutes of full-power fuel at any time compression (about 87 minutes at cruise).
 * Install: Edit Class ModAirDamage only.
 
-v0.28.3 - Chasing fighters catch up (pending test)
+v0.28.3 - Chasing fighters catch up (tested)
 -----------------------------------------------------------
 * A turn fighter (Zero, Sam and others) used to match its target's speed in a gun run, so it trailed a little behind and never closed. It now flies flat out until 300 m behind the target, then 15% faster than it.
 * Install: Edit Class ModDogfight only (steps in v0.28.1_step_by_step/README_START_HERE.md).
 
-v0.28.2 - Out-of-fuel planes ditch, slower fuel leaks (pending test)
+v0.28.2 - Out-of-fuel planes ditch, slower fuel leaks (tested)
 -----------------------------------------------------------
 * A plane with an empty tank (engine quit) now glides down and is lost when it reaches the sea. Before, it hung at the same height in the fight for minutes (seen in the third test log). Credit for the fuel system idea: Kiko.
 * Fuel leaks drain about 2.5 times slower, so a leaking plane that decides to leave the battle can get away.
 * Install: Edit Class ModDogfight and ModAirDamage only. Steps: v0.28.1_step_by_step/README_START_HERE.md.
 
-v0.28.1 - Fixes from the first 0.28 test log (pending test)
+v0.28.1 - Fixes from the first 0.28 test log (tested)
 -----------------------------------------------------------
 * Friendly planes no longer crash into each other head-on: they always see each other coming and only die in a head-on above 200 m/s. Avoidance looks 2 s ahead.
 * Fighters defend sooner: an enemy on the tail inside 250 m counts as a threat, a close threat is noticed twice as fast, and a new defence can start 4 s after the last. No more extending in a straight line with an enemy behind.
@@ -83,7 +84,7 @@ v0.28.1 - Fixes from the first 0.28 test log (pending test)
 * The flight readout is on F8 now (F10 is the game's hide-UI key). One last [FLIGHT] log line per destroyed plane.
 * Install: paste the new ALL_IN_ONE file into ModFlight (Edit Class). No new hooks. Steps: Docs/flight_0.28.md.
 
-v0.28 - Air combat update: the rest of the 0.26 roadmap (pending test)
+v0.28 - Air combat update: the rest of the 0.26 roadmap (tested)
 -----------------------------------------------------------
 * Credits: fuel fires are Kiko's idea, parts falling off a damaged plane is Avaricles' idea.
 * All 135 aircraft have a flight row, toughness, gun damage, armour and gunner values. The stock Hellcat, Corsair, Dauntless and Helldiver follow the new rows.
@@ -99,7 +100,45 @@ v0.28 - Air combat update: the rest of the 0.26 roadmap (pending test)
 * ModFlightLog Interval is back to 10 seconds.
 * dnSpy: add 5 classes (ModAirDamage, ModAirCollide, ModAirFormation, ModAirResolve, ModAirReadoutUI), edit 5 (ModAirFlight, ModAirStats, ModFlight, ModDogfight, ModFlightLog), plus 3 one-line hooks. Steps: Docs/flight_0.28.md. Compiled but not run in the game.
 
-v0.24.2 - New aircraft from RamZ's catalogue and TTE (pending test)
+v0.27.1 - Energy model fixes (tested)
+--------------------------------------
+* Fixes from the first 0.27 logs: a fighter low on energy only runs when it can (top speed about the same or better, or above 2500 m), otherwise it turns with flaps; the energy decision is held for 4 s so it does not flip.
+
+v0.27 - Energy combat (tested)
+------------------------------
+* Every aircraft has its own performance table (ModAirFlight): top speed, corner speed, stall speed, sustained and instantaneous turn rates, climb, roll rate, wing loading, flaps, dive speed and gun convergence. Hand-set rows for the fighters and bombers that matter, formulas for the rest.
+* Pilots judge energy (height plus speed) against their target and pick a fight: energy lead = boom and zoom (dive, one pass, zoom away); better turner = turn fight with flaps; low on energy = disengage or turn; a Green pilot just chases.
+* Turn limits by speed (lift below corner speed, airframe above), flaps that lower the corner speed and add drag, throttle by mode.
+* Guns converge where the aircraft's wing guns cross (PrefabBuilder.SetParticleGun, one line). The gun run aims at the lead point and fires inside the cone and range.
+* Logs: [ENERGY] every 10 s, [BATTLE] every 60 s, [GUNSTAT].
+
+v0.26 - Aircraft overhaul: the flight model (tested in parts 0.26.1 to 0.26.5.9)
+---------------------------------------------------------------------------------
+* 0.26.1 flight core: dives gain speed, climbs lose it, dive speed limits, stall, heavy controls at speed.
+* 0.26.2 pitch control: the nose follows the aim angle. 0.26.3 banking and eased turns; dive bomber numbers for 13 newer dive bombers.
+* 0.26.4 pilot rank (Green, Trained, Veteran, Elite; crew off = all Elite) and acrobatics: roll-over attack, split-S, barrel roll. 0.26.4.2 manoeuvre pool: low yo-yo, wingover, lag displacement roll, out-of-plane, spiral, extension; one special move per 1-2 minutes; one target held for 5 minutes; height band; [LOSS] and [STATUS] logs.
+* 0.26.4.5 squads stay together (EngagementAI.AttackUnit and AIRvsAIR). 0.26.4.6 shooting fix and the hand-set aircraft table. 0.26.4.7 and 0.26.4.8 American pilots stay in the fight; team work (sandwich, defensive split, wingman cover, Thach weave).
+* 0.26.5 bombers and torpedo planes on the new model; 0.26.5.1 to 0.26.5.7 bomber attack fix, US toughness x1.3, A7M Sam rebalance, wider US fire cone, [GUNSTAT] log. 0.26.5.8 rudder (yaw) for lining up a shot. 0.26.5.9 flight fixes.
+
+v0.25.4 - Campaign names and win conditions (tested)
+----------------------------------------------------
+* The two campaigns are Counterattack on the Australian Front (Allies) and Defending Japan's Southwest Pacific Interests (Japan), with new descriptions.
+* To win, hold all of: Rabaul, Lae, Guadalcanal (rank 5 airfield), Cooktown, New Hebrides and Rennell Island. Cooktown has a level 1 port and is an Allied home port; Rennell Island starts Allied.
+
+v0.25.2 - Starting task forces and new formations (tested)
+----------------------------------------------------------
+* Both sides start with many more task forces built like the real ones (carrier forces, battleship groups, cruiser forces, destroyer patrols, submarines), because ordered ships take time to build.
+* 10 new formations (9 to 18): Escorted Wedge, Box, Diamond, Ring, Echelon, Double Column, Kido Butai 2 and 4 carriers, Surface Action Line, Supply Event. Wider formation list.
+
+v0.25.1 - Air base rework (tested)
+----------------------------------
+* The new aircraft fly from the air bases around the map, each base with its own historical mix. Up to 6 types per base, more unlocked by air base level, 4 to 24 per type. Shortland Islands and Rekata Bay fly floatplanes only. A captured base flies the captor's planes.
+
+v0.25 - The New Guinea front (tested; was v0.24.3 before the renumbering)
+-------------------------------------------------------------------------
+* Ten new locations along Papua New Guinea, the Bismarck Sea and the Torres Strait. Lae, Buna and Gasmata start Japanese; Cairns and Horn Island Allied; Finschhafen, Kiriwina, Madang, Wewak and Manus Island empty. Start a NEW campaign to see them.
+
+v0.24.2 - New aircraft from RamZ's catalogue and TTE (tested)
 -----------------------------------------------------------
 * 22 more aircraft from the TTE mod, used with credit to the TTE team (P-39D, P-38E, J2F, PBY, PBM, A-20G, B-24D, B-25J, Kittyhawk, Beaufighter, Beaufort, Sunderland, A5M4, A6M2-N, Ki-43, Ki-45, Ki-49, J1N1, E14Y, H6K, H8K2, G3M2). 115 new aircraft in total.
 * 93 new aircraft (Japan, USA, Australia) from RamZ's public Unit Catalog: fighters, dive and torpedo bombers, floatplanes, patrol aircraft and bombers. They are RamZ's work and used with credit to him. Three British types (Corsair Mk II, Firebrand Mk 4, Walrus Mk I) are included because the new Australian ships carry them.
@@ -107,7 +146,7 @@ v0.24.2 - New aircraft from RamZ's catalogue and TTE (pending test)
 * Aircraft resource costs and dates are my estimates. Install ships and aircraft together (carriers carry the new aircraft). Steps: Docs/new_ships_v0.24.md.
 
 
-v0.24.1 - New ships from RamZ's catalogue and the TTE mod (pending test)
+v0.24.1 - New ships from RamZ's catalogue and the TTE mod (tested)
 -------------------------------------------------------------------------
 * 84 new warships (Japan, USA, Australia) from RamZ's public Unit Catalog, used with credit to RamZ. They are his work, not mine. He is also credited for the TTE merchant ships, which are believed to be his.
 * "Australia" ships: Perth, County, Leander, N Class, T/U/V Class, Battle class and Colossus class (British designs that served with the RAN).
@@ -120,19 +159,19 @@ v0.24.1 - New ships from RamZ's catalogue and the TTE mod (pending test)
 * Files: allUnitsList.txt, mountData.txt (+56), weapons.txt (+134), seaUnits.txt for both campaigns, 104 ship name files. Models are copied by Extras/copy_v0.24_files.bat. Steps: Docs/new_ships_v0.24.md.
 
 
-v0.23.2 - Ship list order (pending test)
+v0.23.2 - Ship list order (tested)
 ----------------------------------------
 * In the shipyard and Museum lists the Manley (the only destroyer escort) now sits between the submarines and the destroyers (after Tench, before Farragut). The new US merchants and oilers sit right after the stock Cimarron, and the hospital ship after the Kent. The game lists ships in the order of unit/sea/allUnitsList.txt, so this is the only file that changed.
 
 
-v0.23.1 - Limited number of the new TTE ships (pending test)
+v0.23.1 - Limited number of the new TTE ships (tested)
 ------------------------------------------------------------
 * Each new TTE ship type now has a fixed pool of 10-30 ships (random per type, fixed in the files), for both the player and the AI. A ship that is built or sunk is gone from the pool for good. The stock merchants (c3_cargo, nippon_maru, kamogawa_maru) stay unlimited, so convoys can still form when the new pools run out.
 * Player side: text files only. Every class lists namesInClass / instancesInClass in language/english/unit/sea/<id>.txt, and one name is one ship you can own. The Manley keeps its existing 15 names.
 * AI side: the game never counted AI merchants and oilers, so CampaignAI.GetMissionPrefabs was edited in dnSpy (pickLimited). Steps and pool sizes are in Docs/ship_limits.md.
 
 
-v0.23 - TTE merchant ships, oilers and transports (pending test)
+v0.23 - TTE merchant ships, oilers and transports (tested)
 ----------------------------------------------------------------
 * 23 new ships taken from the TTE mod (WOTS 1.08g7): ALL custom merchant ships in the game are made by the TTE team and are used with credit to them. They are not my own creation. The TTE mod is about 4 years old and the team is no longer active; I will remove the assets at the request of any TTE member. Ship names are TTE's. A version with the ONI 209 index names is in Extras/ONI_209_names.
 * Allied: Heywood, President Jackson, Attack Transport, Hospital Ship (Australia), Arcturus, Harris, Mount Hood, McCawley, Patapsco (oiler) and Manley (destroyer escort / transport). Japanese: Generic Maru, Type 1B, 1C, 1K, 2TL, 3A, Type A Merchant, Ural Maru, Akita Maru, Kasagisan Maru, Taihosan Maru, Hakushika Maru and Aratama Maru.
