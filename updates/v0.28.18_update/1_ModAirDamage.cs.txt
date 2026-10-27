@@ -1,0 +1,825 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+// v0.28.18: a wing shot to MaxWing can break its spar under further hits and the plane is lost (SparBase, SparPerRel, WingFails).
+// v0.28 NEW CLASS. Damage changes how a plane flies, plus fuel, fire, parts that fall off, bombs, altitude performance and overspeed break-up.
+// Credits: the fuel-fire idea is Kiko's, the idea of parts falling off a damaged plane is Avaricles'.
+//
+// Until now a hit only added to one number (DamageableAir.modDamage) and the plane flew as new until it was shot down. Now every hit is also spread over
+// the parts of the plane (ModAirDamage.OnDamage, called from DamageableAir.ApplySmallCalibreDamageToAir):
+//   engine   (30% of hits)  power falls: a Zero with half an engine climbs and accelerates like a transport.
+//   wing     (30%)          lower turn rate, slower roll, a higher stall speed; a bad hit can take a wingtip or aileron off (parts).
+//   fuel     (15%)          a leak (fuel drains), and sometimes a FIRE: the plane burns and is lost in 8 to 25 seconds. Self-sealing tanks (armour) stop most.
+//   tail     (10%)          weaker elevator: the nose comes round more slowly.
+//   the rest                nothing but the damage points (pilot, fuselage).
+// A damaged plane that cannot fight any more (half its toughness gone, a dying engine, a bad wing, a leak, bingo fuel) leaves the battle like a plane
+// that is out of ammunition (ModDogfight asks WantsOut). Fighters carrying bombs fly worse until they drop them (Jettison).
+// ModAirFlight.Row has live copies per plane: Refresh writes the thrust, drag, stall, turn, roll and control scale fields of the copy every tick.
+//
+// Altitude performance (ModAirFlight critAlt / altLoss), compressibility drag near the dive speed limit, and the structural limit live here too:
+// Overspeed() breaks the wings off a plane that stays above its structural speed (ModAirFlight diveSpeed x maxSpeed), the hard speed cap of 0.26 is gone.
+public static class ModAirDamage
+{
+	private class State
+	{
+		public float engine = 1f;      // 1 = full power, 0.25 = nearly dead
+		public float wing;             // 0 to 0.8
+		public float tail;             // 0 to 0.8
+		public float skin;             // extra drag from holes
+		public float fuel = 1f;        // share of a full tank
+		public float leak;             // tank share lost per second
+		public bool fire;
+		public float fireDeath;
+		public bool burning;           // visual added
+		public bool limp;              // decided to leave the battle
+		public bool bingoLogged;
+		public bool carryingBombs;
+		public float nextBombCheck;
+		public int hits;
+		public float overspeedTime;
+		public bool warnedVne;
+		public float lastRefresh;
+		public bool dead;
+		public bool sparBroken;        // v0.28.18: the wing has failed, the plane is lost on its next flight tick
+		public int shed;               // parts lost
+		public bool probed;
+	}
+
+	private static Dictionary<int, State> states = new Dictionary<int, State>();
+	private static HashSet<string> probedKeys = new HashSet<string>();
+	private static HashSet<int> bombDone = new HashSet<int>();
+	private static bool failed;
+
+	// ---- tuning
+	public const float EngineHitShare = 0.30f;
+	public const float WingHitShare = 0.60f;     // cumulative: wing is 0.30 to 0.60
+	public const float FuelHitShare = 0.75f;     // fuel 0.60 to 0.75
+	public const float TailHitShare = 0.85f;     // tail 0.75 to 0.85
+	public const float MinEngine = 0.25f;
+	public const float MaxWing = 0.8f;
+	// v0.28.18: a wing already at MaxWing can fail: every further wing hit has this chance (plus SparPerRel x the hit's share of the toughness)
+	// to break the main spar, and the wing folds: the plane is lost. Before, a wrecked wing never killed a plane (a B-17 flew on with 80% wing damage).
+	public const float SparBase = 0.15f;
+	public const float SparPerRel = 2.5f;
+	public const float SparMax = 0.95f;
+	public static int sparLogged;
+	// fuel: the share of a tank a plane has when it first appears in the battle (it flew here), bingo = leave when below this
+	public const float StartFuelMin = 0.75f;
+	public const float StartFuelMax = 1.0f;
+	public const float BingoFuel = 0.10f;      // v0.28.11: 15% before
+	public const float DitchHeight = 12f;        // game units (120 m): an out-of-fuel plane gliding down is lost below this (v0.28.2)
+	// cruise burns this share of the full-power rate
+	public const float CruiseBurn = 0.3f;
+	// fire: seconds until the burning plane is lost
+	public const float FireMin = 8f;
+	public const float FireMax = 25f;
+	// fighters carrying bombs
+	public const float BombDrag = 0.10f;
+	public const float BombWingLoading = 1.12f;
+	public const float BombStall = 0.03f;
+	public const float BombClearRange = 80f;     // game units: do not drop onto a friendly ship below
+	// overspeed: wings come off above BreakupStart x the structural speed, harder and harder up to BreakupFull x
+	public const float BreakupStart = 1.04f;
+	public const float BreakupFull = 1.14f;
+	public const float BreakupRate = 0.8f;       // chance per second at BreakupFull
+	// damaged wings lower the structural speed
+	public const float WingVneLoss = 0.25f;
+	// parts that fall off
+	public const bool PartsVisual = true;
+	public const int PartLogMax = 80;
+	public static int damageLogged;
+	public static int partLogged;
+	public static int breakupLogged;
+	public static int fuelLogged;
+	public static int bombLogged;
+
+	private static State Get(UnitAir ua)
+	{
+		int id = ((UnityEngine.Object)ua).GetInstanceID();
+		State s;
+		if (!states.TryGetValue(id, out s))
+		{
+			s = new State();
+			System.Random rnd = new System.Random(id * 31 + 7);
+			s.fuel = StartFuelMin + (StartFuelMax - StartFuelMin) * (float)rnd.NextDouble();
+			states[id] = s;
+		}
+		return s;
+	}
+
+	private static string Side(Unit u)
+	{
+		return (u.faction == Faction.Player) ? "ours" : "enemy";
+	}
+
+	// ------------------------------------------------------------------------------------------------------------------------------------
+	// Called by ModFlight.Begin every tick: writes the live row of the plane (see ModAirFlight.Row scale fields).
+	// ------------------------------------------------------------------------------------------------------------------------------------
+	public static void Refresh(UnitAir ua)
+	{
+		if (failed || ua == null || ua.unitData == null || ua.unitAI == null)
+		{
+			return;
+		}
+		try
+		{
+			State s = Get(ua);
+			ModAirFlight.Row bs = ModAirFlight.BaseOf(ua);
+			ModAirFlight.Row live = ModAirFlight.Of(ua);
+			float y = ((Component)ua).transform.position.y;
+			if (!s.probed)
+			{
+			    s.probed = true;
+			    Probe(ua);
+			    ModAirReadoutUI.Ensure();
+			}
+			float now = Time.time;
+			if (now >= s.nextBombCheck)
+			{
+				s.nextBombCheck = now + 1f;
+				s.carryingBombs = CarriesBombs(ua.unitAI.parentUnit);
+			}
+			float thrust = ModAirFlight.AltitudePower(bs, y) * s.engine;
+			if (s.fuel <= 0f)
+			{
+				thrust = 0.02f;
+			}
+			live.thrustScale = thrust;
+			live.dragScale = 1f + s.skin + (s.carryingBombs ? BombDrag : 0f);
+			live.stallScale = ModAirFlight.AltitudeStall(y) * (1f + 0.15f * s.wing + (s.carryingBombs ? BombStall : 0f));
+			live.turnScale = 1f - 0.45f * s.wing;
+			live.rollScale = 1f - 0.7f * s.wing;
+			live.controlScale = 1f - 0.5f * s.tail;
+			live.wingLoading = bs.wingLoading * (s.carryingBombs ? BombWingLoading : 1f);
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[DAMAGE] damage model failed and stopped: " + ex.Message + " " + ex.StackTrace));
+		}
+	}
+
+	// Called by ModFlight.End every tick after the speed has been worked out: fuel, fire, overspeed.
+	public static void Tick(UnitAir ua, float dt, float throttle, float speed)
+	{
+		if (failed || ua == null || ua.unitData == null || ua.unitAI == null)
+		{
+			return;
+		}
+		try
+		{
+			State s = Get(ua);
+			if (s.dead)
+			{
+				return;
+			}
+			// v0.28.18: a broken wing spar (WingFails) is a loss. Done here and not inside the hit, which runs in the middle of the game's own damage code.
+			if (s.sparBroken)
+			{
+				Kill(ua, s, "wing spar broke (wing shot to pieces)");
+				return;
+			}
+			// v0.28.4: the game calls UpdateMovementData with (frame time x Time.timeScale), and the frame time is already scaled, so at time compression x8 the
+			// duration is 8 times the battle seconds that pass on the clock. Fuel burned 8 times too fast (the 1v1 test log: a full tank gone in 3.5 minutes). Fuel, leaks
+			// and the break-up chance now run on battle clock seconds.
+			// v0.28.6: ModFlight.End now divides the duration by the time compression for everything, so it is not done again here.
+			Unit u = ua.unitAI.parentUnit;
+			float now = Time.time;
+			ModAirFlight.Row bs = ModAirFlight.BaseOf(ua);
+			// fuel
+			float burn = dt / (Mathf.Max(5f, bs.fuelMinutes) * 60f) * (CruiseBurn + (1f - CruiseBurn) * throttle);
+			float before = s.fuel;
+			s.fuel = Mathf.Max(0f, s.fuel - burn - s.leak * dt);
+			if (before > 0f && s.fuel <= 0f && fuelLogged < 60)
+			{
+				fuelLogged++;
+				Debug.Log((object)("[FUEL] " + ua.unitData.unitName + " id " + ((UnityEngine.Object)ua).GetInstanceID() + " (" + Side(u) + ") is OUT OF FUEL at " + (((Component)ua).transform.position.y * 10f).ToString("F0") + " m: the engine quits"));
+			}
+			if (!s.bingoLogged && s.fuel <= BingoFuel && s.fuel > 0f)
+			{
+				s.bingoLogged = true;
+				if (fuelLogged < 60)
+				{
+					fuelLogged++;
+					Debug.Log((object)("[FUEL] " + ua.unitData.unitName + " id " + ((UnityEngine.Object)ua).GetInstanceID() + " (" + Side(u) + ") is at bingo fuel (" + (s.fuel * 100f).ToString("F0") + "% left" + (s.leak > 0f ? ", leaking" : "") + ")"));
+				}
+			}
+			// v0.28.2: the engine is dead and the plane has glided down to the sea: it is lost (ModDogfight flies it down, see Fly)
+			if (s.fuel <= 0f && ((Component)ua).transform.position.y < DitchHeight)
+			{
+				Kill(ua, s, "ditched with an empty tank");
+				return;
+			}
+			// fire
+			if (s.fire && now >= s.fireDeath)
+			{
+				Kill(ua, s, "fuel fire burnt through");
+				return;
+			}
+			// overspeed
+			Overspeed(ua, s, bs, speed, dt);
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[DAMAGE] damage tick failed and stopped: " + ex.Message + " " + ex.StackTrace));
+		}
+	}
+
+	// ------------------------------------------------------------------------------------------------------------------------------------
+	// A hit. Called from DamageableAir.ApplySmallCalibreDamageToAir after modDamage was increased by 'damage'; fraction = modDamage / toughness.
+	// ------------------------------------------------------------------------------------------------------------------------------------
+	public static void OnDamage(Unit u, float damage, Vector3 hitPoint, float fraction)
+	{
+		if (failed || u == null || u.unitAir == null || u.unitAir.shootDown)
+		{
+			return;
+		}
+		try
+		{
+			UnitAir ua = u.unitAir;
+			State s = Get(ua);
+			if (s.dead)
+			{
+				return;
+			}
+			float tough = Mathf.Max(1f, DamageableAir.ModAirToughness(u));
+			float rel = Mathf.Clamp(damage / tough, 0f, 1.5f);
+			float armour = Mathf.Clamp01(DamageableAir.ModAirArmour(u));
+			s.hits++;
+			float roll = UnityEngine.Random.value;
+			string what = "fuselage";
+			if (roll < EngineHitShare)
+			{
+				float loss = (0.10f + 1.2f * rel) * UnityEngine.Random.Range(0.6f, 1.2f);
+				s.engine = Mathf.Max(MinEngine, s.engine - loss);
+				what = "engine";
+			}
+			else if (roll < WingHitShare)
+			{
+				// v0.28.18: a hit on a wing that is already wrecked can break the spar
+				if (s.wing >= MaxWing - 0.001f && UnityEngine.Random.value < Mathf.Min(SparMax, SparBase + SparPerRel * rel))
+				{
+					WingFails(ua, s, damage, rel);
+					what = "wing (SPAR BREAKS)";
+				}
+				else
+				{
+					s.wing = Mathf.Min(MaxWing, s.wing + (0.06f + 1.4f * rel) * UnityEngine.Random.Range(0.6f, 1.2f));
+					what = "wing";
+				}
+				if (!s.sparBroken && (rel > 0.2f || s.wing > 0.5f) && UnityEngine.Random.value < 0.35f)
+				{
+					ShedPart(ua, s, "wing");
+				}
+			}
+			else if (roll < FuelHitShare)
+			{
+				what = "fuel tank";
+				float leakChance = Mathf.Clamp01(0.4f + rel) * (1f - 0.8f * armour);
+				if (UnityEngine.Random.value < leakChance)
+				{
+					s.leak = Mathf.Max(s.leak, 0.0008f + 0.0024f * UnityEngine.Random.value + 0.004f * rel);   // v0.28.2: was 0.002 + 0.006 x r + 0.01 x rel; a leaking plane emptied its tank in about 100 s and could not get away
+					what = "fuel tank (leaking)";
+				}
+				float fireChance = (0.05f + 0.6f * rel) * (1f - 0.7f * armour);
+				if (!s.fire && UnityEngine.Random.value < fireChance)
+				{
+					StartFire(ua, s, hitPoint);
+					what = "fuel tank (FIRE)";
+				}
+			}
+			else if (roll < TailHitShare)
+			{
+				s.tail = Mathf.Min(MaxWing, s.tail + (0.06f + 1.2f * rel) * UnityEngine.Random.Range(0.6f, 1.2f));
+				what = "tail";
+				if (rel > 0.25f && UnityEngine.Random.value < 0.25f)
+				{
+					ShedPart(ua, s, "tail");
+				}
+			}
+			// holes in the skin add drag
+			s.skin = Mathf.Min(0.25f, s.skin + 0.01f + 0.06f * rel);
+			// a hit that takes a third of the toughness at once can break something off whatever it hit
+			if (rel > 0.35f && UnityEngine.Random.value < 0.3f)
+			{
+				ShedPart(ua, s, (UnityEngine.Random.value < 0.5f) ? "wing" : "tail");
+			}
+			if (damageLogged < PartLogMax + 70)
+			{
+				damageLogged++;
+				Debug.Log((object)("[DAMAGE] " + ua.unitData.unitName + " id " + ((UnityEngine.Object)ua).GetInstanceID() + " (" + Side(u) + ") hit in the " + what + " for " + damage.ToString("F1") + " (" + (fraction * 100f).ToString("F0") + "% of toughness used): engine " + (s.engine * 100f).ToString("F0") + "%, wing damage " + (s.wing * 100f).ToString("F0") + "%, tail " + (s.tail * 100f).ToString("F0") + "%, fuel " + (s.fuel * 100f).ToString("F0") + "%" + (s.leak > 0f ? " leaking" : "") + (s.fire ? " BURNING" : "")));
+			}
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[DAMAGE] hit handling failed and stopped: " + ex.Message + " " + ex.StackTrace));
+		}
+	}
+
+	// ---------------- fire (Kiko's idea) ----------------
+	private static void StartFire(UnitAir ua, State s, Vector3 hitPoint)
+	{
+		s.fire = true;
+		s.fireDeath = Time.time + UnityEngine.Random.Range(FireMin, FireMax);
+		s.leak = Mathf.Max(s.leak, 0.01f);
+		s.engine = Mathf.Min(s.engine, 0.6f);
+		// heavy smoke: raise the damage the game counts so its own smoke trails start (smoke at 1/3 and 2/3 of the toughness)
+		float tough = DamageableAir.ModAirToughness(ua.unitAI.parentUnit);
+		if (ua.damageableAir != null && ua.damageableAir.modDamage < tough * 0.7f)
+		{
+			ua.damageableAir.modDamage = tough * 0.69f;
+			ua.damageableAir.ApplySmallCalibreDamageToAir(0.01f, hitPoint, true, true, false);
+		}
+		if (fuelLogged < 60)
+		{
+			fuelLogged++;
+			Debug.Log((object)("[FIRE] " + ua.unitData.unitName + " id " + ((UnityEngine.Object)ua).GetInstanceID() + " (" + Side(ua.unitAI.parentUnit) + ") fuel fire at " + (((Component)ua).transform.position.y * 10f).ToString("F0") + " m: lost in " + (s.fireDeath - Time.time).ToString("F0") + " s unless it lands first (idea: Kiko)"));
+		}
+	}
+
+	// Shoots the plane down through the game's own damage path (smoke, fire, crash).
+	private static void Kill(UnitAir ua, State s, string why)
+	{
+		if (s.dead || ua.shootDown)
+		{
+			s.dead = true;
+			return;
+		}
+		s.dead = true;
+		Unit u = ua.unitAI.parentUnit;
+		float tough = Mathf.Max(1f, DamageableAir.ModAirToughness(u));
+		if (ua.damageableAir != null)
+		{
+			ua.damageableAir.ApplySmallCalibreDamageToAir(tough * 3f, ((Component)ua).transform.position, false, true, false);
+		}
+		else
+		{
+			ua.shootDown = true;
+		}
+		Debug.Log((object)("[LOSS] " + ua.unitData.unitName + " id " + ((UnityEngine.Object)ua).GetInstanceID() + " (" + Side(u) + ") " + why + " at " + (((Component)ua).transform.position.y * 10f).ToString("F0") + " m, " + Time.time.ToString("F0") + " s"));
+	}
+
+
+	// A mid-air collision (ModAirCollide): the plane is lost, or loses a wing or tail piece and takes damage. rel = share of its toughness.
+	public static void CollisionHit(UnitAir ua, float rel, bool kill, string why)
+	{
+		if (failed || ua == null || ua.unitAI == null)
+		{
+			return;
+		}
+		try
+		{
+			State s = Get(ua);
+			if (s.dead || ua.shootDown)
+			{
+				return;
+			}
+			if (kill)
+			{
+				Kill(ua, s, why);
+				return;
+			}
+			ShedPart(ua, s, (UnityEngine.Random.value < 0.6f) ? "wing" : "tail");
+			float tough = Mathf.Max(1f, DamageableAir.ModAirToughness(ua.unitAI.parentUnit));
+			if (ua.damageableAir != null)
+			{
+				ua.damageableAir.ApplySmallCalibreDamageToAir(rel * tough, ((Component)ua).transform.position, true, false, false);
+			}
+			if (damageLogged < PartLogMax + 70)
+			{
+				damageLogged++;
+				Debug.Log((object)("[DAMAGE] " + ua.unitData.unitName + " id " + ((UnityEngine.Object)ua).GetInstanceID() + " (" + Side(ua.unitAI.parentUnit) + ") " + why + ": takes " + (rel * 100f).ToString("F0") + "% of its toughness and loses a part"));
+			}
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[DAMAGE] collision damage failed and stopped: " + ex.Message));
+		}
+	}
+
+	// ---------------- overspeed (0.26.8) ----------------
+	private static void Overspeed(UnitAir ua, State s, ModAirFlight.Row bs, float speed, float dt)
+	{
+		float vne = ModAirFlight.Vne(bs) * (1f - WingVneLoss * s.wing);
+		if (vne <= 0f)
+		{
+			return;
+		}
+		float ratio = speed / vne;
+		if (ratio >= 1f && !s.warnedVne && breakupLogged < 40)
+		{
+			s.warnedVne = true;
+			breakupLogged++;
+			Debug.Log((object)("[BREAKUP] " + ua.unitData.unitName + " id " + ((UnityEngine.Object)ua).GetInstanceID() + " (" + Side(ua.unitAI.parentUnit) + ") is at its structural speed limit: " + (speed * 36f).ToString("F0") + " km/h of " + (vne * 36f).ToString("F0") + " km/h, " + (((Component)ua).transform.position.y * 10f).ToString("F0") + " m up, wing damage " + (s.wing * 100f).ToString("F0") + "%"));
+		}
+		if (ratio < BreakupStart)
+		{
+			s.overspeedTime = Mathf.Max(0f, s.overspeedTime - dt);
+			return;
+		}
+		s.overspeedTime += dt;
+		float k = Mathf.Clamp01((ratio - BreakupStart) / (BreakupFull - BreakupStart));
+		float p = BreakupRate * (0.15f + 0.85f * k) * dt;
+		if (UnityEngine.Random.value < p)
+		{
+			Breakup(ua, s, speed, vne);
+		}
+	}
+
+	public static float OverspeedRatio(Unit u)
+	{
+		if (u == null || u.unitAir == null)
+		{
+			return 0f;
+		}
+		ModAirFlight.Row bs = ModAirFlight.BaseOf(u.unitAir);
+		State s = Get(u.unitAir);
+		float vne = ModAirFlight.Vne(bs) * (1f - WingVneLoss * s.wing);
+		return (vne > 0f) ? u.currentSpeed / vne : 0f;
+	}
+
+	private static void Breakup(UnitAir ua, State s, float speed, float vne)
+	{
+		ShedPart(ua, s, "wing");
+		s.wing = MaxWing;
+		if (breakupLogged < 40)
+		{
+			breakupLogged++;
+			Debug.Log((object)("[BREAKUP] " + ua.unitData.unitName + " id " + ((UnityEngine.Object)ua).GetInstanceID() + " (" + Side(ua.unitAI.parentUnit) + ") WINGS COME OFF at " + (speed * 36f).ToString("F0") + " km/h (structural limit " + (vne * 36f).ToString("F0") + " km/h), " + (((Component)ua).transform.position.y * 10f).ToString("F0") + " m up"));
+		}
+		Kill(ua, s, "broke up at " + (speed * 36f).ToString("F0") + " km/h (overspeed)");
+	}
+
+	// v0.28.18: the main spar of a wrecked wing breaks under a further hit. The wing piece is thrown off; the plane is lost on its next flight tick (Tick).
+	private static void WingFails(UnitAir ua, State s, float damage, float rel)
+	{
+		if (s.sparBroken)
+		{
+			return;
+		}
+		s.sparBroken = true;
+		ShedPart(ua, s, "wing");
+		if (sparLogged < 40)
+		{
+			sparLogged++;
+			Debug.Log((object)("[BREAKUP] " + ua.unitData.unitName + " id " + ((UnityEngine.Object)ua).GetInstanceID() + " (" + Side(ua.unitAI.parentUnit) + ") WING SPAR BREAKS: a hit for " + damage.ToString("F1") + " (" + (rel * 100f).ToString("F0") + "% of toughness) on a wing already at " + (s.wing * 100f).ToString("F0") + "% damage, " + (((Component)ua).transform.position.y * 10f).ToString("F0") + " m up"));
+		}
+		Kill(ua, s, "wing spar broke (wing shot to pieces)");
+	}
+
+	// ---------------- parts that fall off (Avaricles' idea) ----------------
+	// Looks at the plane's meshes once per kind and logs them ([PARTS]), so the names can be checked: a part can only be shown falling off when
+	// the model has a separate piece with a name like wing, aileron, tail, rudder or elevator.
+	private static void Probe(UnitAir ua)
+	{
+		string key = DamageableAir.ModAirKey(ua.unitAI.parentUnit);
+		if (!probedKeys.Add(key) || partLogged >= PartLogMax)
+		{
+			return;
+		}
+		MeshRenderer[] rs = ((Component)ua).GetComponentsInChildren<MeshRenderer>(true);
+		string list = "";
+		int shown = 0;
+		for (int i = 0; i < rs.Length && shown < 24; i++)
+		{
+			Vector3 lp = ((Component)ua).transform.InverseTransformPoint(((Component)rs[i]).transform.position);
+			list += ((UnityEngine.Object)rs[i]).name + " (" + lp.x.ToString("F2") + "," + lp.y.ToString("F2") + "," + lp.z.ToString("F2") + "); ";
+			shown++;
+		}
+		partLogged++;
+		Debug.Log((object)("[PARTS] " + key + ": " + rs.Length + " mesh pieces: " + list + (rs.Length > shown ? "..." : "")));
+	}
+
+	// v0.28.1: how well a mesh name fits a wing or tail part (0 = not usable). The first test log showed the Wildcat's 'RearFlap' being thrown off as a
+	// wing and 'L_WingAttach' (the root fitting) before 'L_WingMain'; the real wing pieces now score highest.
+	private static int NameScore(string name, string kind)
+	{
+		string n = name.ToLowerInvariant();
+		if (n.Contains("prop") || n.Contains("blade") || n.Contains("hub") || n.Contains("wheel") || n.Contains("strut") || n.Contains("gear") || n.Contains("hatch") || n.Contains("door"))
+		{
+			return 0;
+		}
+		if (kind == "wing")
+		{
+			if (n.Contains("aileron") || (n.Contains("wing") && (n.Contains("main") || n.Contains("outer") || n.Contains("tip"))))
+			{
+				return 3;
+			}
+			if (n.Contains("wing") && n.Contains("flap"))
+			{
+				return 2;
+			}
+			if (n.Contains("wing") && !n.Contains("attach") && !n.Contains("intake"))
+			{
+				return 2;
+			}
+			if (n.Contains("wing"))
+			{
+				return 1;
+			}
+			return 0;
+		}
+		if (n.Contains("elevator") || n.Contains("rudder"))
+		{
+			return 3;
+		}
+		if (n.Contains("stab") || n.Contains("fin") || n.Contains("tail"))
+		{
+			return 2;
+		}
+		return 0;
+	}
+
+	// A part comes off: it stops being drawn and a copy falls away. The flight effect (wing or tail damage) is applied whether or not a mesh was found.
+	private static void ShedPart(UnitAir ua, State s, string kind)
+	{
+		s.shed++;
+		if (kind == "wing")
+		{
+			s.wing = Mathf.Min(MaxWing, Mathf.Max(s.wing, 0.35f) + 0.2f);
+		}
+		else
+		{
+			s.tail = Mathf.Min(MaxWing, Mathf.Max(s.tail, 0.35f) + 0.2f);
+		}
+		string seen = "no separate mesh found, flight effect only";
+		if (PartsVisual)
+		{
+			try
+			{
+				MeshRenderer[] rs = ((Component)ua).GetComponentsInChildren<MeshRenderer>(false);
+				int best = 0;
+				int bestCount = 0;
+				MeshRenderer pick = null;
+				for (int i = 0; i < rs.Length; i++)
+				{
+					MeshRenderer r = rs[i];
+					if (!((Renderer)r).enabled)
+					{
+						continue;
+					}
+					int sc = NameScore(((UnityEngine.Object)r).name, kind);
+					if (sc <= 0 || sc < best)
+					{
+						continue;
+					}
+					if (sc > best)
+					{
+						best = sc;
+						bestCount = 0;
+					}
+					// among equal scores pick at random, so the left and right side both go
+					bestCount++;
+					if (UnityEngine.Random.value * bestCount < 1f)
+					{
+						pick = r;
+					}
+				}
+				if (pick != null)
+				{
+					Drop(ua, pick);
+					seen = "'" + ((UnityEngine.Object)pick).name + "' fell off";
+				}
+			}
+			catch (Exception ex)
+			{
+				seen = "part drop failed: " + ex.Message;
+			}
+		}
+		if (partLogged < PartLogMax)
+		{
+			partLogged++;
+			Debug.Log((object)("[PARTS] " + ua.unitData.unitName + " id " + ((UnityEngine.Object)ua).GetInstanceID() + " (" + Side(ua.unitAI.parentUnit) + ") lost its " + kind + ": " + seen + " (idea: Avaricles)"));
+		}
+	}
+
+	private static void Drop(UnitAir ua, MeshRenderer r)
+	{
+		MeshFilter mf = ((Component)r).GetComponent<MeshFilter>();
+		((Renderer)r).enabled = false;
+		if (mf == null || mf.sharedMesh == null)
+		{
+			return;
+		}
+		GameObject d = new GameObject("ModFallingPart");
+		d.transform.position = ((Component)r).transform.position;
+		d.transform.rotation = ((Component)r).transform.rotation;
+		d.transform.localScale = ((Component)r).transform.lossyScale;
+		MeshFilter nf = d.AddComponent<MeshFilter>();
+		nf.sharedMesh = mf.sharedMesh;
+		MeshRenderer nr = d.AddComponent<MeshRenderer>();
+		((Renderer)nr).sharedMaterials = ((Renderer)r).sharedMaterials;
+		Rigidbody rb = d.AddComponent<Rigidbody>();
+		rb.useGravity = true;
+		rb.velocity = ((Component)ua).transform.forward * ua.currentActualSpeed * 0.8f + Vector3.up * UnityEngine.Random.Range(0.5f, 2f);
+		rb.angularVelocity = new Vector3(UnityEngine.Random.Range(-6f, 6f), UnityEngine.Random.Range(-6f, 6f), UnityEngine.Random.Range(-6f, 6f));
+		UnityEngine.Object.Destroy(d, 8f);
+	}
+
+	// ---------------- who leaves the fight ----------------
+	// A plane that cannot fight on breaks off (ModDogfight flies it out of the battle like a plane that is out of ammunition). Once it has
+	// decided, it does not change its mind.
+	public static bool WantsOut(Unit u, out string why)
+	{
+		why = null;
+		if (failed || u == null || u.unitAir == null)
+		{
+			return false;
+		}
+		State s = Get(u.unitAir);
+		if (s.limp)
+		{
+			why = "damaged and leaving";
+			return true;
+		}
+		float tough = Mathf.Max(1f, DamageableAir.ModAirToughness(u));
+		float used = (u.unitAir.damageableAir != null) ? u.unitAir.damageableAir.modDamage / tough : 0f;
+		if (s.fuel <= BingoFuel)
+		{
+			why = "bingo fuel (" + (s.fuel * 100f).ToString("F0") + "% left)";
+		}
+		else if (s.fire)
+		{
+			why = "on fire";
+		}
+		else if (s.leak > 0f && s.fuel < 0.35f)
+		{
+			why = "leaking fuel (" + (s.fuel * 100f).ToString("F0") + "% left)";
+		}
+		else if (s.engine <= 0.5f)
+		{
+			why = "engine at " + (s.engine * 100f).ToString("F0") + "%";
+		}
+		else if (s.wing >= 0.5f)
+		{
+			why = "wing damage " + (s.wing * 100f).ToString("F0") + "%";
+		}
+		else if (used >= 0.6f)
+		{
+			why = (used * 100f).ToString("F0") + "% of its toughness gone";
+		}
+		if (why == null)
+		{
+			return false;
+		}
+		s.limp = true;
+		if (fuelLogged < 60)
+		{
+			fuelLogged++;
+			Debug.Log((object)("[DAMAGE] " + u.unitData.unitName + " id " + u.GetInstanceID() + " (" + Side(u) + ") breaks off and leaves the battle: " + why));
+		}
+		return true;
+	}
+
+	public static bool IsFire(Unit u)
+	{
+		return u != null && u.unitAir != null && Get(u.unitAir).fire;
+	}
+
+	// ---------------- bombs ----------------
+	// A fighter that still has its bombs on. Same test the dive-bomb manoeuvre uses before it drops them.
+	public static bool CarriesBombs(Unit u)
+	{
+		if (u == null || u.weapons == null || u.unitData == null || u.unitData.unitSubtype != UnitSubType.Fighter)
+		{
+			return false;
+		}
+		int idx = Utilities.GetWeaponSystemIndex(u.weapons, WeaponType.Bomb);
+		if (idx < 0)
+		{
+			return false;
+		}
+		Weapon w = u.weapons[idx];
+		return w != null && w.totalNumberFired == 0 && !w.gameObject.activeSelf && w.ammunitionPrefabString != null && w.ammunitionPrefabString.Length > 0;
+	}
+
+	// Drops the bombs, once. Returns true if bombs were dropped now. It waits while a friendly ship is under the plane.
+	public static bool Jettison(Unit u, string why)
+	{
+		if (failed || u == null || u.unitAIAir == null || u.unitAir == null)
+		{
+			return false;
+		}
+		int id = u.GetInstanceID();
+		if (bombDone.Contains(id) || u.transform.position.y < ModDogfight.BombMinHeight)
+		{
+			return false;
+		}
+		if (!CarriesBombs(u))
+		{
+			bombDone.Add(id);
+			return false;
+		}
+		if (FriendlyShipBelow(u))
+		{
+			return false;
+		}
+		bombDone.Add(id);
+		int idx = Utilities.GetWeaponSystemIndex(u.weapons, WeaponType.Bomb);
+		u.unitAIAir.FireSimpleWeapon(idx, true);
+		State s = Get(u.unitAir);
+		s.carryingBombs = false;
+		s.nextBombCheck = Time.time + 1f;
+		if (bombLogged < 80)
+		{
+			bombLogged++;
+			Debug.Log((object)("[BOMBS] " + u.unitData.unitName + " id " + id + " (" + Side(u) + ") drops its bombs (" + why + ") at " + (u.transform.position.y * 10f).ToString("F0") + " m, speed " + (u.currentSpeed * 36f).ToString("F0") + " km/h: the plane is " + (BombDrag * 100f).ToString("F0") + "% cleaner and " + ((BombWingLoading - 1f) * 100f).ToString("F0") + "% lighter on the wings"));
+		}
+		return true;
+	}
+
+	private static bool FriendlyShipBelow(Unit u)
+	{
+		if (EngagementManager.instance == null)
+		{
+			return false;
+		}
+		List<Unit> mine = (u.faction == Faction.Player) ? EngagementManager.instance.playerUnits : EngagementManager.instance.otherUnits;
+		if (mine == null)
+		{
+			return false;
+		}
+		Vector3 p = u.transform.position;
+		for (int i = 0; i < mine.Count; i++)
+		{
+			Unit f = mine[i];
+			if (f == null || f.isDestroyed || f.unitData == null || f.unitData.unitType != UnitType.Sea)
+			{
+				continue;
+			}
+			float dx = f.transform.position.x - p.x;
+			float dz = f.transform.position.z - p.z;
+			if (dx * dx + dz * dz < BombClearRange * BombClearRange)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// ---------------- readout ----------------
+	public static string ReadoutText(UnitAir ua)
+	{
+		if (ua == null || ua.unitData == null || ua.unitAI == null)
+		{
+			return null;
+		}
+		State s = Get(ua);
+		Unit u = ua.unitAI.parentUnit;
+		ModAirFlight.Row live = ModAirFlight.Of(ua);
+		ModAirFlight.Row bs = ModAirFlight.BaseOf(ua);
+		float tough = Mathf.Max(1f, DamageableAir.ModAirToughness(u));
+		float used = (ua.damageableAir != null) ? ua.damageableAir.modDamage / tough : 0f;
+		float y = ((Component)ua).transform.position.y;
+		float speed = ua.currentSpeed;
+		bool flaps = ModFlight.FlapsOut(u);
+		string t = ua.unitData.unitName + (bs.tuned ? "" : " (default row)") + "\n";
+		t += "speed " + (speed * 36f).ToString("F0") + " km/h   height " + (y * 10f).ToString("F0") + " m   E " + ModAirFlight.Energy(y, speed).ToString("F0") + " m\n";
+		t += "corner " + (live.cornerSpeed * 36f).ToString("F0") + "  stall " + (ModAirFlight.StallSpeed(live, flaps) * 36f).ToString("F0") + "  Vne " + (ModAirFlight.Vne(bs) * 36f).ToString("F0") + " km/h\n";
+		t += "turn limit " + ModAirFlight.TurnLimit(live, speed, flaps).ToString("F1") + "  sustained " + ModAirFlight.SustainedTurn(live, speed, flaps).ToString("F1") + " deg/s" + (flaps ? "  FLAPS" : "") + "\n";
+		t += "power " + (live.thrustScale * 100f).ToString("F0") + "% (engine " + (s.engine * 100f).ToString("F0") + "%, altitude " + (ModAirFlight.AltitudePower(bs, y) * 100f).ToString("F0") + "%)   climb limit " + ModAirFlight.ClimbLimit(live, speed, flaps).ToString("F0") + " deg\n";
+		t += "damage " + (used * 100f).ToString("F0") + "%   wing " + (s.wing * 100f).ToString("F0") + "%   tail " + (s.tail * 100f).ToString("F0") + "%   parts lost " + s.shed + "\n";
+		t += "fuel " + (s.fuel * 100f).ToString("F0") + "%" + (s.leak > 0f ? " LEAKING" : "") + (s.fire ? "  FIRE" : "") + (s.fuel <= BingoFuel ? "  BINGO" : "") + (s.carryingBombs ? "   BOMBS ON" : "") + "\n";
+		t += "pilot " + ModFlight.RankName(ModFlight.Rank(u)) + "   " + ModDogfight.ReadoutText(u);
+		return t;
+	}
+
+	// Short tag for the flight log line ([FLIGHT]/[AIM] text): only what is wrong with the plane.
+	public static string FlightTag(UnitAir ua)
+	{
+		if (failed || ua == null)
+		{
+			return "";
+		}
+		State s = Get(ua);
+		string t = "";
+		if (s.fire) { t += " FIRE"; }
+		if (s.leak > 0f) { t += " LEAK"; }
+		if (s.engine < 0.95f) { t += " engine " + (s.engine * 100f).ToString("F0") + "%"; }
+		if (s.wing > 0.05f) { t += " wing " + (s.wing * 100f).ToString("F0") + "%"; }
+		if (s.tail > 0.05f) { t += " tail " + (s.tail * 100f).ToString("F0") + "%"; }
+		t += " fuel " + (s.fuel * 100f).ToString("F0") + "%";
+		if (s.carryingBombs) { t += " BOMBS"; }
+		return t;
+	}
+
+	// Damage fraction used (for logs)
+	public static float DamageFraction(Unit u)
+	{
+		if (u == null || u.unitAir == null || u.unitAir.damageableAir == null)
+		{
+			return 0f;
+		}
+		return u.unitAir.damageableAir.modDamage / Mathf.Max(1f, DamageableAir.ModAirToughness(u));
+	}
+
+	// Fuel left, 0 to 1
+	public static float FuelOf(Unit u)
+	{
+		return (u != null && u.unitAir != null) ? Get(u.unitAir).fuel : 1f;
+	}
+}
