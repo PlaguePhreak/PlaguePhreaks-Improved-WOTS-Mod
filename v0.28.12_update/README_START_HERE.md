@@ -25,7 +25,7 @@ Right-click the class > Edit Class (C#), select all, paste the whole file, Compi
 ## Knobs (top of ModAirResolve)
 `PointDivisor` 6, `GunnerWeight` 3, `WinnerLossMin` 0.5 and `WinnerLossMax` 0.75, `ShotDownShare` 1 (the shot-down die runs up to this share of the side's planes; 0.5 would halve the losses).
 
-What the dice give, by my rehearsal outside the game: 24 Wildcats v 24 Sams about 60% for the Wildcats, 10 to 11 planes lost on each side on average; 8 Wildcats v 6 Zeros about 65%; 6 Wildcats v 8 Zeros about 40%; 1 v 1 about 55%. The losses are heavy because the shot-down die can reach the whole group; ShotDownShare = 0.5 halves them.
+What the dice give, by my rehearsal outside the game: 24 Wildcats v 24 Sams about 67% for the Wildcats, 8 Wildcats and 13 Sams lost on average; 8 Wildcats v 6 Zeros 72%; 6 Wildcats v 8 Zeros 53%; 12 v 24 Zeros 31%; 1 v 1 63%. The Wildcat scores high because it has armour and the Japanese planes have none, so if that feels too strong, PointDivisor or the armour weight is the place to tune. The losses are heavy because the shot-down die can reach the whole group; ShotDownShare = 0.5 halves them.
 
 ## Not compiled
 Written against the class names used in the current DLL (ModAirStats.RowFor, EngagementPanel, CampaignManager.ProcessMobileObjectPostCombat), checked by eye, not compiled. Paste any red line here.
