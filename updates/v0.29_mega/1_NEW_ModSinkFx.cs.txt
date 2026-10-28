@@ -1,0 +1,17 @@
+using System;
+using UnityEngine;
+
+// v0.29 NEW CLASS. Runs the ship sinking (ModSinking) every frame of a battle. ModSinking adds it by itself (an object called "ModSinkFx")
+// and sets OnTick, so this class doesn't name ModSinking and can go in first.
+public class ModSinkFx : MonoBehaviour
+{
+	public static Action<float> OnTick;
+
+	private void Update()
+	{
+		if (OnTick != null)
+		{
+			OnTick(Time.deltaTime);
+		}
+	}
+}

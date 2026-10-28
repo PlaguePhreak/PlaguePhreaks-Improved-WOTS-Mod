@@ -1,0 +1,876 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using UnityEngine;
+
+// v0.29 NEW CLASS (add it before ModSinking). The art for ships that break up, made in Blender:
+//  - "break kits": for every destroyer and escort, three pre-made breaks (fore, mid, aft). Each kit is the torn middle part of both halves:
+//    jagged crumpled plating, burnt edges, the dark inside of the hull, a bulkhead, torn decks and bent plates. The rest of each half is the
+//    ship's own model, cut exactly where the kit starts, so the two fit together with no seam. Turrets, guns, directors and props are not cut:
+//    each one goes whole with the half it stands on.
+//  - the big explosion: a fireball that bursts out of the sea, climbs on a column of smoke and rolls into a black mushroom cloud
+//    (64 picture frames played on a camera-facing card).
+// Files: StreamingAssets\override\mod_wreck\ (the .brk kits, units.txt, boom.png, burnt.png). If a file is missing, ModSinking uses the
+// old way (cut the ship's own model at the break, no torn edges) and the game's own explosions. Log lines start with [WRECK].
+public static class ModWreckArt
+{
+	// ---------------- knobs ----------------
+	public static bool UseKits = true;
+	public static bool UseBoom = true;
+	public static float KitReach = 0.2f;        // use a pre-made break if the hit is within this part of the ship length of one (else cut at the hit)
+	public static float BoomSize = 2.3f;        // height of the explosion picture, in ship lengths (the cloud fills about 90% of it)
+	public static float BoomMax = 55f;          // and at most this (game units, 1 = 10 m)
+	public static float BoomTime = 14f;         // battle seconds the explosion takes to play
+	public static float BoomHold = 10f;         // then the last cloud stays this long while it fades
+	public static int BoomQueue = 3100;         // draw order of the explosion card (like the oil slick)
+
+	// ---------------- kits ----------------
+	public class Chunk
+	{
+		public string mat;
+		public string cls;
+		public Mesh mesh;
+	}
+
+	public class Kit
+	{
+		public string file;
+		public float cut;                   // break position, ship model z (+ = bow)
+		public float band;                  // the kit covers cut - band .. cut + band
+		public HashSet<string> moving = new HashSet<string>();
+		public List<Chunk> bow = new List<Chunk>();
+		public List<Chunk> stern = new List<Chunk>();
+	}
+
+	private static readonly string[] Tags = new string[3] { "fore", "mid", "aft" };
+	private static readonly Dictionary<string, Kit> kits = new Dictionary<string, Kit>();
+	private static Dictionary<string, string> unitModel;
+	private static string folder;
+	private static Material burntMat;
+	private static Texture2D boomTex;
+	private static bool boomTried;
+	private static Material boomMat;
+	private static readonly List<Boom> booms = new List<Boom>();
+
+	public static string Folder()
+	{
+		if (folder == null)
+		{
+			string b = null;
+			try
+			{
+				if (AssetLoader.instance != null && AssetLoader.instance.fullPathLocations != null && AssetLoader.instance.fullPathLocations.Length > 0)
+				{
+					b = AssetLoader.instance.fullPathLocations[0];
+				}
+			}
+			catch (Exception)
+			{
+				b = null;
+			}
+			if (string.IsNullOrEmpty(b))
+			{
+				b = Application.streamingAssetsPath + "/override/";
+			}
+			folder = b + "mod_wreck/";
+		}
+		return folder;
+	}
+
+	// The unit's own folder name (the game names the unit's object after it) -> the model it uses (units.txt).
+	public static string ModelOf(Unit u)
+	{
+		string id = ((UnityEngine.Object)((Component)u).gameObject).name.Replace("(Clone)", "").Trim();
+		if (unitModel == null)
+		{
+			unitModel = new Dictionary<string, string>();
+			try
+			{
+				string p = Folder() + "units.txt";
+				if (File.Exists(p))
+				{
+					string[] lines = File.ReadAllLines(p);
+					for (int i = 0; i < lines.Length; i++)
+					{
+						string[] a = lines[i].Trim().Split(new char[2] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+						if (a.Length >= 2)
+						{
+							unitModel[a[0]] = a[1];
+						}
+					}
+				}
+				Log("break kits folder " + Folder() + (File.Exists(p) ? ", " + unitModel.Count + " ships listed" : ": units.txt NOT FOUND, pre-made breaks are off"));
+			}
+			catch (Exception ex)
+			{
+				Log("units.txt failed: " + ex.Message);
+			}
+		}
+		string m;
+		return unitModel.TryGetValue(id, out m) ? m : null;
+	}
+
+	// The pre-made break nearest to cutLocal (unit local z). Returns null if there is none close enough.
+	// cutLocal is set to the kit's break position (unit local z) when one is found.
+	public static Kit FindKit(Unit u, ref float cutLocal, float lenLocal)
+	{
+		if (!UseKits || u == null || u.unitGraphic == null)
+		{
+			return null;
+		}
+		try
+		{
+			string model = ModelOf(u);
+			if (model == null)
+			{
+				return null;
+			}
+			Transform ut = ((Component)u).transform;
+			Transform g = u.unitGraphic.transform;
+			Kit best = null;
+			float bestD = KitReach * lenLocal;
+			float bestCut = cutLocal;
+			for (int i = 0; i < Tags.Length; i++)
+			{
+				Kit k = Get(model + "_" + Tags[i] + ".brk");
+				if (k == null)
+				{
+					continue;
+				}
+				float c = ut.InverseTransformPoint(g.TransformPoint(new Vector3(0f, 0f, k.cut))).z;
+				float d = Mathf.Abs(c - cutLocal);
+				if (d <= bestD)
+				{
+					bestD = d;
+					best = k;
+					bestCut = c;
+				}
+			}
+			if (best != null)
+			{
+				cutLocal = bestCut;
+			}
+			return best;
+		}
+		catch (Exception ex)
+		{
+			Log("FindKit failed: " + ex.Message);
+			return null;
+		}
+	}
+
+	private static Kit Get(string file)
+	{
+		Kit k;
+		if (kits.TryGetValue(file, out k))
+		{
+			return k;
+		}
+		k = null;
+		try
+		{
+			string p = Folder() + file;
+			if (File.Exists(p))
+			{
+				k = Load(p);
+				k.file = file;
+			}
+		}
+		catch (Exception ex)
+		{
+			Log(file + " could not be read: " + ex.Message);
+			k = null;
+		}
+		kits[file] = k;
+		return k;
+	}
+
+	private static string Str(BinaryReader br)
+	{
+		int n = br.ReadInt32();
+		return Encoding.UTF8.GetString(br.ReadBytes(n));
+	}
+
+	// .brk layout (written by break2.py): "BRK2", cut, band, moving part names, then 2 pieces (1 = bow side, 0 = stern side), each a list of
+	// chunks: material name, class (hull, acc, glass, burnt), vertices (16-bit steps of a box), normals (bytes), uvs (16-bit), triangles.
+	private static Kit Load(string path)
+	{
+		byte[] data = File.ReadAllBytes(path);
+		BinaryReader br = new BinaryReader(new MemoryStream(data));
+		if (Encoding.ASCII.GetString(br.ReadBytes(4)) != "BRK2")
+		{
+			throw new Exception("not a BRK2 file");
+		}
+		Kit k = new Kit();
+		k.cut = br.ReadSingle();
+		k.band = br.ReadSingle();
+		int nm = br.ReadInt32();
+		for (int i = 0; i < nm; i++)
+		{
+			k.moving.Add(Str(br));
+		}
+		int np = br.ReadInt32();
+		int verts = 0;
+		for (int p = 0; p < np; p++)
+		{
+			int side = br.ReadSByte();
+			int nc = br.ReadInt32();
+			for (int c = 0; c < nc; c++)
+			{
+				Chunk ch = new Chunk();
+				ch.mat = Str(br);
+				ch.cls = Str(br);
+				int nv = br.ReadInt32();
+				Vector3 lo = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+				Vector3 sc = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle()) / 65535f;
+				Vector3[] v = new Vector3[nv];
+				for (int i = 0; i < nv; i++)
+				{
+					float x = br.ReadUInt16();
+					float y = br.ReadUInt16();
+					float z = br.ReadUInt16();
+					v[i] = new Vector3(lo.x + x * sc.x, lo.y + y * sc.y, lo.z + z * sc.z);
+				}
+				Vector3[] n = new Vector3[nv];
+				for (int i = 0; i < nv; i++)
+				{
+					float x = br.ReadSByte();
+					float y = br.ReadSByte();
+					float z = br.ReadSByte();
+					n[i] = new Vector3(x, y, z) / 127f;
+				}
+				Vector2 ulo = new Vector2(br.ReadSingle(), br.ReadSingle());
+				Vector2 usc = new Vector2(br.ReadSingle(), br.ReadSingle()) / 65535f;
+				Vector2[] uv = new Vector2[nv];
+				for (int i = 0; i < nv; i++)
+				{
+					float x = br.ReadUInt16();
+					float y = br.ReadUInt16();
+					uv[i] = new Vector2(ulo.x + x * usc.x, ulo.y + y * usc.y);
+				}
+				int ni = br.ReadInt32();
+				int[] tri = new int[ni];
+				for (int i = 0; i < ni; i++)
+				{
+					tri[i] = br.ReadUInt16();
+				}
+				Mesh m = new Mesh();
+				m.name = "ModBreak " + ch.mat;
+				m.vertices = v;
+				m.normals = n;
+				m.uv = uv;
+				m.triangles = tri;
+				m.RecalculateBounds();
+				try
+				{
+					m.RecalculateTangents();
+				}
+				catch (Exception)
+				{
+				}
+				ch.mesh = m;
+				verts += nv;
+				if (side == 1)
+				{
+					k.bow.Add(ch);
+				}
+				else
+				{
+					k.stern.Add(ch);
+				}
+			}
+		}
+		br.Close();
+		Log("loaded " + Path.GetFileName(path) + ": break at " + (k.cut * 10f).ToString("F0") + " m, " + verts + " vertices, " + k.moving.Count + " moving parts");
+		return k;
+	}
+
+	// Is this renderer on a part the game moves (turret, gun, director, prop...)? If so, at is that part's position (model z).
+	public static bool Moving(Kit k, Transform t, Transform graphic, out float z)
+	{
+		z = 0f;
+		Transform found = null;
+		Transform x = t;
+		while (x != null && x != graphic)
+		{
+			if (k.moving.Contains(((UnityEngine.Object)x).name))
+			{
+				found = x;
+			}
+			x = x.parent;
+		}
+		if (found == null)
+		{
+			return false;
+		}
+		z = graphic.InverseTransformPoint(found.position).z;
+		return true;
+	}
+
+	// Adds one side of the kit (bow = true: the bow half's torn end) under parent, which must sit where the ship's model root is.
+	public static int AddKit(Kit k, bool bow, Transform parent, Transform shipRoot, List<GameObject> made)
+	{
+		Dictionary<string, Material> mats = new Dictionary<string, Material>();
+		Material hull = null;
+		Material acc = null;
+		Material glass = null;
+		MeshRenderer[] rends = ((Component)shipRoot).GetComponentsInChildren<MeshRenderer>(true);
+		for (int i = 0; i < rends.Length; i++)
+		{
+			Material[] sm = ((Renderer)rends[i]).sharedMaterials;
+			string rn = ((UnityEngine.Object)rends[i]).name;
+			for (int j = 0; j < sm.Length; j++)
+			{
+				if (sm[j] == null)
+				{
+					continue;
+				}
+				string mn = ((UnityEngine.Object)sm[j]).name.Replace(" (Instance)", "").Trim();
+				if (!mats.ContainsKey(mn))
+				{
+					mats[mn] = sm[j];
+				}
+				if (hull == null && (rn == "Main_LOD0" || rn == "Hull"))
+				{
+					hull = sm[j];
+				}
+				if (acc == null && rn == "Accessories_LOD0")
+				{
+					acc = sm[j];
+				}
+				if (glass == null && (mn.IndexOf("ransparen") >= 0 || mn.ToLower().IndexOf("glass") >= 0))
+				{
+					glass = sm[j];
+				}
+			}
+		}
+		List<Chunk> list = bow ? k.bow : k.stern;
+		int n = 0;
+		for (int i = 0; i < list.Count; i++)
+		{
+			Chunk ch = list[i];
+			Material m = null;
+			if (ch.cls == "burnt")
+			{
+				m = BurntMat(hull);
+			}
+			else if (!mats.TryGetValue(ch.mat, out m))
+			{
+				m = ch.cls == "glass" ? glass : (ch.cls == "acc" ? (acc ?? hull) : (hull ?? acc));
+			}
+			if (m == null)
+			{
+				continue;
+			}
+			GameObject go = new GameObject("ModBreak " + (bow ? "bow " : "stern ") + ch.cls);
+			go.transform.SetParent(parent, false);
+			go.AddComponent<MeshFilter>().sharedMesh = ch.mesh;
+			MeshRenderer r = go.AddComponent<MeshRenderer>();
+			((Renderer)r).sharedMaterial = m;
+			made.Add(go);
+			n++;
+		}
+		return n;
+	}
+
+	private static Material BurntMat(Material hull)
+	{
+		if (burntMat != null)
+		{
+			return burntMat;
+		}
+		Texture2D t = LoadPng("burnt.png", false);
+		Shader sh = Shader.Find("Standard");
+		if (sh == null)
+		{
+			sh = Shader.Find("Legacy Shaders/Diffuse");
+		}
+		if (sh != null)
+		{
+			burntMat = new Material(sh);
+		}
+		else if (hull != null)
+		{
+			burntMat = new Material(hull);
+		}
+		else
+		{
+			return null;
+		}
+		burntMat.name = "ModBreak burnt";
+		if (t != null)
+		{
+			burntMat.mainTexture = t;
+			burntMat.color = Color.white;
+		}
+		else
+		{
+			burntMat.color = new Color(0.08f, 0.07f, 0.06f);
+		}
+		if (burntMat.HasProperty("_Glossiness"))
+		{
+			burntMat.SetFloat("_Glossiness", 0.05f);
+		}
+		if (burntMat.HasProperty("_Metallic"))
+		{
+			burntMat.SetFloat("_Metallic", 0f);
+		}
+		return burntMat;
+	}
+
+	private static Texture2D LoadPng(string file, bool clamp)
+	{
+		try
+		{
+			string p = Folder() + file;
+			if (!File.Exists(p))
+			{
+				Log(file + " not found in " + Folder());
+				return null;
+			}
+			Texture2D t = new Texture2D(2, 2, TextureFormat.RGBA32, true);
+			if (!t.LoadImage(File.ReadAllBytes(p)))
+			{
+				Log(file + " could not be loaded");
+				return null;
+			}
+			t.wrapMode = clamp ? TextureWrapMode.Clamp : TextureWrapMode.Repeat;
+			t.anisoLevel = 2;
+			return t;
+		}
+		catch (Exception ex)
+		{
+			Log(file + " failed: " + ex.Message);
+			return null;
+		}
+	}
+
+	// ---------------- exact cut of a mesh ----------------
+
+	private class ClipState
+	{
+		public Vector3[] v;
+		public Vector3[] n;
+		public Vector4[] tg;
+		public Vector2[] uv;
+		public Vector2[] uv2;
+		public Color32[] col;
+		public float[] d;
+		public int[] map;
+		public Dictionary<long, int> edges = new Dictionary<long, int>();
+		public List<Vector3> ov = new List<Vector3>();
+		public List<Vector3> on = new List<Vector3>();
+		public List<Vector4> otg = new List<Vector4>();
+		public List<Vector2> ouv = new List<Vector2>();
+		public List<Vector2> ouv2 = new List<Vector2>();
+		public List<Color32> ocol = new List<Color32>();
+	}
+
+	private static int Keep(ClipState s, int i)
+	{
+		if (s.map[i] < 0)
+		{
+			s.map[i] = s.ov.Count;
+			s.ov.Add(s.v[i]);
+			if (s.n != null)
+			{
+				s.on.Add(s.n[i]);
+			}
+			if (s.tg != null)
+			{
+				s.otg.Add(s.tg[i]);
+			}
+			if (s.uv != null)
+			{
+				s.ouv.Add(s.uv[i]);
+			}
+			if (s.uv2 != null)
+			{
+				s.ouv2.Add(s.uv2[i]);
+			}
+			if (s.col != null)
+			{
+				s.ocol.Add(s.col[i]);
+			}
+		}
+		return s.map[i];
+	}
+
+	private static int Cut(ClipState s, int a, int b)
+	{
+		long key = a < b ? (((long)a << 32) | (uint)b) : (((long)b << 32) | (uint)a);
+		int idx;
+		if (s.edges.TryGetValue(key, out idx))
+		{
+			return idx;
+		}
+		float t = s.d[a] / (s.d[a] - s.d[b]);
+		idx = s.ov.Count;
+		s.ov.Add(Vector3.Lerp(s.v[a], s.v[b], t));
+		if (s.n != null)
+		{
+			s.on.Add(Vector3.Lerp(s.n[a], s.n[b], t).normalized);
+		}
+		if (s.tg != null)
+		{
+			s.otg.Add(Vector4.Lerp(s.tg[a], s.tg[b], t));
+		}
+		if (s.uv != null)
+		{
+			s.ouv.Add(Vector2.Lerp(s.uv[a], s.uv[b], t));
+		}
+		if (s.uv2 != null)
+		{
+			s.ouv2.Add(Vector2.Lerp(s.uv2[a], s.uv2[b], t));
+		}
+		if (s.col != null)
+		{
+			s.ocol.Add(Color32.Lerp(s.col[a], s.col[b], t));
+		}
+		s.edges[key] = idx;
+		return idx;
+	}
+
+	// Cuts a mesh along the plane z = planeZ (z measured after m) and keeps the part above it (keepAbove) or below it.
+	// Triangles that cross the plane are cut exactly. Returns null if the mesh can't be read or the result is too big for one mesh.
+	public static Mesh Clip(Mesh src, Matrix4x4 m, float planeZ, bool keepAbove)
+	{
+		ClipState s = new ClipState();
+		s.v = src.vertices;
+		if (s.v == null || s.v.Length == 0)
+		{
+			return null;
+		}
+		int nv = s.v.Length;
+		s.n = src.normals;
+		if (s.n == null || s.n.Length != nv)
+		{
+			s.n = null;
+		}
+		s.tg = src.tangents;
+		if (s.tg == null || s.tg.Length != nv)
+		{
+			s.tg = null;
+		}
+		s.uv = src.uv;
+		if (s.uv == null || s.uv.Length != nv)
+		{
+			s.uv = null;
+		}
+		s.uv2 = src.uv2;
+		if (s.uv2 == null || s.uv2.Length != nv)
+		{
+			s.uv2 = null;
+		}
+		s.col = src.colors32;
+		if (s.col == null || s.col.Length != nv)
+		{
+			s.col = null;
+		}
+		float sign = keepAbove ? 1f : -1f;
+		s.d = new float[nv];
+		s.map = new int[nv];
+		for (int i = 0; i < nv; i++)
+		{
+			s.d[i] = (m.MultiplyPoint3x4(s.v[i]).z - planeZ) * sign;
+			s.map[i] = -1;
+		}
+		int subs = src.subMeshCount;
+		List<int[]> outTris = new List<int[]>();
+		int[] poly = new int[4];
+		int[] ids = new int[3];
+		for (int sm = 0; sm < subs; sm++)
+		{
+			int[] tri = src.GetTriangles(sm);
+			List<int> keep = new List<int>(tri.Length);
+			for (int j = 0; j + 2 < tri.Length; j += 3)
+			{
+				ids[0] = tri[j];
+				ids[1] = tri[j + 1];
+				ids[2] = tri[j + 2];
+				int inside = 0;
+				for (int q = 0; q < 3; q++)
+				{
+					if (s.d[ids[q]] >= 0f)
+					{
+						inside++;
+					}
+				}
+				if (inside == 3)
+				{
+					keep.Add(Keep(s, ids[0]));
+					keep.Add(Keep(s, ids[1]));
+					keep.Add(Keep(s, ids[2]));
+					continue;
+				}
+				if (inside == 0)
+				{
+					continue;
+				}
+				int pn = 0;
+				for (int q = 0; q < 3; q++)
+				{
+					int a = ids[q];
+					int b = ids[(q + 1) % 3];
+					bool ia = s.d[a] >= 0f;
+					bool ib = s.d[b] >= 0f;
+					if (ia)
+					{
+						poly[pn++] = Keep(s, a);
+					}
+					if (ia != ib && pn < 4)
+					{
+						poly[pn++] = Cut(s, a, b);
+					}
+				}
+				for (int q = 1; q + 1 < pn; q++)
+				{
+					keep.Add(poly[0]);
+					keep.Add(poly[q]);
+					keep.Add(poly[q + 1]);
+				}
+			}
+			outTris.Add(keep.ToArray());
+		}
+		if (s.ov.Count > 65000)
+		{
+			return null;
+		}
+		Mesh o = new Mesh();
+		o.name = src.name + (keepAbove ? " fore" : " aft");
+		o.vertices = s.ov.ToArray();
+		if (s.n != null)
+		{
+			o.normals = s.on.ToArray();
+		}
+		if (s.tg != null)
+		{
+			o.tangents = s.otg.ToArray();
+		}
+		if (s.uv != null)
+		{
+			o.uv = s.ouv.ToArray();
+		}
+		if (s.uv2 != null)
+		{
+			o.uv2 = s.ouv2.ToArray();
+		}
+		if (s.col != null)
+		{
+			o.colors32 = s.ocol.ToArray();
+		}
+		o.subMeshCount = subs;
+		for (int sm = 0; sm < subs; sm++)
+		{
+			o.SetTriangles(outTris[sm], sm);
+		}
+		o.RecalculateBounds();
+		return o;
+	}
+
+	// ---------------- the explosion ----------------
+
+	private class Boom
+	{
+		public Transform tr;
+		public Mesh mesh;
+		public MeshRenderer r;
+		public Vector2[] uv = new Vector2[4];
+		public Color32[] col = new Color32[4];
+		public float delay;
+		public float age;
+		public float dur;
+		public float hold;
+		public bool flip;
+		public int frame = -1;
+	}
+
+	public static bool BoomReady()
+	{
+		if (!UseBoom)
+		{
+			return false;
+		}
+		if (!boomTried)
+		{
+			boomTried = true;
+			boomTex = LoadPng("boom.png", true);
+			if (boomTex != null)
+			{
+				Shader sh = Shader.Find("Sprites/Default");
+				if (sh == null)
+				{
+					sh = Shader.Find("Particles/Alpha Blended");
+				}
+				if (sh == null)
+				{
+					sh = Shader.Find("UI/Default");
+				}
+				if (sh == null)
+				{
+					Log("no transparent shader found: the new explosion is off");
+					boomTex = null;
+				}
+				else
+				{
+					boomMat = new Material(sh);
+					boomMat.name = "ModBoom";
+					boomMat.mainTexture = boomTex;
+					boomMat.renderQueue = BoomQueue;
+					Log("explosion picture loaded (" + boomTex.width + " x " + boomTex.height + ", shader " + ((UnityEngine.Object)sh).name + ")");
+				}
+			}
+		}
+		return boomMat != null;
+	}
+
+	// The big explosion at world point at, sea level seaY, for a ship of length L (world units). size 1 = normal.
+	public static void Explode(Vector3 at, float seaY, float L, float size, Transform parent)
+	{
+		if (!BoomReady())
+		{
+			return;
+		}
+		float h = Mathf.Min(BoomMax, BoomSize * L * size);
+		Add(new Vector3(at.x, seaY, at.z), h, 0f, false, parent);
+		// two smaller ones close by, a moment later
+		for (int i = 0; i < 2; i++)
+		{
+			Vector3 off = UnityEngine.Random.insideUnitSphere * 0.12f * L;
+			off.y = 0f;
+			Add(new Vector3(at.x + off.x, seaY, at.z + off.z), h * UnityEngine.Random.Range(0.35f, 0.55f), UnityEngine.Random.Range(0.4f, 2.5f), i == 0, parent);
+		}
+	}
+
+	private static void Add(Vector3 pos, float h, float delay, bool flip, Transform parent)
+	{
+		GameObject go = new GameObject("ModBoom");
+		if (parent != null)
+		{
+			go.transform.SetParent(parent, true);
+		}
+		go.transform.position = pos;
+		Boom b = new Boom();
+		b.tr = go.transform;
+		b.mesh = new Mesh();
+		b.mesh.name = "ModBoom";
+		// card: sea level at 8% from the bottom of the picture
+		float w = h * 0.5f;
+		float lo = -0.08f * h;
+		b.mesh.vertices = new Vector3[4]
+		{
+			new Vector3(-w, lo, 0f),
+			new Vector3(w, lo, 0f),
+			new Vector3(w, lo + h, 0f),
+			new Vector3(-w, lo + h, 0f)
+		};
+		b.mesh.triangles = new int[6] { 0, 2, 1, 0, 3, 2 };
+		b.mesh.uv = new Vector2[4];
+		b.mesh.colors32 = new Color32[4];
+		b.mesh.bounds = new Bounds(new Vector3(0f, lo + h * 0.5f, 0f), new Vector3(h, h, h));
+		go.AddComponent<MeshFilter>().sharedMesh = b.mesh;
+		b.r = go.AddComponent<MeshRenderer>();
+		((Renderer)b.r).sharedMaterial = boomMat;
+		((Renderer)b.r).shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+		((Renderer)b.r).receiveShadows = false;
+		((Renderer)b.r).enabled = false;
+		b.delay = delay;
+		b.dur = BoomTime * Mathf.Clamp(h / 25f, 0.7f, 1.4f);
+		b.hold = BoomHold;
+		b.flip = flip;
+		booms.Add(b);
+	}
+
+	// Called every frame from ModSinking.Tick (dt = battle seconds).
+	public static void Tick(float dt)
+	{
+		if (booms.Count == 0)
+		{
+			return;
+		}
+		Camera cam = Camera.main;
+		float light = Mathf.Clamp(RenderSettings.ambientLight.grayscale * 2.2f + 0.25f, 0.35f, 1f);
+		for (int i = booms.Count - 1; i >= 0; i--)
+		{
+			Boom b = booms[i];
+			if (b.tr == null)
+			{
+				booms.RemoveAt(i);
+				continue;
+			}
+			b.age += dt;
+			float t = b.age - b.delay;
+			if (t < 0f)
+			{
+				continue;
+			}
+			if (t > b.dur + b.hold)
+			{
+				UnityEngine.Object.Destroy(((Component)b.tr).gameObject);
+				UnityEngine.Object.Destroy(b.mesh);
+				booms.RemoveAt(i);
+				continue;
+			}
+			((Renderer)b.r).enabled = true;
+			int f = Mathf.Clamp((int)(t / b.dur * 64f), 0, 63);
+			if (f != b.frame)
+			{
+				b.frame = f;
+				float u0 = (f % 8) / 8f;
+				float v0 = 1f - (f / 8 + 1) / 8f;
+				float u1 = u0 + 0.125f;
+				float v1 = v0 + 0.125f;
+				if (b.flip)
+				{
+					float x = u0;
+					u0 = u1;
+					u1 = x;
+				}
+				b.uv[0] = new Vector2(u0, v0);
+				b.uv[1] = new Vector2(u1, v0);
+				b.uv[2] = new Vector2(u1, v1);
+				b.uv[3] = new Vector2(u0, v1);
+				b.mesh.uv = b.uv;
+			}
+			// fire glows at night too, the smoke gets darker: the first frames stay bright
+			float glow = Mathf.Clamp01(1f - t / (b.dur * 0.35f));
+			float k = Mathf.Lerp(light, 1f, glow);
+			float a = t > b.dur ? 1f - (t - b.dur) / b.hold : 1f;
+			byte c = (byte)(255f * k);
+			byte al = (byte)(255f * Mathf.Clamp01(a));
+			for (int j = 0; j < 4; j++)
+			{
+				b.col[j] = new Color32(c, c, c, al);
+			}
+			b.mesh.colors32 = b.col;
+			if (cam != null)
+			{
+				Vector3 d = ((Component)cam).transform.position - b.tr.position;
+				d.y = 0f;
+				if (d.sqrMagnitude > 0.0001f)
+				{
+					b.tr.rotation = Quaternion.LookRotation(-d.normalized, Vector3.up);
+				}
+			}
+		}
+	}
+
+	// A new battle: forget the explosions (their objects went with the old battle).
+	public static void Clear()
+	{
+		for (int i = 0; i < booms.Count; i++)
+		{
+			if (booms[i].mesh != null)
+			{
+				UnityEngine.Object.Destroy(booms[i].mesh);
+			}
+		}
+		booms.Clear();
+	}
+
+	private static void Log(string s)
+	{
+		Debug.Log("[WRECK] " + s);
+	}
+}
