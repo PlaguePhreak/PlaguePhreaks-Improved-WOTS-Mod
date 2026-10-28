@@ -1,0 +1,127 @@
+using System;
+using UnityEngine;
+using UnityEngine.UI;
+
+// Main menu text: a small Changelog box at the top right and the mod name + version at the bottom left.
+// To release a new version: change Current. For a new minor version also rewrite ChangelogTitle and ChangelogBody.
+public static class ModVersion
+{
+	public const string Current = "0.29.1";
+
+	private const string ChangelogTitle = "Changelog";
+
+	private const string ChangelogBody =
+		"<color=#E0B030><b>0.29.1</b></color> ships go down like the real thing:\n" +
+		"- A torpedo can break a destroyer's back: it kicks up, slams down, splits\n" +
+		"- Torn, burnt break models for every destroyer, 3D fire-and-smoke blast\n" +
+		"- Big magazine blasts sink the ship, often blowing off bow or stern\n" +
+		"- Ships capsize, plunge by the bow or stern, or settle, by their flooding\n" +
+		"- Wrecks in shallow water come to rest on the seabed\n" +
+		"- Real floating wreckage and ragged oil slicks where ships sink\n" +
+		"- Crews bail out of shot-down planes and come down by parachute\n" +
+		"- Your ships answer your controls again; fewer planes explode\n" +
+		"- Plus the 0.28 air combat update (0.28.18 and hotfix)";
+
+	private const float Margin = 30f;
+	private static GameObject root;
+
+	// Called at the end of ModOptions.BuildMainMenuButton.
+	public static void Build()
+	{
+		try
+		{
+			MenuSystem ms = MenuSystem.instance;
+			if (ms == null || ms.mainInterface == null)
+			{
+				return;
+			}
+			if (root != null)
+			{
+				UnityEngine.Object.Destroy(root);
+			}
+			Canvas canvas = ms.mainInterface.GetComponentInParent<Canvas>();
+			if (canvas == null)
+			{
+				Debug.LogError("[VERSION] no canvas found");
+				return;
+			}
+			canvas = canvas.rootCanvas;
+			Font font = null;
+			Text any = ms.mainInterface.GetComponentInChildren<Text>(true);
+			if (any != null)
+			{
+				font = any.font;
+			}
+			if (font == null)
+			{
+				font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+			}
+
+			// Corners of the whole screen in world space, so the position is right whatever the menu layout.
+			Vector3[] c = new Vector3[4];
+			((RectTransform)canvas.transform).GetWorldCorners(c);
+			float s = canvas.transform.lossyScale.x;
+
+			GameObject holder = new GameObject("ModVersion", typeof(RectTransform));
+			holder.transform.SetParent(ms.mainInterface.transform, false);
+			holder.transform.SetAsLastSibling();
+			root = holder;
+
+			// Top right: changelog box (below the compass).
+			RectTransform box = NewRect("Changelog", holder.transform, new Vector2(1f, 1f));
+			box.sizeDelta = new Vector2(600f, 310f);   // 0.28.11: wider so no line wraps; 0.29: taller for 9 lines
+			box.position = new Vector3(c[2].x, c[2].y, c[2].z);
+			Image back = box.gameObject.AddComponent<Image>();
+			back.color = new Color(0.07f, 0.12f, 0.19f, 0.75f);
+			back.raycastTarget = false;
+			RectTransform head = NewRect("Title", box, new Vector2(0.5f, 1f));
+			head.anchorMin = new Vector2(0f, 1f);
+			head.anchorMax = new Vector2(1f, 1f);
+			head.anchoredPosition = new Vector2(0f, -8f);
+			head.sizeDelta = new Vector2(-24f, 30f);
+			NewText(head, font, 24, TextAnchor.UpperLeft, new Color(0.72f, 0.58f, 0.3f, 1f)).text = ChangelogTitle.ToUpper();
+			RectTransform body = NewRect("Body", box, new Vector2(0.5f, 1f));
+			body.anchorMin = new Vector2(0f, 1f);
+			body.anchorMax = new Vector2(1f, 1f);
+			body.anchoredPosition = new Vector2(0f, -44f);
+			body.sizeDelta = new Vector2(-24f, 220f);
+			NewText(body, font, 17, TextAnchor.UpperLeft, new Color(0.9f, 0.92f, 0.95f, 1f)).text = ChangelogBody;
+
+			// Bottom left: mod name and version.
+			RectTransform tag = NewRect("Version", holder.transform, new Vector2(0f, 0f));
+			tag.sizeDelta = new Vector2(500f, 60f);
+			tag.position = new Vector3(c[0].x + Margin * s, c[0].y + 20f * s, c[0].z);
+			NewText(tag, font, 20, TextAnchor.LowerLeft, new Color(0.9f, 0.92f, 0.95f, 1f)).text =
+				"Plague's Better WOTS mod\n<color=#E0B030>Version " + Current + "</color>";
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[VERSION] build failed: " + ex.ToString());
+		}
+	}
+
+	private static RectTransform NewRect(string name, Transform parent, Vector2 pivot)
+	{
+		GameObject go = new GameObject(name, typeof(RectTransform));
+		go.transform.SetParent(parent, false);
+		RectTransform rt = go.GetComponent<RectTransform>();
+		rt.anchorMin = pivot;
+		rt.anchorMax = pivot;
+		rt.pivot = pivot;
+		return rt;
+	}
+
+	private static Text NewText(RectTransform rt, Font font, int size, TextAnchor anchor, Color colour)
+	{
+		Text t = rt.gameObject.AddComponent<Text>();
+		t.font = font;
+		t.fontSize = size;
+		t.alignment = anchor;
+		t.color = colour;
+		t.supportRichText = true;
+		t.horizontalOverflow = HorizontalWrapMode.Wrap;
+		t.verticalOverflow = VerticalWrapMode.Overflow;
+		t.raycastTarget = false;
+		return t;
+	}
+}
