@@ -1,0 +1,271 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+// v0.28.18 NEW CLASS. Aircraft arrive in a battle like a real strike.
+// Before, every air group appeared standing still, pointing whichever way the map gave it, and fighter groups appeared wherever their own map spot
+// was, often in the middle of the bombers or kilometres from them. Now, as each air group is put into the battle (EngagementData.CreateUnitGroup):
+//   1. Heading: an enemy group with a route turns, as one formation, to fly towards its first route point (its target). Our own groups keep the
+//      heading the game gives them.
+//   2. Speed: every plane starts at cruise speed (CruiseShare of its top speed, never below StallMargin x its stall speed). ModFlight's own
+//      'appeared at a standstill' fix (0.28.17) is still there as a safety net.
+//   3. Stagger: each flight after the first sits a little further back (FlightStagger) and alternately a little higher or lower (FlightStep),
+//      so the flights do not sit on one line.
+//   4. Escorts: a fighter group of the same side that starts within EscortPairRange of a bomber group is moved to fly top cover over it:
+//      EscortAbove higher, EscortBehind back and EscortSide out to one side (a second escort group takes the other side), on the bombers' heading.
+//      Whichever of the two groups is put in first, the fighters are moved.
+// Distances in game units (1 = 10 m). Log: [SPAWN].
+public static class ModAirSpawn
+{
+	public static bool Enabled = true;
+
+	public const float CruiseShare = 0.65f;
+	public const float StallMargin = 1.5f;
+	public const float FlightStagger = 15f;       // 150 m back per flight
+	public const float FlightStep = 5f;           // 50 m up or down per flight
+	public const float EscortPairRange = 400f;    // 4 km
+	public const float EscortAbove = 80f;         // 800 m above the bombers
+	public const float EscortBehind = 100f;       // 1 km behind
+	public const float EscortSide = 40f;          // 400 m out to one side
+	public const float MaxHeight = 800f;          // the game's own spawn height cap (8 km)
+	public const float NewBattleGap = 10f;        // real seconds with no new air group = a new battle
+
+	private class Group
+	{
+		public List<Unit> units;
+		public Faction faction;
+		public bool fighters;
+		public bool escorting;
+		public int escorts;
+	}
+
+	private static List<Group> groups = new List<Group>();
+	private static float lastCreate = -100f;
+	public static int logged;
+
+	// Call at the end of the air part of EngagementData.CreateUnitGroup: ModAirSpawn.Arrange(list, unitGroupData);
+	public static void Arrange(List<Unit> list, UnitGroupData ugd)
+	{
+		if (!Enabled || list == null || list.Count == 0 || ugd == null)
+		{
+			return;
+		}
+		try
+		{
+			float now = Time.realtimeSinceStartup;
+			if (now - lastCreate > NewBattleGap)
+			{
+				groups.Clear();
+			}
+			lastCreate = now;
+			Unit lead = list[0];
+			if (lead == null || lead.unitAir == null || lead.unitData == null)
+			{
+				return;
+			}
+			Transform lt = ((Component)lead).transform;
+			// 1. heading
+			float heading = lt.eulerAngles.y;
+			bool turned = false;
+			if (ugd.faction != Faction.Player && ugd.waypoints != null && ugd.waypoints.Count > 0)
+			{
+				Vector3 aim = ugd.waypoints[ugd.waypoints.Count - 1];
+				for (int i = 0; i < ugd.waypoints.Count; i++)
+				{
+					Vector3 d0 = ugd.waypoints[i] - lt.position;
+					d0.y = 0f;
+					if (d0.magnitude > 50f)
+					{
+						aim = ugd.waypoints[i];
+						break;
+					}
+				}
+				Vector3 d = aim - lt.position;
+				d.y = 0f;
+				if (d.sqrMagnitude > 1f)
+				{
+					heading = Quaternion.LookRotation(d).eulerAngles.y;
+					turned = true;
+				}
+			}
+			Place(list, lt.position, heading);
+			// 2. speed, 3. stagger
+			int flight = 0;
+			for (int i = 0; i < list.Count; i++)
+			{
+				Unit u = list[i];
+				if (u == null || u.unitAir == null)
+				{
+					continue;
+				}
+				if (i > 0 && (u.unitAI == null || u.unitAI.followingUnit == null))
+				{
+					flight++;
+					Vector3 back = Quaternion.Euler(0f, heading, 0f) * new Vector3(0f, ((flight % 2 == 0) ? 1f : -1f) * FlightStep, -FlightStagger * flight);
+					List<Unit> mine = FlightOf(list, u);
+					for (int j = 0; j < mine.Count; j++)
+					{
+						((Component)mine[j]).transform.position += back;
+					}
+				}
+				Cruise(u);
+			}
+			for (int i = 0; i < list.Count; i++)
+			{
+				if (list[i] != null)
+				{
+					list[i].wantedHeight = ((Component)list[i]).transform.position.y;
+				}
+			}
+			// 4. escorts
+			Group g = new Group();
+			g.units = list;
+			g.faction = ugd.faction;
+			g.fighters = lead.unitData.unitSubtype == UnitSubType.Fighter;
+			groups.Add(g);
+			string escort = "";
+			if (g.fighters)
+			{
+				Group b = Nearest(g, false);
+				if (b != null)
+				{
+					escort = Escort(g, b);
+				}
+			}
+			else if (lead.unitData.unitSubtype != UnitSubType.Scout)
+			{
+				for (int i = 0; i < groups.Count; i++)
+				{
+					Group f = groups[i];
+					if (f != g && f.fighters && !f.escorting && f.faction == g.faction && Near(f, g))
+					{
+						escort += Escort(f, g);
+					}
+				}
+			}
+			if (logged < 60)
+			{
+				logged++;
+				Debug.Log((object)("[SPAWN] " + lead.unitData.unitName + " x" + list.Count + " (" + ((ugd.faction == Faction.Player) ? "ours" : "enemy") + ") enters at " + (lt.position.y * 10f).ToString("F0") + " m, " + (lead.currentSpeed * 36f).ToString("F0") + " km/h, heading " + heading.ToString("F0") + (turned ? " (towards its route)" : "") + ", " + (flight + 1) + " flight(s)" + escort));
+			}
+		}
+		catch (Exception ex)
+		{
+			Enabled = false;
+			Debug.LogError((object)("[SPAWN] failed and was switched off: " + ex.Message));
+		}
+	}
+
+	// Turns and moves the whole group as one: the leader goes to pos, heading h, everyone else keeps their place in the formation.
+	private static void Place(List<Unit> list, Vector3 pos, float h)
+	{
+		Transform lt = ((Component)list[0]).transform;
+		Vector3 p0 = lt.position;
+		Quaternion inv = Quaternion.Inverse(Quaternion.Euler(0f, lt.eulerAngles.y, 0f));
+		Quaternion rot = Quaternion.Euler(0f, h, 0f);
+		for (int i = 0; i < list.Count; i++)
+		{
+			Unit u = list[i];
+			if (u == null)
+			{
+				continue;
+			}
+			Transform t = ((Component)u).transform;
+			Vector3 local = inv * (t.position - p0);
+			Vector3 np = pos + rot * local;
+			np.y = Mathf.Clamp(np.y, 2f, MaxHeight);
+			t.position = np;
+			t.rotation = rot;
+		}
+	}
+
+	// The flight a sub-leader leads: itself and the planes following it.
+	private static List<Unit> FlightOf(List<Unit> list, Unit leader)
+	{
+		List<Unit> r = new List<Unit>();
+		r.Add(leader);
+		for (int i = 0; i < list.Count; i++)
+		{
+			Unit u = list[i];
+			if (u != null && u != leader && u.unitAI != null && u.unitAI.followingUnit == leader)
+			{
+				r.Add(u);
+			}
+		}
+		return r;
+	}
+
+	private static void Cruise(Unit u)
+	{
+		float top = u.unitData.maxSpeed;
+		float stall = 0f;
+		try
+		{
+			stall = ModAirFlight.BaseOf(u.unitAir).stallSpeed;
+		}
+		catch (Exception)
+		{
+		}
+		float cruise = Mathf.Max(top * CruiseShare, stall * StallMargin);
+		if (top > 0f)
+		{
+			cruise = Mathf.Min(cruise, top);
+		}
+		if (u.wantedSpeed < cruise * 0.5f)
+		{
+			u.wantedSpeed = cruise;
+		}
+		u.currentSpeed = cruise;
+	}
+
+	private static bool Near(Group a, Group b)
+	{
+		Vector3 d = ((Component)a.units[0]).transform.position - ((Component)b.units[0]).transform.position;
+		d.y = 0f;
+		return d.magnitude < EscortPairRange;
+	}
+
+	private static Group Nearest(Group f, bool fighters)
+	{
+		Group best = null;
+		float bd = EscortPairRange;
+		for (int i = 0; i < groups.Count; i++)
+		{
+			Group b = groups[i];
+			if (b == f || b.fighters != fighters || b.faction != f.faction || b.units[0] == null || b.units[0].unitData.unitSubtype == UnitSubType.Scout)
+			{
+				continue;
+			}
+			Vector3 d = ((Component)f.units[0]).transform.position - ((Component)b.units[0]).transform.position;
+			d.y = 0f;
+			if (d.magnitude < bd)
+			{
+				bd = d.magnitude;
+				best = b;
+			}
+		}
+		return best;
+	}
+
+	// Moves fighter group f to fly top cover over bomber group b.
+	private static string Escort(Group f, Group b)
+	{
+		Transform bt = ((Component)b.units[0]).transform;
+		float h = bt.eulerAngles.y;
+		float side = (b.escorts % 2 == 0) ? 1f : -1f;
+		Vector3 pos = bt.position + Quaternion.Euler(0f, h, 0f) * new Vector3(side * EscortSide, 0f, -EscortBehind);
+		pos.y = Mathf.Min(MaxHeight, bt.position.y + EscortAbove);
+		Place(f.units, pos, h);
+		for (int i = 0; i < f.units.Count; i++)
+		{
+			Unit u = f.units[i];
+			if (u != null)
+			{
+				u.wantedHeight = ((Component)u).transform.position.y;
+			}
+		}
+		f.escorting = true;
+		b.escorts++;
+		return ", " + f.units[0].unitData.unitName + " x" + f.units.Count + " fly top cover over " + b.units[0].unitData.unitName + " x" + b.units.Count + " at " + (pos.y * 10f).ToString("F0") + " m";
+	}
+}

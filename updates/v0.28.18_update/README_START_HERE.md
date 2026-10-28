@@ -1,4 +1,4 @@
-# v0.28.18 update: tester fixes (torpedo attacks, AA in mid air, fighters vs ships, planes that blow up, wings off = spin)
+# v0.28.18 update: tester fixes (torpedo attacks, AA in mid air, fighters vs ships, planes that blow up, wings off = spin) + planes arrive like a real strike
 
 All five tester reports in one update. Builds on 0.28.17 (install that first; you did on 27 Oct).
 Not compiled or run by me: back up `Assembly-CSharp.dll` first.
@@ -20,8 +20,9 @@ When everything is in: **File > Save Module**.
    - B) `EngagementAI.ModPickStrikeTarget`
    - C) `EngagementAI.GetBestSeaTarget`
    - D) `EngagementAI.AttackUnit`
-8. Optional: in **ModVersion** change `Current` to `"0.28.18"`.
-9. **File > Save Module**.
+8. **ModAirSpawn** (NEW class, added 28 Oct after the first five): Add Class (C#) like step 4, paste all of `8_NEW_ModAirSpawn.cs.txt`, **Compile**. Then one line in **EngagementData.CreateUnitGroup**, see `9_EngagementData_CreateUnitGroup.txt`. If you already did steps 1 to 7, just do this step and Save Module.
+9. Optional: in **ModVersion** change `Current` to `"0.28.18"`.
+10. **File > Save Module**.
 
 No new hooks besides the one-line edits above. The panel, stick and chase cam (0.28.14 to 0.28.16) are not touched.
 
@@ -37,6 +38,8 @@ No new hooks besides the one-line edits above. The panel, stick and chase cam (0
 
 **5. A plane that loses a wing rolls over and spins down (ModAirDamage + ModFlight).** When a wing spar breaks (0.28.17) or the wings come off at overspeed, the plane now rolls towards the missing wing and spins down out of control: it keeps rolling, the nose drops to 50 to 75 degrees and swings round faster and faster, and it falls at about 1.6 x its stall speed instead of diving. A plane shot down with a wing already shot to pieces spins half the time. Planes that spin do not also explode. Log: `[SPIN] Wildcat id ... lost its left wing: rolls over and spins down from 900 m`. Knobs: `SpinWrecked`, `SpinRollRate`, `SpinYawRate`, `SpinNoseMin`, `SpinNoseMax`, `SpinSpeedOverStall`.
 
+**6. Planes arrive like a real strike (new ModAirSpawn + 1 line).** Before, every air group popped into the battle standing still, pointing whichever way the map gave it, and fighter groups appeared on their own map spot, often in the middle of the bombers or far from them. Now as each group is put in: an enemy group with a route turns, as one formation, to fly towards its target; every plane starts at cruise speed (65% of its top speed, never below 1.5 x its stall speed); each flight after the first sits 150 m further back and 50 m higher or lower, so they are not all on one line; and a fighter group of the same side that starts within 4 km of a bomber group is moved to fly top cover over it, 800 m higher, 1 km behind and 400 m out to one side (a second escort group takes the other side). Your own groups keep the heading the game gives them. Log: `[SPAWN] B5N2 Kate x9 (enemy) enters at 1000 m, 230 km/h, heading 75 (towards its route), 3 flight(s), A6M2 Zero x6 fly top cover over B5N2 Kate x9 at 1800 m`. Knobs at the top of ModAirSpawn; `Enabled = false` switches it off.
+
 ## What to test
 
 1. A torpedo strike with 2+ flights on one ship, coming from one direction: they should all attack from that side together (`wave attack` in the log), not split.
@@ -44,7 +47,8 @@ No new hooks besides the one-line edits above. The panel, stick and chase cam (0
 3. Put a Fletcher42 or Kagero43 under air attack and watch the light AA tracers: they should start on the ship.
 4. Enemy strikes with fighters against a fleet with battleships: the fighters should only strafe destroyers or merchants, or stay up and fight. Search the log for `[FIGHTSHIP]`.
 5. Watch planes being shot down: some should blow up (`[EXPLODE]`), wing losses should spin (`[SPIN]`).
-6. Send me `output_log.txt`. If the explosion looks too big or too small, say which plane, and I will swap the effect.
+6. Start a battle with an enemy strike and escorts: the bombers should come in at speed heading for you, with the fighters above and behind (`[SPAWN]` lines).
+7. Send me `output_log.txt`. If the explosion looks too big or too small, say which plane, and I will swap the effect.
 
 ## Switch off
 - Explosions: set `ExplodeMax` to `0f` in ModAirDamage.
@@ -60,3 +64,4 @@ v0.28.18 - Tester fixes: torpedo attacks, AA in mid air, fighters vs big ships, 
 * Fighters only attack small ships (merchants, oilers, destroyers, destroyer escorts, surfaced submarines), never cruisers, battleships or carriers. Your own direct orders are still obeyed.
 * Shot-down planes can blow up in the air. More likely after a heavy hit, when burning or still carrying bombs or a torpedo, less likely with armour and self-sealing tanks.
 * A plane that loses a wing rolls over towards it and spins down out of control.
+* Planes arrive like a real strike: at cruise speed, enemy groups heading for their target, flights staggered, escort fighters flying top cover above and behind their bombers.

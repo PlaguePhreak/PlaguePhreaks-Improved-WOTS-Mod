@@ -1,0 +1,23 @@
+v0.28.18 - one line in EngagementData.CreateUnitGroup (Edit Method, add the line, Compile)
+=========================================================================================
+Do this AFTER ModAirSpawn is in.
+
+Near the END of the method there is an else-block for aircraft:
+
+		else
+		{
+			EngagementAI.instance.FormUpUnits(list[0], list, array, unitGroupData.spacing / 0.1f, (int)unitGroupData.formationAir);
+			this.BreakUpAirGroup(list, array, unitGroupData.spacing / 0.1f, (int)unitGroupData.formationAir);
+			val.Translate(Vector3.forward);
+		}
+
+(dnSpy may call "val" something like "transform", and may leave out "this.".)
+Add one line inside it, after the Translate line, so it reads:
+
+		else
+		{
+			EngagementAI.instance.FormUpUnits(list[0], list, array, unitGroupData.spacing / 0.1f, (int)unitGroupData.formationAir);
+			this.BreakUpAirGroup(list, array, unitGroupData.spacing / 0.1f, (int)unitGroupData.formationAir);
+			val.Translate(Vector3.forward);
+			ModAirSpawn.Arrange(list, unitGroupData);
+		}
