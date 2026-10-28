@@ -51,10 +51,16 @@ public static class ModBailOut
 				crewDone.Clear();
 			}
 			crewDone.Add(id);
-			if (ua.crewMeshes == null || ua.crewMeshes.Count == 0 || !ModChuteAssets.Ready())
+			if (ua.crewMeshes == null || ua.crewMeshes.Count == 0)
+			{
+				Note(ua, "this model has no crew figures in the cockpit, nothing to replace");
+				return;
+			}
+			if (!ModChuteAssets.Ready())
 			{
 				return;
 			}
+			int swapped = 0;
 			for (int i = 0; i < ua.crewMeshes.Count; i++)
 			{
 				GameObject go = ua.crewMeshes[i];
@@ -76,12 +82,37 @@ public static class ModBailOut
 				}
 				mf.sharedMesh = fit;
 				mr.sharedMaterial = ModChuteAssets.AirmanMat(nat);
+				swapped++;
 			}
+			Note(ua, swapped + " of " + ua.crewMeshes.Count + " cockpit crew figures now show the new airman");
 		}
 		catch (Exception ex)
 		{
 			failed = true;
 			Debug.LogError("[BAILOUT] cockpit crew swap failed and stopped: " + ex.Message + " " + ex.StackTrace);
+		}
+	}
+
+	private static readonly HashSet<string> noted = new HashSet<string>();
+
+	// One log line per plane type about its cockpit crew.
+	private static void Note(UnitAir ua, string what)
+	{
+		string key = (ua.unitData != null) ? ua.unitData.unitName : "?";
+		if (noted.Count < 200 && noted.Add(key))
+		{
+			Debug.Log("[BAILOUT] " + key + ": " + what);
+		}
+	}
+
+	public static int jumpLogged;
+
+	public static void Say(string line)
+	{
+		if (jumpLogged < 150)
+		{
+			jumpLogged++;
+			Debug.Log("[BAILOUT] " + line);
 		}
 	}
 
@@ -164,11 +195,14 @@ public class ModParachute : MonoBehaviour
 	private MeshFilter pilotMesh;
 	private bool canopyGone;
 	private float spinRate;
+	private string who;
+	private float fallTime;
 
 	public void Init(UnitAir ua, string nation, float delay)
 	{
 		plane = ua;
 		nat = nation;
+		who = ((ua.unitData != null) ? ua.unitData.unitName : "plane") + " (" + (ua.unitAI != null && ua.unitAI.parentUnit != null && ua.unitAI.parentUnit.faction == Faction.Player ? "ours" : "enemy") + ")";
 		wait = delay;
 		ModBailOut.Active.Add(this);
 	}
@@ -212,6 +246,7 @@ public class ModParachute : MonoBehaviour
 	{
 		if (plane == null || plane.transform.position.y < 0.3f)
 		{
+			ModBailOut.Say(who + ": airman did not get out in time, went down with the plane");
 			Destroy(gameObject);   // went into the sea with the plane
 			return;
 		}
@@ -223,6 +258,7 @@ public class ModParachute : MonoBehaviour
 		// a plane that blew up while he was still in it: most of the crew did not make it
 		if (plane.unitGraphic != null && !plane.unitGraphic.activeSelf && UnityEngine.Random.value > ModBailOut.ExplodedChance / ModBailOut.JumpChance)
 		{
+			ModBailOut.Say(who + ": the plane blew up before the airman could get out");
 			Destroy(gameObject);
 			return;
 		}
@@ -237,6 +273,7 @@ public class ModParachute : MonoBehaviour
 		phase = 1;
 		t = 0f;
 		v = 0f;
+		ModBailOut.Say(who + ": airman bails out at " + (transform.position.y * 10f).ToString("F0") + " m");
 	}
 
 	private void Build()
@@ -266,6 +303,7 @@ public class ModParachute : MonoBehaviour
 	private void Air(float dt)
 	{
 		t += dt;
+		fallTime += dt;
 		// falling speed: free fall, the opening shock, then a steady 6 m/s
 		if (t < 1.5f)
 		{
@@ -324,6 +362,7 @@ public class ModParachute : MonoBehaviour
 		pilotMesh.sharedMesh = ModChuteAssets.Airman(nat, "floating");
 		pilot.localRotation = Quaternion.identity;
 		ModBailOut.InWater.Add(this);
+		ModBailOut.Say(who + ": airman lands in the sea after " + fallTime.ToString("F0") + " s under the canopy, " + ModBailOut.InWater.Count + " in the water now");
 	}
 
 	private void Water(float dt)
