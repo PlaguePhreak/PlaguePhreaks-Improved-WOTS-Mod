@@ -129,6 +129,13 @@ Direction: the mod aims to be **realistic / historical**. New ideas should follo
 - Better formation flying (M-L)
 - Coordinated strikes (M-L)
 - Carrier operations: launch/recovery timing, deck management (L)
+- **Bail-outs, downed airmen and PBY rescues (requested by Aaron 28 Oct 2026, planned, M-L; roadmap only, nothing built):** part of the aircraft crash work (crash_assets/Crash_Project_Task_List.txt, parts 4 and 6). Tag `[BAILOUT]`.
+  1. In battle, some crew bail out of planes shot down high enough. They come down under a parachute (the parachute models and the bail-out animation are being made now in crash_assets/parachutes/) and land in the sea.
+  2. Airmen who reach the water alive are kept after the battle and show on the campaign map as a survivors event, the same kind of marker as the v0.18.4 rescue missions (battle leftovers and sinking events).
+  3. PBY Catalinas (and later other flying boats and floatplanes, such as the H6K and H8K for Japan) can be sent to fly to that spot and pick the survivors up, like the real "Dumbo" rescue flights. Ships within 12 km can still pick them up as today.
+  4. Rescued own airmen go back to their air group (ties in with v0.18.6 air crew experience, so a rescued veteran pilot isn't lost). Enemy airmen picked up become prisoners for command points, as with ship survivors.
+  5. Survivors not picked up in time are lost, like the existing rescue missions.
+  - To check in the code first: how the v0.18.4 rescue missions are stored and drawn on the map, and whether a flying boat can be given a mission to a map point that is not a target (a new air mission type may be needed).
 
 ## Submarine warfare
 - More nuanced periscope / sonar gameplay (M-L)
