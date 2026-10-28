@@ -1,0 +1,370 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using UnityEngine;
+
+// v0.29 NEW CLASS (add it before ModSinking). The floating wreckage and oil slick art for sinking ships, made in Blender:
+//  - 14 debris models (planks, deck planking, crates, drums, ammo boxes, Carley floats, life rings, life vests, a hatch cover, steel plate,
+//    a broken spar, burnt timber, a capsized ship's boat), all sharing one texture (debris_atlas.png).
+//  - 3 oil slick shapes (oil_slick_a/b/c.png) and their rainbow sheen (oil_sheen_a/b/c.png).
+// Files: StreamingAssets\override\mod_debris\. If the folder or a file is missing, ModSinking uses its old plain boxes and round slick.
+// Log lines start with [DEBRIS].
+public static class ModDebrisArt
+{
+	// ---------------- knobs ----------------
+	public static bool UseModels = true;
+	public static bool UseOilArt = true;
+	public static float Scale = 1.2f;           // model size (1 = real size; a bit bigger reads better from the battle camera)
+	public static float SheenAlpha = 0.35f;     // how strong the rainbow sheen on the thin edges of a slick is (0 = off)
+
+	// The model files, the kind of debris each one stands in for (ModSinking kinds: 0 wood, 1 crate, 2 barrel, 3 plate, 4 raft, 5 burnt),
+	// how often it comes up within its kind, and whether an explosion can throw it into the air.
+	private static readonly string[] Names = new string[14]
+	{
+		"plank", "plank_short", "deck_section", "spar", "hatch_cover",
+		"crate", "ammo_box",
+		"drum",
+		"steel_plate",
+		"carley_float", "life_ring", "life_vest", "boat_capsized",
+		"timber_burnt"
+	};
+	private static readonly int[] Kinds = new int[14] { 0, 0, 0, 0, 0, 1, 1, 2, 3, 4, 4, 4, 4, 5 };
+	private static readonly float[] Weights = new float[14] { 5f, 4f, 1.5f, 1f, 1f, 3f, 2f, 1f, 1f, 1.2f, 1.5f, 2f, 0.3f, 3f };
+	private static readonly bool[] CanFly = new bool[14] { true, true, false, true, true, true, true, true, true, false, true, true, false, true };
+
+	private static bool tried;
+	private static bool ok;
+	private static bool oilOk;
+	private static string folder;
+	private static readonly Mesh[] meshes = new Mesh[14];
+	private static Material mat;
+	private static Material[] oilMats;
+	private static Material[] sheenMats;
+
+	public static string Folder()
+	{
+		if (folder == null)
+		{
+			string b = null;
+			try
+			{
+				if (AssetLoader.instance != null && AssetLoader.instance.fullPathLocations != null && AssetLoader.instance.fullPathLocations.Length > 0)
+				{
+					b = AssetLoader.instance.fullPathLocations[0];
+				}
+			}
+			catch (Exception)
+			{
+				b = null;
+			}
+			if (string.IsNullOrEmpty(b))
+			{
+				b = Application.streamingAssetsPath + "/override/";
+			}
+			folder = b + "mod_debris/";
+		}
+		return folder;
+	}
+
+	// Loads everything once. True when the debris models are there.
+	public static bool Ready()
+	{
+		if (!tried)
+		{
+			tried = true;
+			Load();
+		}
+		return ok && UseModels;
+	}
+
+	public static bool OilReady()
+	{
+		if (!tried)
+		{
+			tried = true;
+			Load();
+		}
+		return oilOk && UseOilArt;
+	}
+
+	private static void Load()
+	{
+		try
+		{
+			if (!Directory.Exists(Folder()))
+			{
+				Log("folder " + Folder() + " NOT FOUND: plain debris and round oil slicks are used");
+				return;
+			}
+			Texture2D atlas = LoadPng("debris_atlas.png");
+			if (atlas != null)
+			{
+				for (int i = 0; i < Names.Length; i++)
+				{
+					meshes[i] = LoadObj(Folder() + "debris_" + Names[i] + ".obj");
+				}
+				mat = SolidMat(atlas);
+				ok = mat != null;
+			}
+			Shader oilSh = Find("Sprites/Default", "Particles/Alpha Blended", "UI/Default");
+			Shader addSh = Find("Particles/Additive", "Legacy Shaders/Particles/Additive", "Mobile/Particles/Additive");
+			if (oilSh != null)
+			{
+				List<Material> om = new List<Material>();
+				List<Material> sm = new List<Material>();
+				string[] abc = new string[3] { "a", "b", "c" };
+				for (int i = 0; i < abc.Length; i++)
+				{
+					Texture2D t = LoadPng("oil_slick_" + abc[i] + ".png");
+					if (t == null)
+					{
+						continue;
+					}
+					Material m = new Material(oilSh);
+					m.mainTexture = t;
+					om.Add(m);
+					Texture2D st = (addSh != null && SheenAlpha > 0f) ? LoadPng("oil_sheen_" + abc[i] + ".png") : null;
+					Material s = null;
+					if (st != null)
+					{
+						s = new Material(addSh);
+						s.mainTexture = st;
+					}
+					sm.Add(s);
+				}
+				oilMats = om.ToArray();
+				sheenMats = sm.ToArray();
+				oilOk = oilMats.Length > 0;
+			}
+			Log("art loaded from " + Folder() + ": debris models " + (ok ? "14" : "OFF") + ", oil slick shapes " + (oilMats != null ? oilMats.Length : 0) + (addSh == null ? " (no additive shader: no sheen)" : ""));
+		}
+		catch (Exception ex)
+		{
+			ok = false;
+			oilOk = false;
+			Log("could not load the art from " + Folder() + " (plain debris and round slicks are used): " + ex.Message);
+		}
+	}
+
+	// ---------------- debris ----------------
+
+	public static Material Mat()
+	{
+		return mat;
+	}
+
+	// A model for this kind of debris (0 wood, 1 crate, 2 barrel, 3 plate, 4 raft, 5 burnt). flying: only pieces that look right in the air.
+	public static Mesh Pick(int kind, bool flying)
+	{
+		float total = 0f;
+		for (int i = 0; i < meshes.Length; i++)
+		{
+			if (Kinds[i] == kind && meshes[i] != null && (!flying || CanFly[i]))
+			{
+				total += Weights[i];
+			}
+		}
+		if (total <= 0f)
+		{
+			return null;
+		}
+		float r = UnityEngine.Random.value * total;
+		for (int i = 0; i < meshes.Length; i++)
+		{
+			if (Kinds[i] == kind && meshes[i] != null && (!flying || CanFly[i]))
+			{
+				r -= Weights[i];
+				if (r <= 0f)
+				{
+					return meshes[i];
+				}
+			}
+		}
+		return null;
+	}
+
+	// ---------------- oil ----------------
+
+	public static int OilCount()
+	{
+		return (oilMats != null) ? oilMats.Length : 0;
+	}
+
+	// queue: ModSinking.OilQueue (draw order); the sheen draws just after the slick
+	public static Material OilMat(int i, int queue)
+	{
+		Material m = oilMats[i % oilMats.Length];
+		m.renderQueue = queue;
+		return m;
+	}
+
+	public static Material SheenMat(int i, int queue)
+	{
+		Material m = sheenMats[i % sheenMats.Length];
+		if (m != null)
+		{
+			m.renderQueue = queue + 1;
+		}
+		return m;
+	}
+
+	// ---------------- loading ----------------
+
+	private static Shader Find(string a, string b, string c)
+	{
+		Shader s = Shader.Find(a);
+		if (s == null)
+		{
+			s = Shader.Find(b);
+		}
+		if (s == null)
+		{
+			s = Shader.Find(c);
+		}
+		return s;
+	}
+
+	private static Material SolidMat(Texture2D tex)
+	{
+		Shader sh = Find("Standard", "Legacy Shaders/Diffuse", "Diffuse");
+		if (sh == null)
+		{
+			return null;
+		}
+		Material m = new Material(sh);
+		m.mainTexture = tex;
+		m.color = Color.white;
+		if (m.HasProperty("_Glossiness"))
+		{
+			m.SetFloat("_Glossiness", 0.08f);
+		}
+		if (m.HasProperty("_Metallic"))
+		{
+			m.SetFloat("_Metallic", 0f);
+		}
+		return m;
+	}
+
+	private static Texture2D LoadPng(string file)
+	{
+		string p = Folder() + file;
+		if (!File.Exists(p))
+		{
+			Log(file + " not found in " + Folder());
+			return null;
+		}
+		Texture2D t = new Texture2D(2, 2, TextureFormat.RGBA32, true);
+		if (!t.LoadImage(File.ReadAllBytes(p)))
+		{
+			Log(file + " could not be loaded");
+			return null;
+		}
+		t.wrapMode = TextureWrapMode.Clamp;
+		t.anisoLevel = 2;
+		return t;
+	}
+
+	// Minimal OBJ reader (v, vt, vn, f), like the parachute one. The OBJ is in metres: scaled to game units (1 = 10 m), x mirrored for Unity
+	// and the triangles turned round, and centred on its middle so it floats about its centre.
+	private static Mesh LoadObj(string path)
+	{
+		if (!File.Exists(path))
+		{
+			Log(Path.GetFileName(path) + " not found");
+			return null;
+		}
+		string[] lines = File.ReadAllLines(path);
+		List<Vector3> pv = new List<Vector3>();
+		List<Vector2> pt = new List<Vector2>();
+		List<Vector3> pn = new List<Vector3>();
+		List<Vector3> v = new List<Vector3>();
+		List<Vector2> uv = new List<Vector2>();
+		List<Vector3> n = new List<Vector3>();
+		List<int> tri = new List<int>();
+		Dictionary<string, int> seen = new Dictionary<string, int>();
+		CultureInfo c = CultureInfo.InvariantCulture;
+		char[] sp = new char[2] { ' ', '\t' };
+		foreach (string raw in lines)
+		{
+			string l = raw.Trim();
+			if (l.Length < 2)
+			{
+				continue;
+			}
+			string[] p = l.Split(sp, StringSplitOptions.RemoveEmptyEntries);
+			if (p[0] == "v")
+			{
+				pv.Add(new Vector3(-float.Parse(p[1], c), float.Parse(p[2], c), float.Parse(p[3], c)) * 0.1f);
+			}
+			else if (p[0] == "vt")
+			{
+				pt.Add(new Vector2(float.Parse(p[1], c), float.Parse(p[2], c)));
+			}
+			else if (p[0] == "vn")
+			{
+				pn.Add(new Vector3(-float.Parse(p[1], c), float.Parse(p[2], c), float.Parse(p[3], c)));
+			}
+			else if (p[0] == "f")
+			{
+				int[] idx = new int[p.Length - 1];
+				for (int k = 1; k < p.Length; k++)
+				{
+					int at;
+					if (!seen.TryGetValue(p[k], out at))
+					{
+						string[] q = p[k].Split('/');
+						at = v.Count;
+						v.Add(pv[Ref(q[0], pv.Count)]);
+						uv.Add((q.Length > 1 && q[1].Length > 0) ? pt[Ref(q[1], pt.Count)] : Vector2.zero);
+						n.Add((q.Length > 2 && q[2].Length > 0) ? pn[Ref(q[2], pn.Count)] : Vector3.up);
+						seen[p[k]] = at;
+					}
+					idx[k - 1] = at;
+				}
+				for (int k = 1; k + 1 < idx.Length; k++)
+				{
+					tri.Add(idx[0]);
+					tri.Add(idx[k + 1]);
+					tri.Add(idx[k]);
+				}
+			}
+		}
+		if (v.Count == 0 || v.Count > 65000)
+		{
+			Log(Path.GetFileName(path) + " has " + v.Count + " vertices");
+			return null;
+		}
+		Vector3 lo = v[0];
+		Vector3 hi = v[0];
+		for (int i = 1; i < v.Count; i++)
+		{
+			lo = Vector3.Min(lo, v[i]);
+			hi = Vector3.Max(hi, v[i]);
+		}
+		Vector3 mid = (lo + hi) * 0.5f;
+		for (int i = 0; i < v.Count; i++)
+		{
+			v[i] -= mid;
+		}
+		Mesh m = new Mesh();
+		m.name = Path.GetFileNameWithoutExtension(path);
+		m.vertices = v.ToArray();
+		m.uv = uv.ToArray();
+		m.normals = n.ToArray();
+		m.triangles = tri.ToArray();
+		m.RecalculateBounds();
+		return m;
+	}
+
+	private static int Ref(string s, int count)
+	{
+		int i = int.Parse(s, CultureInfo.InvariantCulture);
+		return (i < 0) ? count + i : i - 1;
+	}
+
+	private static void Log(string s)
+	{
+		Debug.Log("[DEBRIS] " + s);
+	}
+}
