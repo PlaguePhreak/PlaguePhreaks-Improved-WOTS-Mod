@@ -1,0 +1,26 @@
+
+<b><size=18>THE PACIFIC WAR</size></b>
+
+<b>December 8th 1941</b>
+Yesterday the Imperial Japanese Navy struck the fleet at <color=#caa809>PEARL HARBOR</color>. Japanese forces are moving on <color=#caa809>WAKE ISLAND</color>, <color=#caa809>GUAM</color> and the Gilbert Islands, and enemy submarines are already off Hawaii and the <color=#caa809>WEST COAST</color>.
+
+Using <color=#caa809>PEARL HARBOR</color> and <color=#caa809>SAN DIEGO</color> as home ports, hold the line, rebuild the fleet and carry the war across the Central Pacific to the enemy fleet base at <color=#caa809>TRUK</color>.
+
+
+You must:
+
+1) Take control of:
+   - <color=#caa809>TRUK</color>
+   - <color=#caa809>KWAJALEIN</color>
+   - <color=#caa809>SAIPAN</color>
+
+2) Retake or hold <color=#caa809>WAKE ISLAND</color> and <color=#caa809>GUAM</color>
+
+3) Build a rank 5 airfield at <color=#caa809>MIDWAY</color>
+
+4) Maintain control of:
+   - <color=#caa809>PEARL HARBOR</color>
+   - <color=#caa809>SAN DIEGO</color>
+   - <color=#caa809>MIDWAY</color>
+
+All of these must be held at the same time to win the campaign.

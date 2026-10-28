@@ -1,0 +1,3 @@
+﻿{"aircraft":"betty","payloadIndex":[4,2],"maxRange":[1170,1245],"minNumber":[8,12]}
+{"aircraft":"kate","payloadIndex":[2,4],"maxRange":[667,896],"minNumber":[6,12]}
+{"aircraft":"val","payloadIndex":[1],"maxRange":[480],"minNumber":[6,12]}

@@ -1,0 +1,1 @@
+{"nextAction":"SUMMARY","header":"Victory","imagePath":"","content":"<size=18><b>VICTORY</b></size>\nThe Central Pacific is in Allied hands and the enemy fleet base at <color=#caa809>TRUK</color> has fallen. The road to Japan is open."}

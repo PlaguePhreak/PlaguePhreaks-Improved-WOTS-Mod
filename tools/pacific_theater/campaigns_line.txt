@@ -1,0 +1,1 @@
+pacificwar=The Pacific War=8,12,1941=December 1941. Recover from Pearl Harbor, hold Hawaii, Midway and the West Coast, and carry the war across the Central Pacific to Truk.=forceSettings=2,2,2,2,2,2,2,2,2,2

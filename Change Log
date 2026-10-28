@@ -10,6 +10,19 @@ The mod is in alpha, so every version is 0.x. Version numbers group the work in 
 Numbering: a major change gets a whole number (v0.25 = new map locations); the minor changes under it are v0.25.1, v0.25.2 and so on. What used to be called v0.24.3 to v0.24.6 is now v0.25 to v0.25.3.
 NOTE: the in-game logbook (ModGuide class, What's New page) still uses the old numbers and must be updated to match.
 
+v0.29 - "The Pacific War" (Mega Patch 01) (pending test)
+---------------------------------------------------------
+* New campaign: The Pacific War. It starts on 8 December 1941, the day after Pearl Harbor, with you as the US Navy.
+* New map of the North and Central Pacific, from Taiwan and Japan to the US west coast and from New Guinea to Alaska, in the same style as the stock maps. It is drawn from Natural Earth map data, finishing the developer's unfinished examplePacific map.
+* 39 locations. US: Pearl Harbor, San Diego, San Francisco, Seattle, Los Angeles, Midway, Wake, Guam, Johnston, Palmyra, French Frigate Shoals, Canton and Dutch Harbor. Japan: Yokosuka, Kure, Sasebo, Ominato, Truk, Saipan, Palau, Kwajalein and the Marshalls, Marcus, the Bonins, Okinawa and Paramushiro. Unoccupied: Attu, Kiska, Adak, Tarawa, Makin, Nauru, Howland and Christmas Island.
+* Shipyards (new ships) at Pearl Harbor, San Diego, San Francisco and Seattle. The enemy's are at Yokosuka, Kure and Truk.
+* 338-point sea route network, covering Japan's Inland Sea, Tokyo Bay, Puget Sound and San Francisco Bay.
+* Japanese AI: I-boats off Hawaii and the west coast, carrier strike forces, bombardments, invasions of Wake, Guam, the Gilberts, the Aleutians and Midway, fast troop runs and supply convoys.
+* Objectives: take Truk, Kwajalein and Saipan, hold or retake Wake and Guam, build a rank 5 airfield at Midway, and hold Pearl Harbor and San Diego.
+* Campaign start briefing, victory and defeat events, and the mod's rules pages and supply convoy events.
+* Uses the mod's full ship and aircraft lists. Ship and aircraft dates decide what is available.
+* Install: Override files only, plus one new line in language/english/campaign/campaigns.txt (tools/pacific_theater/campaigns_line.txt) and a copy of campaign001's rules.txt in the pacificwar language folder.
+
 v0.24.2 - New aircraft from RamZ's catalogue and TTE (pending test)
 -----------------------------------------------------------
 * 22 more aircraft from the TTE mod, used with credit to the TTE team (P-39D, P-38E, J2F, PBY, PBM, A-20G, B-24D, B-25J, Kittyhawk, Beaufighter, Beaufort, Sunderland, A5M4, A6M2-N, Ki-43, Ki-45, Ki-49, J1N1, E14Y, H6K, H8K2, G3M2). 115 new aircraft in total.
