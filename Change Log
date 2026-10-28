@@ -21,7 +21,8 @@ v0.29 - "The Pacific War" (Mega Patch 01) (pending test)
 * Objectives: take Truk, Kwajalein and Saipan, hold or retake Wake and Guam, build a rank 5 airfield at Midway, and hold Pearl Harbor and San Diego.
 * Campaign start briefing, victory and defeat events, and the mod's rules pages and supply convoy events.
 * Uses the mod's full ship and aircraft lists. Ship and aircraft dates decide what is available.
-* Pearl Harbor starts wrecked by the 7 December raid: a rank 3 port and a rank 1 airfield. A new briefing after the start event tells you to rebuild it as the US forward operating base.
+* Pearl Harbor starts wrecked by the 7 December raid: a rank 3 port and a rank 1 airfield. The start briefing and a new Pearl Harbor briefing use the real events and losses (Arizona, Oklahoma, 188 aircraft, the tank farm and dry docks spared, the carriers at sea) and tell you to rebuild it as the US forward operating base.
+* Historical garrisons: Wake about 450 (1st Defense Battalion and VMF-211), Guam about 550.
 * Install: Override files only, plus one new line in language/english/campaign/campaigns.txt (tools/pacific_theater/campaigns_line.txt) and a copy of campaign001's rules.txt in the pacificwar language folder.
 
 v0.24.2 - New aircraft from RamZ's catalogue and TTE (pending test)

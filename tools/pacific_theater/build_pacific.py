@@ -55,7 +55,7 @@ LOCS = [
     ("iwojima", "IWO JIMA", 24.78, 141.32, 1, 0, 2, 500, False),
     ("marcus", "MARCUS ISLAND", 24.29, 153.98, 1, 0, 1, 300, False),
     ("saipan", "SAIPAN", 15.18, 145.75, 1, 3, 3, 2000, False),
-    ("guam", "GUAM", 13.44, 144.79, 0, 1, 0, 300, False),
+    ("guam", "GUAM", 13.44, 144.79, 0, 1, 0, 550, False),  # ~550 Marines and Insular Force; fell 10 Dec
     ("palau", "PALAU", 7.34, 134.48, 1, 3, 2, 1000, False),
     ("truk", "TRUK", 7.42, 151.78, 1, 5, 4, 6000, True),
     ("ponape", "PONAPE", 6.96, 158.21, 1, 1, 1, 500, False),
@@ -65,7 +65,7 @@ LOCS = [
     ("maloelap", "MALOELAP", 8.72, 171.23, 1, 0, 2, 500, False),
     ("jaluit", "JALUIT", 5.92, 169.64, 1, 2, 1, 500, False),
     ("makin", "MAKIN", 3.07, 172.79, 2, 0, 0, 0, False),
-    ("wake", "WAKE ISLAND", 19.28, 166.65, 0, 1, 2, 500, False),
+    ("wake", "WAKE ISLAND", 19.28, 166.65, 0, 1, 2, 450, False),  # 1st Defense Bn detachment + VMF-211; held to 23 Dec
     # United States
     ("pearlharbor", "PEARL HARBOR", 21.35, -157.97, 0, 3, 1, 10000, True),  # wrecked by the 7 Dec raid
     ("midway", "MIDWAY", 28.21, -177.38, 0, 1, 3, 2000, False),
