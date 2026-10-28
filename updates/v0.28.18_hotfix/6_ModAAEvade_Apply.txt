@@ -1,0 +1,17 @@
+v0.28.18 hotfix - one change in ModAAEvade.Apply (Edit Method), after you have added ModShipHelm
+===============================================================================================
+1. Add Class (C#), delete everything, paste the whole of 5_NEW_ModShipHelm.cs.txt, then Compile.
+2. Open ModAAEvade, right-click Apply, and choose Edit Method.
+3. The first "if" in the method ends with:
+
+		|| ModPlayerOverride.OnHelm(parentUnit))
+
+4. Change it to:
+
+		|| ModPlayerOverride.OnHelm(parentUnit) || ModShipHelm.Skip(ai, parentUnit))
+
+   (dnSpy may call "parentUnit" something else, for example "unit". Use the same name that is inside OnHelm( ). "ai" is the method's own
+   parameter, so look at the top line, public static void Apply(UnitAI ai), and use that name.)
+5. Compile.
+
+Knob at the top of ModShipHelm: SkipManualShips = false lets your hand-steered ships (not the selected one) dodge again.

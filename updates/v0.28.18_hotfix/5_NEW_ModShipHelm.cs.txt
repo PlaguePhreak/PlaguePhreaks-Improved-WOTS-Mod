@@ -1,0 +1,66 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+// v0.28.18 hotfix NEW CLASS. Your ships answer your controls again (testers, 28 Oct: "the controls are not responsive").
+// Cause: the mod's AA evasion (ModAAEvade, 0.2x) took over your ships whenever torpedo planes, dive bombers or level bombers came within about
+// 4 km, or a ship was pressed against another one: full speed and hard rudder, every frame. Moving a slider gave you the helm for only 30 s, then
+// the evasion took her again, and the sliders showed your setting while the ship did something else. With the longer torpedo run-ups of
+// 0.28.18 this happens much more often. The game's own hazard evasion never steers the ship you have selected; the mod's did.
+// Now the AA evasion leaves alone:
+//   1. the ship you have selected (as the game's own evasion does), and
+//   2. if SkipManualShips, any of your ships you are steering by hand (no route, no formation, no order).
+// Your ships that follow a route, a formation or an order still dodge, as before. The enemy's ships are not changed.
+// If the evasion was steering a ship when you take her, she goes back to the speed and rudder she had before it. Log: [HELM].
+public static class ModShipHelm
+{
+	public static bool On = true;
+	public static bool SkipManualShips = true;
+
+	private static HashSet<int> logged = new HashSet<int>();
+
+	// Called from the first line of ModAAEvade.Apply. true = leave this ship to the player.
+	public static bool Skip(UnitAI ai, Unit u)
+	{
+		if (!On || ai == null || u == null || u.faction != Faction.Player)
+		{
+			return false;
+		}
+		try
+		{
+			bool selected = CombatInterface.instance != null && CombatInterface.instance.currentUnit == u;
+			AIAction a = ai.currentAIAction;
+			bool manual = SkipManualShips && (a == AIAction.Nothing || a == AIAction.Nav_Done);
+			if (!selected && !manual)
+			{
+				return false;
+			}
+			ModAAEvade.State s;
+			if (ModAAEvade.states != null && ModAAEvade.states.TryGetValue(((UnityEngine.Object)u).GetInstanceID(), out s))
+			{
+				if (s.mode != 0)
+				{
+					ModAAEvade.Stop(ai, u, s, selected ? "you have her selected, she is yours to steer" : "you are steering her by hand");
+				}
+				if (s.unsticking)
+				{
+					s.unsticking = false;
+					u.wantedSpeed = s.unstickSpeed;
+				}
+				s.unstickUntil = 0f;
+				s.clearUntil = 0f;
+			}
+			if (logged.Count < 200 && logged.Add(((UnityEngine.Object)u).GetInstanceID()))
+			{
+				Debug.Log((object)("[HELM] " + u.unitInstanceName + ": AA evasion leaves her to you (" + (selected ? "selected" : "steered by hand") + ")"));
+			}
+			return true;
+		}
+		catch (Exception ex)
+		{
+			On = false;
+			Debug.LogError((object)("[HELM] failed and was switched off: " + ex.Message));
+			return false;
+		}
+	}
+}
