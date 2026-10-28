@@ -67,7 +67,7 @@ LOCS = [
     ("makin", "MAKIN", 3.07, 172.79, 2, 0, 0, 0, False),
     ("wake", "WAKE ISLAND", 19.28, 166.65, 0, 1, 2, 500, False),
     # United States
-    ("pearlharbor", "PEARL HARBOR", 21.35, -157.97, 0, 5, 5, 10000, True),
+    ("pearlharbor", "PEARL HARBOR", 21.35, -157.97, 0, 3, 1, 10000, True),  # wrecked by the 7 Dec raid
     ("midway", "MIDWAY", 28.21, -177.38, 0, 1, 3, 2000, False),
     ("frenchfrigate", "FRENCH FRIGATE SHOALS", 23.75, -166.20, 0, 0, 0, 200, False),
     ("johnston", "JOHNSTON ISLAND", 16.73, -169.53, 0, 0, 1, 300, False),
