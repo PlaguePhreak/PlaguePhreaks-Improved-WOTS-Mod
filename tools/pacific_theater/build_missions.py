@@ -115,7 +115,7 @@ s.update({
     "nations0": ["usa"], "nations1": ["japan"],
     "aircraft0": ["wildcat", "dauntless", "b17f"], "aircraft1": ["zero", "val", "betty"],
     "unavailableShipClasses": [], "unavailableShipInstanceNames": [],
-    "maxAirAt": ["midway"], "maxPortAt": [],
+    "maxAirAt": ["midway"], "maxPortAt": [], "portLevelToDisband": 3,
     "mustControl": ["truk", "kwajalein", "saipan", "wake", "guam", "pearlharbor", "midway", "sandiego"],
     "mapZoomLevels": {"x": 0.05, "y": 1},
     "mapOriginXY": [28080, 19680], "mapPixelWidth": 32640, "mapWidthMetres": 32640 * 488.28125,
