@@ -1,0 +1,1238 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using UnityEngine;
+
+// v0.29 NEW CLASS (add it before ModSinking). The art for ships that break up, made in Blender:
+//  - "break kits": for every destroyer and escort, three pre-made breaks (fore, mid, aft). Each kit is the torn middle part of both halves:
+//    jagged crumpled plating, burnt edges, the dark inside of the hull, a bulkhead, torn decks and bent plates. The rest of each half is the
+//    ship's own model, cut exactly where the kit starts, so the two fit together with no seam. Turrets, guns, directors and props are not cut:
+//    each one goes whole with the half it stands on.
+//  - the big explosion (0.29.2, after HMS Barham): a real 3D blast made of particles, one huge fireball that flashes yellow and turns into
+//    a wide, towering cloud of black smoke with pale grey billows at the sides, yellow fire bursting through it, black chunks of the ship
+//    tumbling through the air, a few short fire jets, spray along the water and sparks. Then a pall of smoke hangs over the spot for minutes.
+// Files: StreamingAssets\override\mod_wreck\ (the .brk kits, units.txt, puff.png, burnt.png). If a file is missing, ModSinking uses the
+// old way (cut the ship's own model at the break, no torn edges) and the game's own explosions. Log lines start with [WRECK].
+public static class ModWreckArt
+{
+	// ---------------- knobs ----------------
+	public static bool UseKits = true;
+	public static bool UseBoom = true;
+	public static float KitReach = 0.2f;        // use a pre-made break if the hit is within this part of the ship length of one (else cut at the hit)
+	public static float BlastReach = 1.5f;      // how far the streamers fly, in ship lengths
+	public static float BlastMax = 30f;         // and at most this (game units, 1 = 10 m)
+	public static int Streamers = 8;            // short jets of fire and smoke bursting out of the cloud (the second, smaller blast gets a third)
+	public static float StreamerReach = 0.45f;  // how far they fly, as part of BlastReach
+	public static int WreckTrails = 6;          // thin grey trails of flying wreckage
+	public static int Chunks = 50;              // black chunks of the ship thrown into the air (tumbling, they fall back into the sea)
+	public static int Sparks = 100;             // white-hot sparks
+	public static int FireballPuffs = 140;      // the main fireball: how many big puffs of fire and smoke burst out at once
+	public static float FireballSize = 1f;      // size of those puffs (1 = normal)
+	public static float CloudTime = 6f;         // battle seconds the fireball keeps boiling up into a column of black smoke
+	public static float SmokeLinger = 420f;     // battle seconds a pall of smoke keeps rising over the spot, drifting with the wind and thinning
+	                                            // out (a broken ship takes about 1.5 min to sink, so this is about 5 min after it's gone)
+	public static float PallLife = 70f;         // battle seconds each puff of that pall lasts
+	public static float PuffLife = 9f;          // battle seconds the smoke hangs in the air (the big cloud lasts about twice this)
+	public static int BoomQueue = 3100;         // draw order of the explosion (like the oil slick)
+
+	// ---------------- kits ----------------
+	public class Chunk
+	{
+		public string mat;
+		public string cls;
+		public Mesh mesh;
+	}
+
+	public class Kit
+	{
+		public string file;
+		public float cut;                   // break position, ship model z (+ = bow)
+		public float band;                  // the kit covers cut - band .. cut + band
+		public HashSet<string> moving = new HashSet<string>();
+		public List<Chunk> bow = new List<Chunk>();
+		public List<Chunk> stern = new List<Chunk>();
+	}
+
+	private static readonly string[] Tags = new string[3] { "fore", "mid", "aft" };
+	private static readonly Dictionary<string, Kit> kits = new Dictionary<string, Kit>();
+	private static Dictionary<string, string> unitModel;
+	private static string folder;
+	private static Material burntMat;
+
+	public static string Folder()
+	{
+		if (folder == null)
+		{
+			string b = null;
+			try
+			{
+				if (AssetLoader.instance != null && AssetLoader.instance.fullPathLocations != null && AssetLoader.instance.fullPathLocations.Length > 0)
+				{
+					b = AssetLoader.instance.fullPathLocations[0];
+				}
+			}
+			catch (Exception)
+			{
+				b = null;
+			}
+			if (string.IsNullOrEmpty(b))
+			{
+				b = Application.streamingAssetsPath + "/override/";
+			}
+			folder = b + "mod_wreck/";
+		}
+		return folder;
+	}
+
+	// The unit's own folder name (the game names the unit's object after it) -> the model it uses (units.txt).
+	public static string ModelOf(Unit u)
+	{
+		string id = ((UnityEngine.Object)((Component)u).gameObject).name.Replace("(Clone)", "").Trim();
+		if (unitModel == null)
+		{
+			unitModel = new Dictionary<string, string>();
+			try
+			{
+				string p = Folder() + "units.txt";
+				if (File.Exists(p))
+				{
+					string[] lines = File.ReadAllLines(p);
+					for (int i = 0; i < lines.Length; i++)
+					{
+						string[] a = lines[i].Trim().Split(new char[2] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+						if (a.Length >= 2)
+						{
+							unitModel[a[0]] = a[1];
+						}
+					}
+				}
+				Log("break kits folder " + Folder() + (File.Exists(p) ? ", " + unitModel.Count + " ships listed" : ": units.txt NOT FOUND, pre-made breaks are off"));
+			}
+			catch (Exception ex)
+			{
+				Log("units.txt failed: " + ex.Message);
+			}
+		}
+		string m;
+		return unitModel.TryGetValue(id, out m) ? m : null;
+	}
+
+	// The pre-made break nearest to cutLocal (unit local z). Returns null if there is none close enough.
+	// cutLocal is set to the kit's break position (unit local z) when one is found.
+	public static Kit FindKit(Unit u, ref float cutLocal, float lenLocal)
+	{
+		if (!UseKits || u == null || u.unitGraphic == null)
+		{
+			return null;
+		}
+		try
+		{
+			string model = ModelOf(u);
+			if (model == null)
+			{
+				return null;
+			}
+			Transform ut = ((Component)u).transform;
+			Transform g = u.unitGraphic.transform;
+			Kit best = null;
+			float bestD = KitReach * lenLocal;
+			float bestCut = cutLocal;
+			for (int i = 0; i < Tags.Length; i++)
+			{
+				Kit k = Get(model + "_" + Tags[i] + ".brk");
+				if (k == null)
+				{
+					continue;
+				}
+				float c = ut.InverseTransformPoint(g.TransformPoint(new Vector3(0f, 0f, k.cut))).z;
+				float d = Mathf.Abs(c - cutLocal);
+				if (d <= bestD)
+				{
+					bestD = d;
+					best = k;
+					bestCut = c;
+				}
+			}
+			if (best != null)
+			{
+				cutLocal = bestCut;
+			}
+			return best;
+		}
+		catch (Exception ex)
+		{
+			Log("FindKit failed: " + ex.Message);
+			return null;
+		}
+	}
+
+	private static Kit Get(string file)
+	{
+		Kit k;
+		if (kits.TryGetValue(file, out k))
+		{
+			return k;
+		}
+		k = null;
+		try
+		{
+			string p = Folder() + file;
+			if (File.Exists(p))
+			{
+				k = Load(p);
+				k.file = file;
+			}
+		}
+		catch (Exception ex)
+		{
+			Log(file + " could not be read: " + ex.Message);
+			k = null;
+		}
+		kits[file] = k;
+		return k;
+	}
+
+	private static string Str(BinaryReader br)
+	{
+		int n = br.ReadInt32();
+		return Encoding.UTF8.GetString(br.ReadBytes(n));
+	}
+
+	// .brk layout (written by break2.py): "BRK2", cut, band, moving part names, then 2 pieces (1 = bow side, 0 = stern side), each a list of
+	// chunks: material name, class (hull, acc, glass, burnt), vertices (16-bit steps of a box), normals (bytes), uvs (16-bit), triangles.
+	private static Kit Load(string path)
+	{
+		byte[] data = File.ReadAllBytes(path);
+		BinaryReader br = new BinaryReader(new MemoryStream(data));
+		if (Encoding.ASCII.GetString(br.ReadBytes(4)) != "BRK2")
+		{
+			throw new Exception("not a BRK2 file");
+		}
+		Kit k = new Kit();
+		k.cut = br.ReadSingle();
+		k.band = br.ReadSingle();
+		int nm = br.ReadInt32();
+		for (int i = 0; i < nm; i++)
+		{
+			k.moving.Add(Str(br));
+		}
+		int np = br.ReadInt32();
+		int verts = 0;
+		for (int p = 0; p < np; p++)
+		{
+			int side = br.ReadSByte();
+			int nc = br.ReadInt32();
+			for (int c = 0; c < nc; c++)
+			{
+				Chunk ch = new Chunk();
+				ch.mat = Str(br);
+				ch.cls = Str(br);
+				int nv = br.ReadInt32();
+				Vector3 lo = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+				Vector3 sc = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle()) / 65535f;
+				Vector3[] v = new Vector3[nv];
+				for (int i = 0; i < nv; i++)
+				{
+					float x = br.ReadUInt16();
+					float y = br.ReadUInt16();
+					float z = br.ReadUInt16();
+					v[i] = new Vector3(lo.x + x * sc.x, lo.y + y * sc.y, lo.z + z * sc.z);
+				}
+				Vector3[] n = new Vector3[nv];
+				for (int i = 0; i < nv; i++)
+				{
+					float x = br.ReadSByte();
+					float y = br.ReadSByte();
+					float z = br.ReadSByte();
+					n[i] = new Vector3(x, y, z) / 127f;
+				}
+				Vector2 ulo = new Vector2(br.ReadSingle(), br.ReadSingle());
+				Vector2 usc = new Vector2(br.ReadSingle(), br.ReadSingle()) / 65535f;
+				Vector2[] uv = new Vector2[nv];
+				for (int i = 0; i < nv; i++)
+				{
+					float x = br.ReadUInt16();
+					float y = br.ReadUInt16();
+					uv[i] = new Vector2(ulo.x + x * usc.x, ulo.y + y * usc.y);
+				}
+				int ni = br.ReadInt32();
+				int[] tri = new int[ni];
+				for (int i = 0; i < ni; i++)
+				{
+					tri[i] = br.ReadUInt16();
+				}
+				Mesh m = new Mesh();
+				m.name = "ModBreak " + ch.mat;
+				m.vertices = v;
+				m.normals = n;
+				m.uv = uv;
+				m.triangles = tri;
+				m.RecalculateBounds();
+				try
+				{
+					m.RecalculateTangents();
+				}
+				catch (Exception)
+				{
+				}
+				ch.mesh = m;
+				verts += nv;
+				if (side == 1)
+				{
+					k.bow.Add(ch);
+				}
+				else
+				{
+					k.stern.Add(ch);
+				}
+			}
+		}
+		br.Close();
+		Log("loaded " + Path.GetFileName(path) + ": break at " + (k.cut * 10f).ToString("F0") + " m, " + verts + " vertices, " + k.moving.Count + " moving parts");
+		return k;
+	}
+
+	// Is this renderer on a part the game moves (turret, gun, director, prop...)? If so, at is that part's position (model z).
+	public static bool Moving(Kit k, Transform t, Transform graphic, out float z)
+	{
+		z = 0f;
+		Transform found = null;
+		Transform x = t;
+		while (x != null && x != graphic)
+		{
+			if (k.moving.Contains(((UnityEngine.Object)x).name))
+			{
+				found = x;
+			}
+			x = x.parent;
+		}
+		if (found == null)
+		{
+			return false;
+		}
+		z = graphic.InverseTransformPoint(found.position).z;
+		return true;
+	}
+
+	// Adds one side of the kit (bow = true: the bow half's torn end) under parent, which must sit where the ship's model root is.
+	public static int AddKit(Kit k, bool bow, Transform parent, Transform shipRoot, List<GameObject> made)
+	{
+		Dictionary<string, Material> mats = new Dictionary<string, Material>();
+		Material hull = null;
+		Material acc = null;
+		Material glass = null;
+		MeshRenderer[] rends = ((Component)shipRoot).GetComponentsInChildren<MeshRenderer>(true);
+		for (int i = 0; i < rends.Length; i++)
+		{
+			Material[] sm = ((Renderer)rends[i]).sharedMaterials;
+			string rn = ((UnityEngine.Object)rends[i]).name;
+			for (int j = 0; j < sm.Length; j++)
+			{
+				if (sm[j] == null)
+				{
+					continue;
+				}
+				string mn = ((UnityEngine.Object)sm[j]).name.Replace(" (Instance)", "").Trim();
+				if (!mats.ContainsKey(mn))
+				{
+					mats[mn] = sm[j];
+				}
+				if (hull == null && (rn == "Main_LOD0" || rn == "Hull"))
+				{
+					hull = sm[j];
+				}
+				if (acc == null && rn == "Accessories_LOD0")
+				{
+					acc = sm[j];
+				}
+				if (glass == null && (mn.IndexOf("ransparen") >= 0 || mn.ToLower().IndexOf("glass") >= 0))
+				{
+					glass = sm[j];
+				}
+			}
+		}
+		List<Chunk> list = bow ? k.bow : k.stern;
+		int n = 0;
+		for (int i = 0; i < list.Count; i++)
+		{
+			Chunk ch = list[i];
+			Material m = null;
+			if (ch.cls == "burnt")
+			{
+				m = BurntMat(hull);
+			}
+			else if (!mats.TryGetValue(ch.mat, out m))
+			{
+				m = ch.cls == "glass" ? glass : (ch.cls == "acc" ? (acc ?? hull) : (hull ?? acc));
+			}
+			if (m == null)
+			{
+				continue;
+			}
+			GameObject go = new GameObject("ModBreak " + (bow ? "bow " : "stern ") + ch.cls);
+			go.transform.SetParent(parent, false);
+			go.AddComponent<MeshFilter>().sharedMesh = ch.mesh;
+			MeshRenderer r = go.AddComponent<MeshRenderer>();
+			((Renderer)r).sharedMaterial = m;
+			made.Add(go);
+			n++;
+		}
+		return n;
+	}
+
+	private static Material BurntMat(Material hull)
+	{
+		if (burntMat != null)
+		{
+			return burntMat;
+		}
+		Texture2D t = LoadPng("burnt.png", false);
+		Shader sh = Shader.Find("Standard");
+		if (sh == null)
+		{
+			sh = Shader.Find("Legacy Shaders/Diffuse");
+		}
+		if (sh != null)
+		{
+			burntMat = new Material(sh);
+		}
+		else if (hull != null)
+		{
+			burntMat = new Material(hull);
+		}
+		else
+		{
+			return null;
+		}
+		burntMat.name = "ModBreak burnt";
+		if (t != null)
+		{
+			burntMat.mainTexture = t;
+			burntMat.color = Color.white;
+		}
+		else
+		{
+			burntMat.color = new Color(0.08f, 0.07f, 0.06f);
+		}
+		if (burntMat.HasProperty("_Glossiness"))
+		{
+			burntMat.SetFloat("_Glossiness", 0.05f);
+		}
+		if (burntMat.HasProperty("_Metallic"))
+		{
+			burntMat.SetFloat("_Metallic", 0f);
+		}
+		return burntMat;
+	}
+
+	private static Texture2D LoadPng(string file, bool clamp)
+	{
+		try
+		{
+			string p = Folder() + file;
+			if (!File.Exists(p))
+			{
+				Log(file + " not found in " + Folder());
+				return null;
+			}
+			Texture2D t = new Texture2D(2, 2, TextureFormat.RGBA32, true);
+			if (!t.LoadImage(File.ReadAllBytes(p)))
+			{
+				Log(file + " could not be loaded");
+				return null;
+			}
+			t.wrapMode = clamp ? TextureWrapMode.Clamp : TextureWrapMode.Repeat;
+			t.anisoLevel = 2;
+			return t;
+		}
+		catch (Exception ex)
+		{
+			Log(file + " failed: " + ex.Message);
+			return null;
+		}
+	}
+
+	// ---------------- exact cut of a mesh ----------------
+
+	private class ClipState
+	{
+		public Vector3[] v;
+		public Vector3[] n;
+		public Vector4[] tg;
+		public Vector2[] uv;
+		public Vector2[] uv2;
+		public Color32[] col;
+		public float[] d;
+		public int[] map;
+		public Dictionary<long, int> edges = new Dictionary<long, int>();
+		public List<Vector3> ov = new List<Vector3>();
+		public List<Vector3> on = new List<Vector3>();
+		public List<Vector4> otg = new List<Vector4>();
+		public List<Vector2> ouv = new List<Vector2>();
+		public List<Vector2> ouv2 = new List<Vector2>();
+		public List<Color32> ocol = new List<Color32>();
+	}
+
+	private static int Keep(ClipState s, int i)
+	{
+		if (s.map[i] < 0)
+		{
+			s.map[i] = s.ov.Count;
+			s.ov.Add(s.v[i]);
+			if (s.n != null)
+			{
+				s.on.Add(s.n[i]);
+			}
+			if (s.tg != null)
+			{
+				s.otg.Add(s.tg[i]);
+			}
+			if (s.uv != null)
+			{
+				s.ouv.Add(s.uv[i]);
+			}
+			if (s.uv2 != null)
+			{
+				s.ouv2.Add(s.uv2[i]);
+			}
+			if (s.col != null)
+			{
+				s.ocol.Add(s.col[i]);
+			}
+		}
+		return s.map[i];
+	}
+
+	private static int Cut(ClipState s, int a, int b)
+	{
+		long key = a < b ? (((long)a << 32) | (uint)b) : (((long)b << 32) | (uint)a);
+		int idx;
+		if (s.edges.TryGetValue(key, out idx))
+		{
+			return idx;
+		}
+		float t = s.d[a] / (s.d[a] - s.d[b]);
+		idx = s.ov.Count;
+		s.ov.Add(Vector3.Lerp(s.v[a], s.v[b], t));
+		if (s.n != null)
+		{
+			s.on.Add(Vector3.Lerp(s.n[a], s.n[b], t).normalized);
+		}
+		if (s.tg != null)
+		{
+			s.otg.Add(Vector4.Lerp(s.tg[a], s.tg[b], t));
+		}
+		if (s.uv != null)
+		{
+			s.ouv.Add(Vector2.Lerp(s.uv[a], s.uv[b], t));
+		}
+		if (s.uv2 != null)
+		{
+			s.ouv2.Add(Vector2.Lerp(s.uv2[a], s.uv2[b], t));
+		}
+		if (s.col != null)
+		{
+			s.ocol.Add(Color32.Lerp(s.col[a], s.col[b], t));
+		}
+		s.edges[key] = idx;
+		return idx;
+	}
+
+	// Cuts a mesh along the plane z = planeZ (z measured after m) and keeps the part above it (keepAbove) or below it.
+	// Triangles that cross the plane are cut exactly. Returns null if the mesh can't be read or the result is too big for one mesh.
+	public static Mesh Clip(Mesh src, Matrix4x4 m, float planeZ, bool keepAbove)
+	{
+		ClipState s = new ClipState();
+		s.v = src.vertices;
+		if (s.v == null || s.v.Length == 0)
+		{
+			return null;
+		}
+		int nv = s.v.Length;
+		s.n = src.normals;
+		if (s.n == null || s.n.Length != nv)
+		{
+			s.n = null;
+		}
+		s.tg = src.tangents;
+		if (s.tg == null || s.tg.Length != nv)
+		{
+			s.tg = null;
+		}
+		s.uv = src.uv;
+		if (s.uv == null || s.uv.Length != nv)
+		{
+			s.uv = null;
+		}
+		s.uv2 = src.uv2;
+		if (s.uv2 == null || s.uv2.Length != nv)
+		{
+			s.uv2 = null;
+		}
+		s.col = src.colors32;
+		if (s.col == null || s.col.Length != nv)
+		{
+			s.col = null;
+		}
+		float sign = keepAbove ? 1f : -1f;
+		s.d = new float[nv];
+		s.map = new int[nv];
+		for (int i = 0; i < nv; i++)
+		{
+			s.d[i] = (m.MultiplyPoint3x4(s.v[i]).z - planeZ) * sign;
+			s.map[i] = -1;
+		}
+		int subs = src.subMeshCount;
+		List<int[]> outTris = new List<int[]>();
+		int[] poly = new int[4];
+		int[] ids = new int[3];
+		for (int sm = 0; sm < subs; sm++)
+		{
+			int[] tri = src.GetTriangles(sm);
+			List<int> keep = new List<int>(tri.Length);
+			for (int j = 0; j + 2 < tri.Length; j += 3)
+			{
+				ids[0] = tri[j];
+				ids[1] = tri[j + 1];
+				ids[2] = tri[j + 2];
+				int inside = 0;
+				for (int q = 0; q < 3; q++)
+				{
+					if (s.d[ids[q]] >= 0f)
+					{
+						inside++;
+					}
+				}
+				if (inside == 3)
+				{
+					keep.Add(Keep(s, ids[0]));
+					keep.Add(Keep(s, ids[1]));
+					keep.Add(Keep(s, ids[2]));
+					continue;
+				}
+				if (inside == 0)
+				{
+					continue;
+				}
+				int pn = 0;
+				for (int q = 0; q < 3; q++)
+				{
+					int a = ids[q];
+					int b = ids[(q + 1) % 3];
+					bool ia = s.d[a] >= 0f;
+					bool ib = s.d[b] >= 0f;
+					if (ia)
+					{
+						poly[pn++] = Keep(s, a);
+					}
+					if (ia != ib && pn < 4)
+					{
+						poly[pn++] = Cut(s, a, b);
+					}
+				}
+				for (int q = 1; q + 1 < pn; q++)
+				{
+					keep.Add(poly[0]);
+					keep.Add(poly[q]);
+					keep.Add(poly[q + 1]);
+				}
+			}
+			outTris.Add(keep.ToArray());
+		}
+		if (s.ov.Count > 65000)
+		{
+			return null;
+		}
+		Mesh o = new Mesh();
+		o.name = src.name + (keepAbove ? " fore" : " aft");
+		o.vertices = s.ov.ToArray();
+		if (s.n != null)
+		{
+			o.normals = s.on.ToArray();
+		}
+		if (s.tg != null)
+		{
+			o.tangents = s.otg.ToArray();
+		}
+		if (s.uv != null)
+		{
+			o.uv = s.ouv.ToArray();
+		}
+		if (s.uv2 != null)
+		{
+			o.uv2 = s.ouv2.ToArray();
+		}
+		if (s.col != null)
+		{
+			o.colors32 = s.ocol.ToArray();
+		}
+		o.subMeshCount = subs;
+		for (int sm = 0; sm < subs; sm++)
+		{
+			o.SetTriangles(outTris[sm], sm);
+		}
+		o.RecalculateBounds();
+		return o;
+	}
+
+	// ---------------- the explosion ----------------
+	// A real 3D blast made of particles: a fireball in the middle, dozens of fire-and-smoke streamers shooting out in every direction and
+	// arcing down, thin grey trails of flying wreckage, and white-hot sparks. Each streamer is a burning "head" the mod flies itself; it
+	// leaves a line of smoke puffs behind it that start fire-lit orange and turn dark brown-grey as they hang in the air.
+	// Three particle systems per blast: smoke (soft puffs, puff.png), glow (fire, additive) and sparks (streaks, additive).
+
+	private class Head
+	{
+		public Vector3 p;
+		public Vector3 v;
+		public float drag;
+		public float g;
+		public float reach;
+		public float dist;
+		public float next;
+		public float age;
+		public bool wreck;
+	}
+
+	private class Blast
+	{
+		public Transform tr;
+		public ParticleSystem smoke;
+		public ParticleSystem ball;
+		public ParticleSystem chunks;
+		public ParticleSystem glow;
+		public ParticleSystem sparks;
+		public List<Head> heads = new List<Head>();
+		public float R;
+		public float delay;
+		public float age;
+		public float cloud;
+		public float fire;
+		public float pall;
+		public Vector3 wind;
+		public bool started;
+		public float life;
+	}
+
+	private static Material smokeMat;
+	private static Material glowMat;
+	private static Material chunkMat;
+	private static bool blastTried;
+	private static readonly List<Blast> blasts = new List<Blast>();
+
+	public static bool BoomReady()
+	{
+		if (!UseBoom)
+		{
+			return false;
+		}
+		if (!blastTried)
+		{
+			blastTried = true;
+			try
+			{
+				Texture2D puff = LoadPng("puff.png", true);
+				if (puff == null)
+				{
+					puff = MakeSoft(64, true);
+				}
+				Texture2D soft = MakeSoft(64, false);
+				Shader sa = FindShader("Sprites/Default", "Particles/Alpha Blended", "Legacy Shaders/Particles/Alpha Blended", "UI/Default");
+				Shader sg = FindShader("Particles/Additive", "Legacy Shaders/Particles/Additive", "Mobile/Particles/Additive", "Sprites/Default");
+				if (sa == null || sg == null)
+				{
+					Log("no particle shader found: the new explosion is off");
+				}
+				else
+				{
+					smokeMat = new Material(sa);
+					smokeMat.name = "ModBlast smoke";
+					smokeMat.mainTexture = puff;
+					smokeMat.renderQueue = BoomQueue;
+					chunkMat = new Material(sa);
+					chunkMat.name = "ModBlast wreckage";
+					chunkMat.mainTexture = MakeChunk(32);
+					chunkMat.renderQueue = BoomQueue;
+					glowMat = new Material(sg);
+					glowMat.name = "ModBlast glow";
+					glowMat.mainTexture = soft;
+					glowMat.renderQueue = BoomQueue + 1;
+					if (glowMat.HasProperty("_TintColor"))
+					{
+						glowMat.SetColor("_TintColor", new Color(0.5f, 0.5f, 0.5f, 0.5f));
+					}
+					Log("3D explosion ready (smoke " + ((UnityEngine.Object)sa).name + ", fire " + ((UnityEngine.Object)sg).name + ", puff " + puff.width + " px)");
+				}
+			}
+			catch (Exception ex)
+			{
+				Log("explosion setup failed: " + ex.Message);
+				smokeMat = null;
+			}
+		}
+		return smokeMat != null;
+	}
+
+	private static Shader FindShader(params string[] names)
+	{
+		for (int i = 0; i < names.Length; i++)
+		{
+			Shader s = Shader.Find(names[i]);
+			if (s != null)
+			{
+				return s;
+			}
+		}
+		return null;
+	}
+
+	// A jagged dark scrap of plating (hard edges).
+	private static Texture2D MakeChunk(int n)
+	{
+		Texture2D t = new Texture2D(n, n, TextureFormat.RGBA32, false);
+		t.wrapMode = TextureWrapMode.Clamp;
+		Color32[] c = new Color32[n * n];
+		for (int y = 0; y < n; y++)
+		{
+			for (int x = 0; x < n; x++)
+			{
+				float dx = (x + 0.5f) / n * 2f - 1f;
+				float dy = (y + 0.5f) / n * 2f - 1f;
+				float a = Mathf.Atan2(dy, dx);
+				float edge = 0.62f + 0.18f * Mathf.Sin(a * 3f + 0.7f) + 0.12f * Mathf.Sin(a * 7f - 1.1f);
+				bool inside = Mathf.Max(Mathf.Abs(dx) * 1.1f, Mathf.Abs(dy) * 1.35f) < edge;
+				byte g = (byte)(255f * (0.55f + 0.3f * dy));
+				c[y * n + x] = new Color32(g, g, g, (byte)(inside ? 255 : 0));
+			}
+		}
+		t.SetPixels32(c);
+		t.Apply(false);
+		return t;
+	}
+
+	// A soft round spot (glow), or a lumpy puff lit from above (only if puff.png is missing).
+	private static Texture2D MakeSoft(int n, bool lumpy)
+	{
+		Texture2D t = new Texture2D(n, n, TextureFormat.RGBA32, false);
+		t.wrapMode = TextureWrapMode.Clamp;
+		Color32[] c = new Color32[n * n];
+		for (int y = 0; y < n; y++)
+		{
+			for (int x = 0; x < n; x++)
+			{
+				float dx = (x + 0.5f) / n * 2f - 1f;
+				float dy = (y + 0.5f) / n * 2f - 1f;
+				float r = Mathf.Sqrt(dx * dx + dy * dy);
+				float a;
+				float k = 1f;
+				if (lumpy)
+				{
+					float lump = 0.12f * Mathf.Sin(dx * 7.1f + 1.3f) * Mathf.Cos(dy * 6.3f - 0.4f) + 0.08f * Mathf.Sin((dx + dy) * 13f);
+					a = Mathf.Clamp01((0.92f + lump - r) / 0.35f);
+					k = Mathf.Clamp(0.75f + 0.35f * dy - 0.1f * dx, 0.4f, 1f);
+				}
+				else
+				{
+					a = Mathf.Clamp01(1f - r);
+					a = a * a;
+				}
+				byte g = (byte)(255f * k);
+				c[y * n + x] = new Color32(g, g, g, (byte)(255f * a));
+			}
+		}
+		t.SetPixels32(c);
+		t.Apply(false);
+		return t;
+	}
+
+	// The big explosion at world point at, sea level seaY, for a ship of length L (world units). size 1 = normal.
+	public static void Explode(Vector3 at, float seaY, float L, float size, Transform parent)
+	{
+		if (!BoomReady())
+		{
+			return;
+		}
+		float R = Mathf.Min(BlastMax, BlastReach * L * size);
+		Vector3 c = new Vector3(at.x, seaY, at.z);
+		Add(c, R, 0f, Streamers, WreckTrails, parent);
+		// a second, smaller blast close by a moment later
+		Vector3 off = UnityEngine.Random.insideUnitSphere * 0.1f * L;
+		off.y = 0f;
+		Add(c + off, R * UnityEngine.Random.Range(0.45f, 0.6f), UnityEngine.Random.Range(0.6f, 1.6f), Streamers / 3, WreckTrails / 3, parent);
+	}
+
+	private static void Add(Vector3 pos, float R, float delay, int nStreamers, int nWreck, Transform parent)
+	{
+		GameObject go = new GameObject("ModBlast");
+		if (parent != null)
+		{
+			go.transform.SetParent(parent, true);
+		}
+		go.transform.position = pos;
+		go.transform.rotation = Quaternion.identity;
+		// world size 1 whatever the parent's scale, so local units are world units
+		Vector3 ps = parent != null ? parent.lossyScale : Vector3.one;
+		go.transform.localScale = new Vector3(1f / Mathf.Max(0.0001f, ps.x), 1f / Mathf.Max(0.0001f, ps.y), 1f / Mathf.Max(0.0001f, ps.z));
+		Blast b = new Blast();
+		b.tr = go.transform;
+		b.R = R;
+		b.delay = delay;
+		b.smoke = MakePs(go.transform, "smoke", smokeMat, 6000, false, 0f, true);
+		b.ball = MakePs(go.transform, "fireball", smokeMat, 3000, false, 0f, true);
+		b.glow = MakePs(go.transform, "fire", glowMat, 1500, false, 0f, false);
+		b.chunks = MakePs(go.transform, "wreckage", chunkMat, 300, false, 0.5f * R, false);
+		b.sparks = MakePs(go.transform, "sparks", glowMat, 400, true, 0.35f * R, false);
+		// smoke puffs grow and fade, staying pale grey (the streamers and side billows set their own colour)
+		SizeCurve(b.smoke, new Keyframe(0f, 0.45f), new Keyframe(0.12f, 1f), new Keyframe(1f, 1.9f));
+		ColorCurve(b.smoke,
+			new GradientColorKey[3] { new GradientColorKey(Color.white, 0f), new GradientColorKey(new Color(0.85f, 0.84f, 0.83f), 0.3f), new GradientColorKey(new Color(0.75f, 0.75f, 0.75f), 1f) },
+			new GradientAlphaKey[4] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(1f, 0.03f), new GradientAlphaKey(0.85f, 0.5f), new GradientAlphaKey(0f, 1f) });
+		// the fireball's puffs burn yellow for a moment, then turn to black smoke that greys as it thins out
+		SizeCurve(b.ball, new Keyframe(0f, 0.5f), new Keyframe(0.15f, 1f), new Keyframe(1f, 1.6f));
+		ColorCurve(b.ball,
+			new GradientColorKey[4] { new GradientColorKey(new Color(1f, 0.85f, 0.5f), 0f), new GradientColorKey(new Color(0.85f, 0.55f, 0.3f), 0.1f), new GradientColorKey(new Color(0.16f, 0.155f, 0.15f), 0.24f), new GradientColorKey(new Color(0.4f, 0.4f, 0.4f), 1f) },
+			new GradientAlphaKey[4] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(1f, 0.02f), new GradientAlphaKey(0.9f, 0.6f), new GradientAlphaKey(0f, 1f) });
+		// fire shrinks and fades fast
+		SizeCurve(b.glow, new Keyframe(0f, 1f), new Keyframe(1f, 0.35f));
+		ColorCurve(b.glow,
+			new GradientColorKey[3] { new GradientColorKey(Color.white, 0f), new GradientColorKey(new Color(1f, 0.6f, 0.3f), 0.4f), new GradientColorKey(new Color(0.6f, 0.15f, 0.05f), 1f) },
+			new GradientAlphaKey[2] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(0f, 1f) });
+		ColorCurve(b.sparks,
+			new GradientColorKey[2] { new GradientColorKey(Color.white, 0f), new GradientColorKey(new Color(1f, 0.45f, 0.15f), 1f) },
+			new GradientAlphaKey[3] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(1f, 0.6f), new GradientAlphaKey(0f, 1f) });
+		// the streamers: all round, from nearly flat to nearly straight up, more of them low
+		for (int i = 0; i < nStreamers; i++)
+		{
+			float az = UnityEngine.Random.Range(0f, 360f);
+			float el = Mathf.Lerp(3f, 80f, Mathf.Pow(UnityEngine.Random.value, 1.4f));
+			Head h = NewHead(az, el, R * StreamerReach * UnityEngine.Random.Range(0.7f, 1.3f), UnityEngine.Random.Range(1.1f, 1.5f), R * UnityEngine.Random.Range(0.08f, 0.15f), R);
+			b.heads.Add(h);
+		}
+		// wreckage: further, flatter, thin grey trails
+		for (int i = 0; i < nWreck; i++)
+		{
+			Head h = NewHead(UnityEngine.Random.Range(0f, 360f), UnityEngine.Random.Range(10f, 60f), R * UnityEngine.Random.Range(1.1f, 1.7f), UnityEngine.Random.Range(0.8f, 1.1f), R * 0.3f, R);
+			h.wreck = true;
+			b.heads.Add(h);
+		}
+		b.life = Mathf.Max(PuffLife * 2.2f + CloudTime + 4f, SmokeLinger + PallLife * 1.3f);
+		// the smoke drifts downwind (the game's wind; any direction if there is none)
+		b.wind = new Vector3(UnityEngine.Random.Range(-1f, 1f), 0f, UnityEngine.Random.Range(-1f, 1f));
+		try
+		{
+			if (EngagementData.instance != null && EngagementData.instance.windDirectionForce.sqrMagnitude > 0.0001f)
+			{
+				b.wind = new Vector3(0f - EngagementData.instance.windDirectionForce.x, 0f, EngagementData.instance.windDirectionForce.y);
+			}
+		}
+		catch (Exception)
+		{
+		}
+		b.wind = b.wind.sqrMagnitude > 0.0001f ? b.wind.normalized : Vector3.forward;
+		blasts.Add(b);
+	}
+
+	private static Head NewHead(float az, float el, float reach, float drag, float g, float R)
+	{
+		Head h = new Head();
+		Vector3 dir = Quaternion.Euler(-el, az, 0f) * Vector3.forward;
+		h.p = dir * R * 0.12f;   // they come out of the fireball
+		h.drag = drag;
+		h.g = g;
+		h.reach = reach;
+		// with drag k the head travels v0 / k: start fast enough to get about reach
+		h.v = dir * reach * drag * 1.05f;
+		h.next = 0f;
+		return h;
+	}
+
+	private static ParticleSystem MakePs(Transform parent, string name, Material mat, int max, bool stretch, float fall, bool sorted)
+	{
+		GameObject g = new GameObject(name);
+		g.transform.SetParent(parent, false);
+		ParticleSystem ps = g.AddComponent<ParticleSystem>();
+		ParticleSystem.MainModule m = ps.main;
+		m.loop = true;
+		m.playOnAwake = true;
+		m.simulationSpace = ParticleSystemSimulationSpace.Local;
+		m.scalingMode = ParticleSystemScalingMode.Hierarchy;
+		m.maxParticles = max;
+		m.startSpeed = 0f;
+		ParticleSystem.EmissionModule e = ps.emission;
+		e.enabled = false;
+		ParticleSystem.ShapeModule s = ps.shape;
+		s.enabled = false;
+		if (fall > 0f)
+		{
+			// falling (sparks): a downward force, world units / s2
+			ParticleSystem.ForceOverLifetimeModule f = ps.forceOverLifetime;
+			f.enabled = true;
+			f.x = new ParticleSystem.MinMaxCurve(0f);
+			f.y = new ParticleSystem.MinMaxCurve(-fall);
+			f.z = new ParticleSystem.MinMaxCurve(0f);
+		}
+		ParticleSystemRenderer r = g.GetComponent<ParticleSystemRenderer>();
+		if (r != null)
+		{
+			r.sharedMaterial = mat;
+			r.renderMode = stretch ? ParticleSystemRenderMode.Stretch : ParticleSystemRenderMode.Billboard;
+			if (stretch)
+			{
+				r.velocityScale = 0.05f;
+				r.lengthScale = 2f;
+			}
+			r.sortMode = sorted ? ParticleSystemSortMode.Distance : ParticleSystemSortMode.None;
+			r.maxParticleSize = 3f;
+			r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+			r.receiveShadows = false;
+		}
+		ps.Play();
+		return ps;
+	}
+
+	private static void SizeCurve(ParticleSystem ps, params Keyframe[] k)
+	{
+		ParticleSystem.SizeOverLifetimeModule m = ps.sizeOverLifetime;
+		m.enabled = true;
+		m.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(k));
+	}
+
+	private static void ColorCurve(ParticleSystem ps, GradientColorKey[] c, GradientAlphaKey[] a)
+	{
+		Gradient gr = new Gradient();
+		gr.SetKeys(c, a);
+		ParticleSystem.ColorOverLifetimeModule m = ps.colorOverLifetime;
+		m.enabled = true;
+		m.color = new ParticleSystem.MinMaxGradient(gr);
+	}
+
+	private static void Emit(ParticleSystem ps, Vector3 p, Vector3 v, float size, float life, Color c)
+	{
+		ParticleSystem.EmitParams ep = new ParticleSystem.EmitParams();
+		ep.position = p;
+		ep.velocity = v;
+		ep.startSize = size;
+		ep.startLifetime = life;
+		ep.startColor = (Color32)c;
+		ep.rotation = UnityEngine.Random.Range(-30f, 30f);
+		ps.Emit(ep, 1);
+	}
+
+	private static Color Shade(Color c, float k)
+	{
+		return new Color(c.r * k, c.g * k, c.b * k, c.a);
+	}
+
+	// Called every frame from ModSinking.Tick (dt = battle seconds).
+	public static void Tick(float dt)
+	{
+		if (blasts.Count == 0)
+		{
+			return;
+		}
+		// smoke gets darker at night, fire doesn't
+		float light = Mathf.Clamp(RenderSettings.ambientLight.grayscale * 2.2f + 0.25f, 0.35f, 1f);
+		for (int i = blasts.Count - 1; i >= 0; i--)
+		{
+			Blast b = blasts[i];
+			if (b.tr == null || b.smoke == null || b.ball == null || b.chunks == null)
+			{
+				blasts.RemoveAt(i);
+				continue;
+			}
+			b.age += dt;
+			float t = b.age - b.delay;
+			if (t < 0f)
+			{
+				continue;
+			}
+			if (t > b.life)
+			{
+				UnityEngine.Object.Destroy(((Component)b.tr).gameObject);
+				blasts.RemoveAt(i);
+				continue;
+			}
+			if (!b.started)
+			{
+				b.started = true;
+				Bang(b, light);
+			}
+			// the fireball keeps burning and boiling up into a towering column of black smoke
+			float R = b.R;
+			float fs = FireballSize;
+			if (t < CloudTime)
+			{
+				b.cloud += dt * 24f;
+				while (b.cloud >= 1f)
+				{
+					b.cloud -= 1f;
+					Vector3 p = UnityEngine.Random.insideUnitSphere * R * 0.2f;
+					p.x *= 1.8f;
+					p.z *= 1.8f;
+					p.y = Mathf.Abs(p.y) * 0.7f + R * (0.08f + 0.05f * t);
+					// young puffs flare yellow (the fireball's colours); later ones are born as black smoke
+					float hot = Mathf.Clamp01(1f - t / 2.5f);
+					float k = Mathf.Lerp(0.55f, 1f, hot);
+					Color col = Shade(new Color(k, k, k), Mathf.Lerp(light, 1f, hot));
+					Emit(b.ball, p, new Vector3(p.x * 0.25f, R * UnityEngine.Random.Range(0.08f, 0.16f), p.z * 0.25f), R * fs * UnityEngine.Random.Range(0.25f, 0.4f), PuffLife * UnityEngine.Random.Range(1.5f, 2.1f), col);
+				}
+			}
+			// fire glowing inside it for the first seconds
+			if (t < 3.5f)
+			{
+				b.fire += dt * 22f;
+				while (b.fire >= 1f)
+				{
+					b.fire -= 1f;
+					Vector3 p = UnityEngine.Random.insideUnitSphere * R * 0.25f;
+					p.y = Mathf.Abs(p.y) * 0.8f + R * 0.03f;
+					Emit(b.glow, p, new Vector3(p.x * 0.4f, R * 0.06f, p.z * 0.4f), R * fs * UnityEngine.Random.Range(0.15f, 0.35f), UnityEngine.Random.Range(0.4f, 0.8f), new Color(1f, 0.78f, 0.4f, 1f - t / 3.5f));
+				}
+			}
+			// then a pall of smoke keeps rising over the spot, black at first, greyer and thinner as it goes on
+			if (b.delay == 0f && t >= CloudTime * 0.5f && t < SmokeLinger)
+			{
+				float left = 1f - t / SmokeLinger;
+				b.pall += dt * (0.4f + 2.6f * left);
+				while (b.pall >= 1f)
+				{
+					b.pall -= 1f;
+					Vector3 p = new Vector3(UnityEngine.Random.Range(-1f, 1f) * R * 0.3f, R * UnityEngine.Random.Range(0.1f, 0.45f), UnityEngine.Random.Range(-1f, 1f) * R * 0.3f);
+					float g = Mathf.Lerp(0.55f, 0.18f, left) * UnityEngine.Random.Range(0.85f, 1.15f);
+					Color col = Shade(new Color(g, g * 0.98f, g * 0.96f), light);
+					col.a = Mathf.Lerp(0.45f, 0.9f, left);
+					Vector3 v = b.wind * R * UnityEngine.Random.Range(0.015f, 0.025f) + new Vector3(0f, R * UnityEngine.Random.Range(0.008f, 0.016f), 0f);
+					Emit(b.smoke, p, v, R * fs * UnityEngine.Random.Range(0.3f, 0.5f), PallLife * UnityEngine.Random.Range(0.8f, 1.2f), col);
+				}
+			}
+			// the streamers, in small steps so fast heads still leave an even line of puffs
+			for (int j = b.heads.Count - 1; j >= 0; j--)
+			{
+				Head h = b.heads[j];
+				float left = dt;
+				bool dead = false;
+				while (left > 0f && !dead)
+				{
+					float s = Mathf.Min(left, 0.04f);
+					left -= s;
+					h.age += s;
+					Vector3 p0 = h.p;
+					h.v *= Mathf.Exp(-h.drag * s);
+					h.v.y -= h.g * s;
+					h.p += h.v * s;
+					float step = Vector3.Distance(p0, h.p);
+					float spacing = R * 0.042f;
+					while (h.dist + step >= h.next)
+					{
+						float k = step > 0.0001f ? (h.next - h.dist) / step : 1f;
+						Vector3 at = Vector3.Lerp(p0, h.p, Mathf.Clamp01(k));
+						Puff(b, h, at, light);
+						h.next += spacing;
+					}
+					h.dist += step;
+					float speed = h.v.magnitude;
+					if (h.p.y < 0f || h.dist >= h.reach || h.age > 4f || speed < h.reach * 0.06f)
+					{
+						dead = true;
+					}
+				}
+				if (dead)
+				{
+					b.heads.RemoveAt(j);
+				}
+			}
+		}
+	}
+
+	private static void Puff(Blast b, Head h, Vector3 at, float light)
+	{
+		float R = b.R;
+		float f = Mathf.Clamp01(h.dist / Mathf.Max(0.01f, h.reach));
+		Vector3 drift = h.v * 0.06f + new Vector3(0f, R * 0.012f, 0f);
+		if (h.wreck)
+		{
+			float g = UnityEngine.Random.Range(0.38f, 0.5f);
+			Emit(b.smoke, at, drift, R * UnityEngine.Random.Range(0.016f, 0.024f), PuffLife * UnityEngine.Random.Range(0.6f, 0.9f), Shade(new Color(g, g * 0.96f, g * 0.93f), light));
+			return;
+		}
+		// big fire-lit puffs near the middle, smaller towards the tip
+		float size = R * Mathf.Lerp(0.045f, 0.022f, f) * UnityEngine.Random.Range(0.7f, 1.3f);
+		float heat = Mathf.Clamp01(1f - h.age / 3f);
+		Color col = Color.Lerp(Shade(new Color(0.28f, 0.27f, 0.26f), light), new Color(0.75f, 0.6f, 0.42f), heat * UnityEngine.Random.Range(0.6f, 1f));
+		Emit(b.smoke, at, drift, size, PuffLife * UnityEngine.Random.Range(0.7f, 1.15f) * (1f - 0.35f * f), col);
+		// the burning head
+		if (heat > 0.05f)
+		{
+			Emit(b.glow, at, h.v * 0.2f, size * 1.4f, 0.45f, new Color(1f, 0.78f, 0.4f, heat));
+		}
+	}
+
+	// The first instant: a blinding flash, one huge fireball bursting out of the sea, a ring of spray and smoke along the water, sparks.
+	private static void Bang(Blast b, float light)
+	{
+		float R = b.R;
+		float fs = FireballSize;
+		for (int i = 0; i < 16; i++)
+		{
+			Vector3 p = UnityEngine.Random.insideUnitSphere * R * 0.15f;
+			p.y = Mathf.Abs(p.y) + R * 0.05f;
+			Emit(b.glow, p, Vector3.zero, R * fs * UnityEngine.Random.Range(0.5f, 0.9f), UnityEngine.Random.Range(0.6f, 1.5f), new Color(1f, 0.85f, 0.6f));
+		}
+		for (int i = 0; i < FireballPuffs; i++)
+		{
+			Vector3 d = UnityEngine.Random.onUnitSphere;
+			d.y = Mathf.Abs(d.y) * 0.7f + 0.05f;
+			Vector3 v = d * R * UnityEngine.Random.Range(0.05f, 0.2f) + new Vector3(0f, R * 0.03f, 0f);
+			float w = UnityEngine.Random.Range(0.85f, 1f);
+			Emit(b.ball, d * R * UnityEngine.Random.Range(0.03f, 0.22f), v, R * fs * UnityEngine.Random.Range(0.22f, 0.4f), PuffLife * UnityEngine.Random.Range(1.2f, 1.8f), new Color(1f, w, w));
+		}
+		// pale grey billows rolling out at the sides
+		for (int i = 0; i < 40; i++)
+		{
+			Vector3 d = UnityEngine.Random.onUnitSphere;
+			d.y = Mathf.Abs(d.y) * 0.5f + 0.1f;
+			float g = UnityEngine.Random.Range(0.7f, 0.85f);
+			Emit(b.smoke, d * R * UnityEngine.Random.Range(0.15f, 0.3f), d * R * UnityEngine.Random.Range(0.08f, 0.16f), R * fs * UnityEngine.Random.Range(0.18f, 0.3f), PuffLife * UnityEngine.Random.Range(1.2f, 1.7f), Shade(new Color(g, g * 0.97f, g * 0.93f), light));
+		}
+		// black chunks of the ship, tumbling
+		for (int i = 0; i < Chunks; i++)
+		{
+			Vector3 d = UnityEngine.Random.onUnitSphere;
+			d.y = Mathf.Abs(d.y) * 0.9f + 0.15f;
+			ParticleSystem.EmitParams ep = new ParticleSystem.EmitParams();
+			ep.position = d * R * 0.08f;
+			ep.velocity = d.normalized * R * UnityEngine.Random.Range(0.3f, 1f);
+			ep.startSize = R * UnityEngine.Random.Range(0.008f, 0.03f);
+			ep.startLifetime = UnityEngine.Random.Range(3f, 6f);
+			ep.startColor = (Color32)Shade(new Color(0.12f, 0.115f, 0.11f), light);
+			ep.rotation = UnityEngine.Random.Range(0f, 360f);
+			ep.angularVelocity = UnityEngine.Random.Range(-500f, 500f);
+			b.chunks.Emit(ep, 1);
+		}
+		for (int i = 0; i < 30; i++)
+		{
+			float a = UnityEngine.Random.Range(0f, 6.2832f);
+			Vector3 d = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a));
+			float g = UnityEngine.Random.Range(0.75f, 0.9f);
+			Emit(b.smoke, d * R * 0.18f + new Vector3(0f, R * 0.03f, 0f), d * R * UnityEngine.Random.Range(0.1f, 0.18f), R * fs * UnityEngine.Random.Range(0.15f, 0.25f), PuffLife * UnityEngine.Random.Range(0.6f, 0.9f), Shade(new Color(g, g * 0.97f, g * 0.95f), light));
+		}
+		for (int i = 0; i < Sparks; i++)
+		{
+			Vector3 d = UnityEngine.Random.onUnitSphere;
+			d.y = Mathf.Abs(d.y) * 0.9f + 0.1f;
+			Emit(b.sparks, d * R * 0.03f, d.normalized * R * UnityEngine.Random.Range(0.4f, 1.3f), R * UnityEngine.Random.Range(0.006f, 0.012f), UnityEngine.Random.Range(1f, 2.6f), new Color(1f, 0.9f, 0.7f));
+		}
+	}
+
+	// A new battle: forget the explosions (their objects went with the old battle).
+	public static void Clear()
+	{
+		blasts.Clear();
+	}
+
+	private static void Log(string s)
+	{
+		Debug.Log("[WRECK] " + s);
+	}
+}
