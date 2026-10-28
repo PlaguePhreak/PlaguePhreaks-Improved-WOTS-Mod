@@ -87,7 +87,7 @@ public static class ModAirDamage
 	public const float ExplodeFire = 0.30f;
 	public const float ExplodeLoad = 0.20f;
 	public const float ExplodeArmourCut = 0.5f;
-	public const float ExplodeMax = 0.65f;
+	public const float ExplodeMax = 0.38f;   // 0.28.18 hotfix: was 0.65, too many blew up (Aaron, 28 Oct)
 	public const int DebrisMax = 8;
 	public const float DebrisSpeed = 4f;            // game units per second the pieces are thrown out at (40 m/s)
 	// Explosion effects (the game's own). Big = bombers (medium and heavy) and anything with a toughness of BigPlaneToughness or more.

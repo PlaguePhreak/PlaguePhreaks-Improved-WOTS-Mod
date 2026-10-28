@@ -20,6 +20,6 @@ Written with the names in this file:
 		{
 			modAhead.y = base.transform.position.y;
 			this.parentUnit.wantedTurnRate = this.GetRequiredTurnRateFlat(modAhead);
-			this.parentUnit.wantedHeight = this.SetAircraftWantedHeight(this.attackHeight);
+			this.parentUnit.wantedHeight = this.SetAircraftWantedHeight(Mathf.Max(this.attackHeight, 80f));   // hotfix: 800 m until the split, so fighters can reach them
 			return true;
 		}
