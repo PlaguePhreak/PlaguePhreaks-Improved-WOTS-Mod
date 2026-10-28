@@ -1,0 +1,54 @@
+	// 0.28 bomber hunters. Returns the nearest enemy fighter when this fighter is one too many on bombers (more than HunterShare of the side's fighters are
+	// on bombers while enemy fighters are within HuntRange), else null. The lowest ids stay on the bombers, so the same planes keep the job.
+	// v0.28.18 hotfix: a fighter going for a torpedo bomber that still has its torpedo is never pulled off it. Since 0.28.18 the escorts fly top
+	// cover right over the torpedo bombers (ModAirSpawn), so enemy fighters were always within HuntRange and 65% of the defenders were sent at the
+	// escorts instead: testers saw fighters "not engaging torpedo bombers".
+	public static Unit HuntLimit(Unit u, Unit target)
+	{
+		if (EngagementManager.instance == null || EngagementManager.instance.allAirUnits == null)
+		{
+			return null;
+		}
+		if (target != null && target.unitData != null && target.unitData.unitSubtype == UnitSubType.Torpedo_Bomber && target.unitAir != null && !target.unitAir.hasDroppedPayload)
+		{
+			return null;
+		}
+		List<Unit> air = EngagementManager.instance.allAirUnits;
+		int ours = 0;
+		int rankAmongHunters = 0;
+		int myId = u.GetInstanceID();
+		Unit nearest = null;
+		float best = ModDogfight.HuntRange * ModDogfight.HuntRange;
+		for (int i = 0; i < air.Count; i++)
+		{
+			Unit a = air[i];
+			if (a == null || a.isDestroyed || a.isParked || !ModDogfight.IsFighter(a))
+			{
+				continue;
+			}
+			if (a.faction == u.faction)
+			{
+				ours++;
+				Unit f = (a.unitAI != null) ? a.unitAI.focusedUnit : null;
+				if (a != u && f != null && !f.isDestroyed && !ModDogfight.IsFighter(f) && f.unitAir != null && a.GetInstanceID() < myId)
+				{
+					rankAmongHunters++;
+				}
+			}
+			else
+			{
+				float d2 = (a.transform.position - u.transform.position).sqrMagnitude;
+				if (d2 < best)
+				{
+					best = d2;
+					nearest = a;
+				}
+			}
+		}
+		if (nearest == null)
+		{
+			return null;
+		}
+		int cap = Mathf.Max(1, Mathf.RoundToInt((float)ours * ModDogfight.HunterShare));
+		return (rankAmongHunters >= cap) ? nearest : null;
+	}
