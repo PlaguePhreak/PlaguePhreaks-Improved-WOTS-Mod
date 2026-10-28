@@ -1,0 +1,22 @@
+v0.28.18 hotfix - torpedo planes stay high until the split (fixes "fighters won't engage torpedo bombers")
+======================================================================================================
+Cause (from the tester's output_log): the torpedo planes dropped to their 40 m attack height as soon as the
+attack started, then flew the whole new run-up and gather (several minutes) at 40 m. Fighters never go below
+200 m (ModDogfight.MinHeight), so the Yaks made 262 passes on the Kates but only fired 36 times.
+
+Now the Kates fly the run-up and gather at 800 m, and only go down to attack height after the split.
+
+Steps (dnSpy):
+1. Open UnitAIAir, right-click ModTorpedoSetup, Edit Method.
+2. Find the block you added in step 11 (it starts with  Vector3 modAhead; ).
+3. In it, find this line:
+
+		this.parentUnit.wantedHeight = this.SetAircraftWantedHeight(this.attackHeight);
+
+4. Change it to:
+
+		this.parentUnit.wantedHeight = this.SetAircraftWantedHeight(Mathf.Max(this.attackHeight, 80f));
+
+5. Compile, then File > Save Module.
+
+(80 = 800 m. A bigger number keeps them higher; do not go under 30, or fighters lose them again.)
