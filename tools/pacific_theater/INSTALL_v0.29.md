@@ -36,4 +36,6 @@ These are in `campaign/pacificwar/history.txt`. You can edit the dates, ranges a
 | 26 Aug 1942 | Nauru occupied | 3+ warships are within 300 km |
 | Sep 1942 | Tarawa fortified | 3+ warships are within 300 km |
 
+7 days before each event (or in the opening briefing, for Guam and Makin) an intelligence report tells you what is coming and what counts as success or failure. It does not say what happens afterwards.
+
 An event is skipped if the place has already changed hands. For example, if the AI already took Midway, there is no Midway event.

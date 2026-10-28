@@ -26,6 +26,8 @@ public static class ModHistory
 		public int failTroops;
 		public int passCP;                // command points given to the player (can be negative)
 		public int failCP;
+		public string warnEvent = string.Empty; // popup shown warnDays before the event (empty = no warning)
+		public int warnDays = 7;
 	}
 
 	private static string loadedFor;
@@ -58,6 +60,12 @@ public static class ModHistory
 			{
 				HistoryEvent e = events[i];
 				DateTime date = new DateTime(e.year, e.month, e.day);
+				DateTime warn = date.AddDays(-e.warnDays);
+				if (!string.IsNullOrEmpty(e.warnEvent) && warn > lastDay && warn <= today && StillPossible(e))
+				{
+					Debug.Log("[HISTORY] " + e.id + " warning, " + e.warnDays + " days to go");
+					shown.Add(e.warnEvent);
+				}
 				if (date > lastDay && date <= today)
 				{
 					string popup = Run(e);
@@ -102,6 +110,13 @@ public static class ModHistory
 			events.Add(e);
 		}
 		Debug.Log("[HISTORY] " + events.Count + " historical events loaded for " + campaignID);
+	}
+
+	// the event will still happen: its location has not changed hands
+	private static bool StillPossible(HistoryEvent e)
+	{
+		MapLocation loc = string.IsNullOrEmpty(e.location) ? null : CampaignManager.instance.GetMapLocationObject(e.location);
+		return loc == null || e.ifOwner < 0 || loc.currentFaction == e.ifOwner;
 	}
 
 	private static string Run(HistoryEvent e)
