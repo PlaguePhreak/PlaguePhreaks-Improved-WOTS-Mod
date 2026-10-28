@@ -1,0 +1,18 @@
+67c67,69
+< 	public static float OilSize = 1f;                   // slick size (1 = about one ship length across)
+---
+> 	public static float OilSize = 1f;                   // slick size: 1 = each oil patch grows to 1.2 to 2 ship lengths across
+> 	public static float OilStart = 0.4f;                // a new oil patch starts this many ship lengths across
+> 	public static float OilSpreadTime = 240f;           // battle seconds a patch takes to spread to full size (4 minutes)
+822c824
+< 				Vector3 c = root.position + w.baseRel + Quaternion.Euler(0f, w.yaw0, 0f) * new Vector3(Rnd(0.15f * w.L), 0f, Rnd(0.35f * w.L));
+---
+> 				Vector3 c = root.position + w.baseRel + Quaternion.Euler(0f, w.yaw0, 0f) * new Vector3(Rnd(0.5f * w.L), 0f, Rnd(0.8f * w.L));
+1553,1555c1555,1557
+< 		b.start = 0.08f * s.L;
+< 		b.max = UnityEngine.Random.Range(0.25f, 0.45f) * s.L * s.sizeMul;
+< 		b.grow = UnityEngine.Random.Range(600f, 1200f);
+---
+> 		b.start = OilStart * s.L * s.sizeMul;
+> 		b.max = UnityEngine.Random.Range(1.2f, 2f) * s.L * s.sizeMul;
+> 		b.grow = OilSpreadTime * UnityEngine.Random.Range(0.7f, 1.3f);
