@@ -1,0 +1,601 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using UnityEngine;
+
+// Crash work, parachutes: crews bail out of shot-down planes, come down under a parachute and end up floating in the sea.
+// Also puts the new airman model in the cockpits in place of the stock crew figures.
+// The models are plain files in the game folder: War on the Sea\ModAssets\parachutes\ (OBJ in metres + PNG), made in Blender.
+// Hooks (one line each, both in ModAirDamage):
+//   ModAirDamage.Refresh, first line:  ModBailOut.Crew(ua);
+//   ModAirDamage.Falling, first line:  ModBailOut.ShotDown(ua);
+public static class ModBailOut
+{
+	// ---- tuning ----
+	public const bool On = true;
+	public const bool NewCockpitCrew = true;   // false = keep the stock crew figures in the cockpits
+	public const float MinHeight = 120f;       // metres; below this nobody gets out
+	public const float LowHeight = 300f;       // below this the chance is cut
+	public const float JumpChance = 0.6f;      // per crew member, plane in one piece
+	public const float ExplodedChance = 0.2f;  // per crew member if the plane blew up before he got out
+	public const float LowChance = 0.6f;       // multiplier below LowHeight
+	public const float JapanChance = 0.5f;     // many Japanese aircrew flew without parachutes
+	public const int MaxCrew = 10;
+	public const int MaxChutes = 40;           // in the air and in the water at once
+	public const float FloatSeconds = 900f;    // battle seconds an airman stays in the water (later: picked up as survivors)
+
+	public static readonly List<ModParachute> Active = new List<ModParachute>();
+	public static readonly List<ModParachute> InWater = new List<ModParachute>();
+	private static readonly HashSet<int> crewDone = new HashSet<int>();
+	private static readonly HashSet<int> downDone = new HashSet<int>();
+	private static bool failed;
+	private static int logged;
+
+	// Once per plane: swap the stock crew figures for the new seated airman.
+	public static void Crew(UnitAir ua)
+	{
+		if (failed || !On || !NewCockpitCrew || ua == null)
+		{
+			return;
+		}
+		try
+		{
+			int id = ua.GetInstanceID();
+			if (crewDone.Contains(id))
+			{
+				return;
+			}
+			if (crewDone.Count > 5000)
+			{
+				crewDone.Clear();
+			}
+			crewDone.Add(id);
+			if (ua.crewMeshes == null || ua.crewMeshes.Count == 0 || !ModChuteAssets.Ready())
+			{
+				return;
+			}
+			for (int i = 0; i < ua.crewMeshes.Count; i++)
+			{
+				GameObject go = ua.crewMeshes[i];
+				if (go == null)
+				{
+					continue;
+				}
+				MeshFilter mf = go.GetComponentInChildren<MeshFilter>(true);
+				if (mf == null || mf.sharedMesh == null)
+				{
+					continue;
+				}
+				string nat = go.name.ToLower().Contains("ijn") ? "jp" : "us";
+				Mesh fit = ModChuteAssets.SeatedFor(mf.sharedMesh, nat);
+				MeshRenderer mr = mf.GetComponent<MeshRenderer>();
+				if (fit == null || mr == null)
+				{
+					continue;
+				}
+				mf.sharedMesh = fit;
+				mr.sharedMaterial = ModChuteAssets.AirmanMat(nat);
+			}
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError("[BAILOUT] cockpit crew swap failed and stopped: " + ex.Message + " " + ex.StackTrace);
+		}
+	}
+
+	// Once per shot-down plane: who tries to get out, and when.
+	public static void ShotDown(UnitAir ua)
+	{
+		if (failed || !On || ua == null || ua.unitData == null)
+		{
+			return;
+		}
+		try
+		{
+			int id = ua.GetInstanceID();
+			if (downDone.Contains(id))
+			{
+				return;
+			}
+			if (downDone.Count > 5000)
+			{
+				downDone.Clear();
+			}
+			downDone.Add(id);
+			float h = ua.transform.position.y * 10f;
+			if (h < MinHeight || !ModChuteAssets.Ready())
+			{
+				return;
+			}
+			bool jp = ua.unitData.nationIndex == 3;
+			int crew = Mathf.Clamp(ua.unitData.crew, 1, MaxCrew);
+			float chance = JumpChance * (h < LowHeight ? LowChance : 1f) * (jp ? JapanChance : 1f);
+			int going = 0;
+			for (int i = 0; i < crew; i++)
+			{
+				if (Active.Count + going >= MaxChutes)
+				{
+					break;
+				}
+				if (UnityEngine.Random.value > chance)
+				{
+					continue;
+				}
+				GameObject g = new GameObject("ModParachute");
+				ModParachute p = g.AddComponent<ModParachute>();
+				p.Init(ua, jp ? "jp" : "us", UnityEngine.Random.Range(0.8f, 3f) + going * 0.7f);
+				going++;
+			}
+			if (logged < 60)
+			{
+				logged++;
+				Debug.Log("[BAILOUT] " + ua.unitData.unitName + " (" + (ua.unitAI != null && ua.unitAI.parentUnit != null && ua.unitAI.parentUnit.faction == Faction.Player ? "ours" : "enemy") + ") shot down at " + h.ToString("F0") + " m: " + going + " of " + crew + " crew try to bail out");
+			}
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError("[BAILOUT] bail-out failed and stopped: " + ex.Message + " " + ex.StackTrace);
+		}
+	}
+}
+
+// One airman: waits in the falling plane, jumps, falls, opens the chute, sways down, lands in the sea, floats.
+// Same motion as the reviewed Blender animation (parachute_xx_bailout.fbx). Models are in metres; the root is scaled to game units (10 m).
+public class ModParachute : MonoBehaviour
+{
+	private const float Sway = 6.5f;    // pivot of the swing: the canopy centre, metres above the harness
+	private const float Riser = 1.1f;   // top of the risers above the harness
+	private const float Descent = 6f;   // m/s under the canopy
+
+	private UnitAir plane;
+	private string nat;
+	private float wait;
+	private int phase;                  // 0 waiting in the plane, 1 in the air, 2 in the water
+	private float t;                    // seconds since the jump (or since landing in phase 2)
+	private float v;                    // falling speed m/s
+	private Vector3 drift;              // game units/s, thrown out at the plane's speed, dies away
+	private Vector3 wind;
+	private Transform sway;
+	private Transform pilot;
+	private Transform chute;
+	private MeshFilter pilotMesh;
+	private bool canopyGone;
+	private float spinRate;
+
+	public void Init(UnitAir ua, string nation, float delay)
+	{
+		plane = ua;
+		nat = nation;
+		wait = delay;
+		ModBailOut.Active.Add(this);
+	}
+
+	private void OnDestroy()
+	{
+		ModBailOut.Active.Remove(this);
+		ModBailOut.InWater.Remove(this);
+	}
+
+	private void Update()
+	{
+		float dt = Time.deltaTime;
+		if (dt <= 0f)
+		{
+			return;
+		}
+		try
+		{
+			if (phase == 0)
+			{
+				Waiting(dt);
+			}
+			else if (phase == 1)
+			{
+				Air(dt);
+			}
+			else
+			{
+				Water(dt);
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[BAILOUT] parachute failed: " + ex.Message);
+			Destroy(gameObject);
+		}
+	}
+
+	private void Waiting(float dt)
+	{
+		if (plane == null || plane.transform.position.y < 0.3f)
+		{
+			Destroy(gameObject);   // went into the sea with the plane
+			return;
+		}
+		wait -= dt;
+		if (wait > 0f)
+		{
+			return;
+		}
+		// a plane that blew up while he was still in it: most of the crew did not make it
+		if (plane.unitGraphic != null && !plane.unitGraphic.activeSelf && UnityEngine.Random.value > ModBailOut.ExplodedChance / ModBailOut.JumpChance)
+		{
+			Destroy(gameObject);
+			return;
+		}
+		Build();
+		Transform pt = plane.transform;
+		transform.position = pt.position + UnityEngine.Random.insideUnitSphere * 0.15f;
+		drift = pt.forward * plane.currentActualSpeed * 0.6f;
+		float a = UnityEngine.Random.Range(0f, 360f);
+		wind = Quaternion.Euler(0f, a, 0f) * Vector3.forward * 0.1f;   // 1 m/s
+		transform.rotation = Quaternion.Euler(0f, pt.eulerAngles.y + UnityEngine.Random.Range(-30f, 30f), 0f);
+		spinRate = UnityEngine.Random.Range(-8f, 8f);
+		phase = 1;
+		t = 0f;
+		v = 0f;
+	}
+
+	private void Build()
+	{
+		transform.localScale = Vector3.one * 0.1f;
+		sway = new GameObject("sway").transform;
+		sway.SetParent(transform, false);
+		sway.localPosition = new Vector3(0f, Sway, 0f);
+		pilot = Part("pilot", sway, ModChuteAssets.Airman(nat, "hanging"), ModChuteAssets.AirmanMat(nat));
+		pilot.localPosition = new Vector3(0f, -Sway, 0f);
+		pilotMesh = pilot.GetComponent<MeshFilter>();
+		chute = Part("chute", sway, ModChuteAssets.Canopy(nat), ModChuteAssets.CanopyMat(nat));
+		chute.localPosition = new Vector3(0f, -Sway, -0.15f);
+		chute.localScale = Vector3.one * 0.01f;
+	}
+
+	private static Transform Part(string name, Transform parent, Mesh mesh, Material mat)
+	{
+		GameObject g = new GameObject(name);
+		g.transform.SetParent(parent, false);
+		g.AddComponent<MeshFilter>().sharedMesh = mesh;
+		MeshRenderer r = g.AddComponent<MeshRenderer>();
+		r.sharedMaterial = mat;
+		return g.transform;
+	}
+
+	private void Air(float dt)
+	{
+		t += dt;
+		// falling speed: free fall, the opening shock, then a steady 6 m/s
+		if (t < 1.5f)
+		{
+			v += 9.8f * dt;
+		}
+		else if (t < 2.6f)
+		{
+			v += (Descent - v) * Mathf.Min(1f, dt * 4.5f);
+		}
+		else
+		{
+			v += (Descent - v) * Mathf.Min(1f, dt * 2f);
+		}
+		drift *= Mathf.Exp(-dt * (t < 2.6f ? 0.8f : 2.5f));
+		Vector3 p = transform.position + (drift + wind) * dt;
+		p.y -= v * dt * 0.1f;
+		transform.position = p;
+		transform.Rotate(0f, spinRate * dt, 0f, Space.World);
+
+		// the airman pitches forward in free fall (never past about 50 degrees), jerked upright when the canopy opens
+		pilot.localRotation = Quaternion.Euler(Keys(t, PitchT, PitchV), 0f, Keys(t, PitchT, RollV));
+		// the canopy: packed, streams out, blossoms, then breathes
+		float sx = Keys(t, ChuteT, ChuteW);
+		float sy = Keys(t, ChuteT, ChuteH);
+		if (t > 3.3f)
+		{
+			float b = 1f + 0.01f * (1f + Mathf.Sin(t * 4.2f));
+			sx = b;
+			sy = 2f - b;
+		}
+		chute.localScale = new Vector3(sx, sy, sx);
+		float out01 = Mathf.Clamp01((t - 1f) / 0.5f);
+		chute.localPosition = Vector3.Lerp(new Vector3(0f, -Sway, -0.15f), new Vector3(0f, Riser - Sway, 0f), out01);
+		// swing under the canopy, dying away
+		float amp = (5f + 11f * Mathf.Exp(-(t - 2.6f) / 4f)) * Mathf.Clamp01((t - 2.3f) / 0.4f);
+		sway.localRotation = Quaternion.Euler(amp * Mathf.Sin(6.2832f * (t - 2.3f) / 3.4f), 0f, 0.45f * amp * Mathf.Sin(6.2832f * (t - 2.6f) / 4.7f));
+
+		if (transform.position.y <= 0.14f)   // his feet reach the water
+		{
+			Land();
+		}
+	}
+
+	private void Land()
+	{
+		phase = 2;
+		t = 0f;
+		GameObject fx;
+		if (Library.instance != null && Library.instance.particleEffectsDictionary != null && Library.instance.particleEffectsDictionary.TryGetValue("splashTiny", out fx) && fx != null)
+		{
+			Vector3 at = transform.position;
+			at.y = 0f;
+			ObjectPoolManager.CreatePooled(fx, at, Quaternion.identity);
+		}
+		// floating pose: chest at the waterline, leaning back in his life vest
+		pilotMesh.sharedMesh = ModChuteAssets.Airman(nat, "floating");
+		pilot.localRotation = Quaternion.identity;
+		ModBailOut.InWater.Add(this);
+	}
+
+	private void Water(float dt)
+	{
+		t += dt;
+		Vector3 p = transform.position;
+		p.y = Mathf.Lerp(p.y, -0.005f * Mathf.Sin(t * 2.5f), Mathf.Min(1f, dt * 2f));
+		transform.position = p + wind * 0.3f * dt;
+		sway.localRotation = Quaternion.Slerp(sway.localRotation, Quaternion.identity, Mathf.Min(1f, dt * 3f));
+		if (!canopyGone)
+		{
+			// the canopy tips over downwind and settles flat on the sea, then sinks after a minute
+			float k = Mathf.Clamp01(t / 4f);
+			float tip = (t < 0.8f) ? (-25f * t / 0.8f) : ((t < 2.2f) ? Mathf.Lerp(-25f, -35f, (t - 0.8f) / 1.4f) : Mathf.Lerp(-35f, 0f, Mathf.Clamp01((t - 2.2f) / 1.8f)));
+			chute.localRotation = Quaternion.Euler(tip, 0f, 0f);
+			chute.localScale = new Vector3(Mathf.Lerp(1f, 1.3f, k), Mathf.Lerp(1f, 0.03f, Mathf.SmoothStep(0f, 1f, k)), Mathf.Lerp(1f, 1.3f, k));
+			float sink = (t > 60f) ? (t - 60f) * 0.3f : 0f;
+			chute.localPosition = new Vector3(0f, Mathf.Lerp(Riser - Sway, -Sway - 0.12f, k) - sink, Mathf.Lerp(0f, -4f, k));
+			if (t > 90f)
+			{
+				canopyGone = true;
+				Destroy(chute.gameObject);
+			}
+		}
+		if (t > ModBailOut.FloatSeconds)
+		{
+			Destroy(gameObject);
+		}
+	}
+
+	// keyframes, linear between them
+	private static readonly float[] PitchT = { 0f, 0.5f, 1f, 1.5f, 1.85f, 2.2f, 2.6f, 3.1f };
+	private static readonly float[] PitchV = { 0f, 25f, 45f, 50f, 15f, -14f, 5f, 0f };
+	private static readonly float[] RollV = { 0f, 10f, 18f, 12f, 4f, -4f, 0f, 0f };
+	private static readonly float[] ChuteT = { 0f, 1f, 1.2f, 1.5f, 1.9f, 2.25f, 2.6f, 2.95f, 3.3f };
+	private static readonly float[] ChuteW = { 0.01f, 0.01f, 0.03f, 0.06f, 0.18f, 0.7f, 1.15f, 0.95f, 1f };
+	private static readonly float[] ChuteH = { 0.01f, 0.01f, 0.25f, 1.05f, 1.08f, 1.02f, 0.88f, 1.03f, 1f };
+
+	private static float Keys(float x, float[] xs, float[] ys)
+	{
+		if (x <= xs[0])
+		{
+			return ys[0];
+		}
+		for (int i = 1; i < xs.Length; i++)
+		{
+			if (x <= xs[i])
+			{
+				return Mathf.Lerp(ys[i - 1], ys[i], (x - xs[i - 1]) / (xs[i] - xs[i - 1]));
+			}
+		}
+		return ys[ys.Length - 1];
+	}
+}
+
+// Reads the parachute and airman models (OBJ + PNG) from War on the Sea\ModAssets\parachutes\ once, and keeps them.
+public static class ModChuteAssets
+{
+	private static bool tried;
+	private static bool ok;
+	private static readonly Dictionary<string, Mesh> meshes = new Dictionary<string, Mesh>();
+	private static readonly Dictionary<string, Material> mats = new Dictionary<string, Material>();
+	private static readonly Dictionary<Mesh, Mesh> seated = new Dictionary<Mesh, Mesh>();
+	private static Material baseMat;
+
+	public static string Folder
+	{
+		get { return Path.Combine(Path.Combine(Path.GetDirectoryName(Application.dataPath), "ModAssets"), "parachutes"); }
+	}
+
+	public static bool Ready()
+	{
+		if (tried)
+		{
+			return ok;
+		}
+		tried = true;
+		try
+		{
+			string[] nats = { "us", "jp" };
+			string[] poses = { "hanging", "floating", "seated" };
+			foreach (string n in nats)
+			{
+				meshes["canopy_" + n] = LoadObj(Path.Combine(Folder, "canopy_" + n + ".obj"));
+				foreach (string p in poses)
+				{
+					meshes["airman_" + n + "_" + p] = LoadObj(Path.Combine(Folder, "airman_" + n + "_" + p + ".obj"));
+				}
+				mats["canopy_" + n] = MakeMat(Path.Combine(Folder, "canopy_" + n + ".png"), 0.05f);
+				mats["airman_" + n] = MakeMat(Path.Combine(Folder, "airman_" + n + ".png"), 0.12f);
+			}
+			ok = true;
+			Debug.Log("[BAILOUT] parachute and airman models loaded from " + Folder);
+		}
+		catch (Exception ex)
+		{
+			ok = false;
+			Debug.LogError("[BAILOUT] could not load the models from " + Folder + " (bail-outs and new crew are off): " + ex.Message);
+		}
+		return ok;
+	}
+
+	public static Mesh Canopy(string nat) { return meshes["canopy_" + nat]; }
+	public static Mesh Airman(string nat, string pose) { return meshes["airman_" + nat + "_" + pose]; }
+	public static Material CanopyMat(string nat) { return mats["canopy_" + nat]; }
+	public static Material AirmanMat(string nat) { return mats["airman_" + nat]; }
+
+	// The seated airman sized and placed to sit where the stock figure sat (same height, same seat and centre line).
+	public static Mesh SeatedFor(Mesh old, string nat)
+	{
+		Mesh m;
+		if (seated.TryGetValue(old, out m))
+		{
+			return m;
+		}
+		Mesh src = Airman(nat, "seated");
+		Bounds ob = old.bounds;
+		Bounds nb = src.bounds;
+		float s = (nb.size.y > 0.0001f) ? ob.size.y / nb.size.y : 0.1f;
+		Vector3 off = new Vector3(ob.center.x - nb.center.x * s, ob.min.y - nb.min.y * s, ob.center.z - nb.center.z * s);
+		Vector3[] vs = src.vertices;
+		for (int i = 0; i < vs.Length; i++)
+		{
+			vs[i] = vs[i] * s + off;
+		}
+		m = new Mesh();
+		m.name = "airman_" + nat + "_seated_fit";
+		m.vertices = vs;
+		m.normals = src.normals;
+		m.uv = src.uv;
+		m.triangles = src.triangles;
+		m.RecalculateBounds();
+		seated[old] = m;
+		return m;
+	}
+
+	// Copies the material of the stock crew figure (so the game's own shader is used) with our texture and no stock detail maps.
+	private static Material MakeMat(string png, float gloss)
+	{
+		if (baseMat == null)
+		{
+			GameObject crew = Resources.Load<GameObject>("prefab/us_aircrew");
+			Renderer r = (crew != null) ? crew.GetComponentInChildren<Renderer>(true) : null;
+			if (r != null && r.sharedMaterial != null)
+			{
+				baseMat = r.sharedMaterial;
+			}
+		}
+		Material m;
+		if (baseMat != null)
+		{
+			m = new Material(baseMat);
+		}
+		else
+		{
+			Shader sh = Shader.Find("Standard");
+			if (sh == null)
+			{
+				sh = Shader.Find("Diffuse");
+			}
+			m = new Material(sh);
+		}
+		Texture2D tex = new Texture2D(2, 2, TextureFormat.RGBA32, true);
+		if (!tex.LoadImage(File.ReadAllBytes(png)))
+		{
+			throw new Exception("bad image " + png);
+		}
+		tex.wrapMode = TextureWrapMode.Clamp;
+		tex.anisoLevel = 2;
+		m.mainTexture = tex;
+		m.color = Color.white;
+		if (m.HasProperty("_BumpMap"))
+		{
+			m.SetTexture("_BumpMap", null);
+			m.DisableKeyword("_NORMALMAP");
+		}
+		if (m.HasProperty("_MetallicGlossMap"))
+		{
+			m.SetTexture("_MetallicGlossMap", null);
+			m.DisableKeyword("_METALLICGLOSSMAP");
+		}
+		if (m.HasProperty("_OcclusionMap"))
+		{
+			m.SetTexture("_OcclusionMap", null);
+		}
+		if (m.HasProperty("_Metallic"))
+		{
+			m.SetFloat("_Metallic", 0f);
+		}
+		if (m.HasProperty("_Glossiness"))
+		{
+			m.SetFloat("_Glossiness", gloss);
+		}
+		return m;
+	}
+
+	// Minimal OBJ reader (v, vt, vn, f). OBJ is right-handed: x is mirrored for Unity and the triangles turned round, like Unity's own importer.
+	private static Mesh LoadObj(string path)
+	{
+		string[] lines = File.ReadAllLines(path);
+		List<Vector3> pv = new List<Vector3>();
+		List<Vector2> pt = new List<Vector2>();
+		List<Vector3> pn = new List<Vector3>();
+		List<Vector3> v = new List<Vector3>();
+		List<Vector2> uv = new List<Vector2>();
+		List<Vector3> n = new List<Vector3>();
+		List<int> tri = new List<int>();
+		Dictionary<string, int> seen = new Dictionary<string, int>();
+		CultureInfo c = CultureInfo.InvariantCulture;
+		char[] sp = { ' ', '\t' };
+		foreach (string raw in lines)
+		{
+			string l = raw.Trim();
+			if (l.Length < 2)
+			{
+				continue;
+			}
+			string[] p = l.Split(sp, StringSplitOptions.RemoveEmptyEntries);
+			if (p[0] == "v")
+			{
+				pv.Add(new Vector3(-float.Parse(p[1], c), float.Parse(p[2], c), float.Parse(p[3], c)));
+			}
+			else if (p[0] == "vt")
+			{
+				pt.Add(new Vector2(float.Parse(p[1], c), float.Parse(p[2], c)));
+			}
+			else if (p[0] == "vn")
+			{
+				pn.Add(new Vector3(-float.Parse(p[1], c), float.Parse(p[2], c), float.Parse(p[3], c)));
+			}
+			else if (p[0] == "f")
+			{
+				int[] idx = new int[p.Length - 1];
+				for (int k = 1; k < p.Length; k++)
+				{
+					int at;
+					if (!seen.TryGetValue(p[k], out at))
+					{
+						string[] q = p[k].Split('/');
+						at = v.Count;
+						v.Add(pv[Ref(q[0], pv.Count)]);
+						uv.Add((q.Length > 1 && q[1].Length > 0) ? pt[Ref(q[1], pt.Count)] : Vector2.zero);
+						n.Add((q.Length > 2 && q[2].Length > 0) ? pn[Ref(q[2], pn.Count)] : Vector3.up);
+						seen[p[k]] = at;
+					}
+					idx[k - 1] = at;
+				}
+				for (int k = 1; k + 1 < idx.Length; k++)
+				{
+					tri.Add(idx[0]);
+					tri.Add(idx[k + 1]);
+					tri.Add(idx[k]);
+				}
+			}
+		}
+		if (v.Count == 0 || v.Count > 65000)
+		{
+			throw new Exception(Path.GetFileName(path) + " has " + v.Count + " vertices");
+		}
+		Mesh m = new Mesh();
+		m.name = Path.GetFileNameWithoutExtension(path);
+		m.vertices = v.ToArray();
+		m.uv = uv.ToArray();
+		m.normals = n.ToArray();
+		m.triangles = tri.ToArray();
+		m.RecalculateBounds();
+		return m;
+	}
+
+	private static int Ref(string s, int count)
+	{
+		int i = int.Parse(s, CultureInfo.InvariantCulture);
+		return (i < 0) ? count + i : i - 1;
+	}
+}

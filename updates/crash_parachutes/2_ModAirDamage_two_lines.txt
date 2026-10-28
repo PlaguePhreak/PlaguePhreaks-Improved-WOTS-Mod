@@ -1,0 +1,31 @@
+TWO ONE-LINE ADDITIONS IN ModAirDamage
+(do these after ModBailOut is in, or they will not compile)
+
+A) ModAirDamage.Refresh
+   Right-click Refresh > Edit Method (C#)...
+   Add this as the very FIRST line inside the method, above "if (failed || ua == null ...":
+
+        ModBailOut.Crew(ua);
+
+   Compile.
+   (It runs once per plane and puts the new airman in the cockpit.)
+
+B) ModAirDamage.Falling
+   Right-click Falling > Edit Method (C#)...
+   Add this as the very FIRST line inside the method, above "if (failed || ua == null ...":
+
+        ModBailOut.ShotDown(ua);
+
+   Compile.
+   (It runs once per shot-down plane and decides who bails out.)
+
+What it should look like (B):
+
+	public static void Falling(UnitAir ua, float dt)
+	{
+		ModBailOut.ShotDown(ua);
+		if (failed || ua == null || ua.unitData == null || ua.unitAI == null)
+		{
+			return;
+		}
+		...
