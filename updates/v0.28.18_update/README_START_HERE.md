@@ -1,4 +1,4 @@
-# v0.28.18 update: tester fixes (torpedo attacks, AA in mid air, fighters vs ships, planes that blow up, wings off = spin) + planes arrive like a real strike + torpedo strikes get ahead and split
+# v0.28.18 update: tester fixes (torpedo attacks, AA in mid air, fighters vs ships, planes that blow up, wings off = spin) + planes arrive like a real strike + torpedo strikes get ahead and split + strikes switch to better targets
 
 All five tester reports in one update. Builds on 0.28.17 (install that first; you did on 27 Oct).
 Not compiled or run by me: back up `Assembly-CSharp.dll` first.
@@ -22,8 +22,9 @@ When everything is in: **File > Save Module**.
    - D) `EngagementAI.AttackUnit`
 8. **ModAirSpawn** (NEW class, added 28 Oct after the first five): Add Class (C#) like step 4, paste all of `8_NEW_ModAirSpawn.cs.txt`, **Compile**. Then one line in **EngagementData.CreateUnitGroup**, see `9_EngagementData_CreateUnitGroup.txt`. If you already did steps 1 to 7, just do this step and Save Module.
 9. **ModTorpStrike** (NEW class, added 28 Oct): Add Class (C#), paste all of `10_NEW_ModTorpStrike.cs.txt`, **Compile**. Then one block in **UnitAIAir.ModTorpedoSetup**, see `11_UnitAIAir_ModTorpedoSetup.txt`. Needs steps 5 and 6 (ModAnvilSide) in.
-10. Optional: in **ModVersion** change `Current` to `"0.28.18"`.
-11. **File > Save Module**.
+10. **ModStrikeRetarget** (NEW class, added 28 Oct): Add Class (C#), paste all of `12_NEW_ModStrikeRetarget.cs.txt`, **Compile**. Then one line in **UnitAIAir.ModCheckAutoStrike**, see `13_UnitAIAir_ModCheckAutoStrike.txt`.
+11. Optional: in **ModVersion** change `Current` to `"0.28.18"`.
+12. **File > Save Module**.
 
 No new hooks besides the one-line edits above. The panel, stick and chase cam (0.28.14 to 0.28.16) are not touched.
 
@@ -43,6 +44,8 @@ No new hooks besides the one-line edits above. The panel, stick and chase cam (0
 
 **7. Torpedo strikes get ahead of the formation, then split and swing in together (new ModTorpStrike + 1 block).** Every torpedo flight going for a ship now drops to attack height and runs up its side of the enemy formation 4.5 km out (outside light AA), to a gathering point 3.5 km ahead of the formation's leading ship. It circles there until every flight has arrived (at most 4 minutes after the first). Then the flights split, the left half to port and the right half to starboard, and swing in from the bows with the normal run-in: they wait in the drop window for each other and drop together, a hammer and anvil. A single flight comes in from the side it is on. A flight already within 3 km of the ship when its attack starts goes straight in. This is the planned version of item 1: from ahead the split is short, so nobody flies round the ship through its AA. Log: `[TORPSTRIKE] ... is in place 3500 m ahead of ...` and `[TORPSTRIKE] 4 flight(s) ahead of Yorktown split and swing in: hammer and anvil, 2 to port, 2 to starboard`. Knobs at the top of ModTorpStrike (`AheadDistance`, `WideOffset`, `GatherTimeout`...); `Enabled = false` gives the item 1 behaviour.
 
+**8. Strikes switch to a better target when one is spotted (new ModStrikeRetarget + 1 line).** Ships are not all spotted at once, and a strike that found a destroyer first kept going for it even when a battleship or carrier was spotted next. Now every 5 seconds a bomber or torpedo flight leader on its way to a ship checks the ships its side can see. If the best one is worth at least 1.8 times its present target, the whole flight switches. Values: carrier 10, battleship or light carrier 7, battlecruiser 6, heavy cruiser 4, light cruiser 3.5, merchant or oiler 3, destroyer 2, destroyer escort 1.5. Torpedo planes count a destroyer at 0.4 of that. Distance and how many planes already go for a ship count too. It never switches once the attack has started: a dive bomber in its dive, a flight within 3 km of its target, or a torpedo flight released to drop. It doesn't switch below 25% fuel, and it leaves planes you ordered yourself alone (your auto strikes do switch). Log: `[RETARGET] Val id ... was going for Fletcher (Destroyer), now spotted Yorktown (Aircraft_Carrier) 9000 m away: the flight switches to it`. Knobs: `SwitchRatio`, `CommitRange`, `MinFuel`.
+
 ## What to test
 
 1. A torpedo strike with 2+ flights on one ship, coming from one direction: they should all attack from that side together (`wave attack` in the log), not split.
@@ -52,7 +55,8 @@ No new hooks besides the one-line edits above. The panel, stick and chase cam (0
 5. Watch planes being shot down: some should blow up (`[EXPLODE]`), wing losses should spin (`[SPIN]`).
 6. Start a battle with an enemy strike and escorts: the bombers should come in at speed heading for you, with the fighters above and behind (`[SPAWN]` lines).
 7. An enemy torpedo strike on your fleet: the Kates should run up a side of the formation, gather ahead, then come at the bows from both sides (`[TORPSTRIKE]`).
-8. Send me `output_log.txt`. If the explosion looks too big or too small, say which plane, and I will swap the effect.
+8. A strike that spots a destroyer before your carrier: it should switch (`[RETARGET]`).
+9. Send me `output_log.txt`. If the explosion looks too big or too small, say which plane, and I will swap the effect.
 
 ## Switch off
 - Explosions: set `ExplodeMax` to `0f` in ModAirDamage.
@@ -69,4 +73,5 @@ v0.28.18 - Tester fixes: torpedo attacks, AA in mid air, fighters vs big ships, 
 * Shot-down planes can blow up in the air. More likely after a heavy hit, when burning or still carrying bombs or a torpedo, less likely with armour and self-sealing tanks.
 * A plane that loses a wing rolls over towards it and spins down out of control.
 * Torpedo strikes run up the side of the enemy formation, gather 3.5 km ahead of it, then split to both bows and swing in together.
+* Strike planes switch to a much better target (a carrier or battleship) when one is spotted after they picked a smaller ship, until their attack starts.
 * Planes arrive like a real strike: at cruise speed, enemy groups heading for their target, flights staggered, escort fighters flying top cover above and behind their bombers.

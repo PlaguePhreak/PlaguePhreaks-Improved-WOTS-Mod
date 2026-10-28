@@ -1,0 +1,22 @@
+v0.28.18 - one line in UnitAIAir.ModCheckAutoStrike (Edit Method, add the line, Compile)
+=======================================================================================
+Do this AFTER ModStrikeRetarget is in.
+
+About halfway down the method there is this block (the start of it):
+
+		if (this.currentAIAction == AIAction.Attack_Unit && unit2 != null && !unit2.isDestroyed && unit2.unitSea != null)
+		{
+			if ((flag && !this.modAutoStrike) || !EngagementAI.instance.ModIsShipCrippled(unit2) || ...
+
+(dnSpy may call "unit2" something else and may leave out "this.".)
+Add one line as the FIRST line inside that block, so it starts:
+
+		if (this.currentAIAction == AIAction.Attack_Unit && unit2 != null && !unit2.isDestroyed && unit2.unitSea != null)
+		{
+			if (ModStrikeRetarget.Check(this, unit2))
+			{
+				return;
+			}
+			if ((flag && !this.modAutoStrike) || ...
+
+If the ship has another name than "unit2" in the "if" line, use that name.

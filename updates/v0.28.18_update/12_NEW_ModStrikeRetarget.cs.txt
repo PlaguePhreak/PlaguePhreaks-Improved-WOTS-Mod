@@ -1,0 +1,137 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+// v0.28.18 NEW CLASS. Strike planes switch to a much better target when one is spotted (Aaron, 28 Oct).
+// Ships are not all spotted at once. A strike that found a destroyer first went for it and kept going for it, even after a battleship or a
+// carrier was spotted a few kilometres further on. Now, every CheckSeconds, a bomber or torpedo flight leader on its way to a ship looks at the
+// ships its side can see (EngagementAI.ModPickStrikeTarget: target value, distance, how many planes already go for it). If the best one is
+// worth at least SwitchRatio times its present target (a carrier 10, battleship 7, heavy cruiser 4, light cruiser 3.5, merchant and oiler 3,
+// destroyer 2, destroyer escort 1.5; a destroyer counts 0.4 x for torpedo planes), the whole flight is sent at it.
+// It never switches once the attack has begun: a dive bomber in its dive, a torpedo flight within CommitRange of its target or already
+// released to drop, a level bomber within CommitRange. Not for planes you ordered yourself (only your auto strikes), and not below MinFuel.
+// Log: [RETARGET].
+public static class ModStrikeRetarget
+{
+	public static bool Enabled = true;
+
+	public const float CheckSeconds = 5f;
+	public const float SwitchRatio = 1.8f;
+	public const float CommitRange = 300f;   // 3 km
+	public const float MinFuel = 0.25f;
+
+	private static Dictionary<int, float> nextCheck = new Dictionary<int, float>();
+	public static int logged;
+
+	// Call first in the attack branch of UnitAIAir.ModCheckAutoStrike: if (ModStrikeRetarget.Check(this, unit2)) return;
+	// true = the flight was sent at a better ship.
+	public static bool Check(UnitAIAir ai, Unit target)
+	{
+		if (!Enabled || ai == null || target == null || target.unitSea == null || target.isDestroyed)
+		{
+			return false;
+		}
+		try
+		{
+			Unit me = ai.parentUnit;
+			if (me == null || me.unitData == null || me.unitAir == null || me.unitAir.hasDroppedPayload || ai.retreating)
+			{
+				return false;
+			}
+			UnitSubType t = me.unitData.unitSubtype;
+			if (t != UnitSubType.Dive_Bomber && t != UnitSubType.Torpedo_Bomber && t != UnitSubType.Medium_Bomber && t != UnitSubType.Heavy_Bomber)
+			{
+				return false;
+			}
+			if (me.faction == Faction.Player && (!ai.modAutoStrike || (CombatInterface.instance != null && CombatInterface.instance.currentUnit == me)))
+			{
+				return false;
+			}
+			if (ai.followingUnit != null && !ai.followingUnit.isDestroyed)
+			{
+				return false;
+			}
+			int id = ((UnityEngine.Object)me).GetInstanceID();
+			float next;
+			if (nextCheck.TryGetValue(id, out next) && Time.time < next)
+			{
+				return false;
+			}
+			nextCheck[id] = Time.time + CheckSeconds;
+			// committed to the attack?
+			Maneuvre m = ai.currentManeuvre;
+			if (m == Maneuvre.Dive_Bomb || m == Maneuvre.DiveBomb_Dive || ai.modTorpWaitStart < 0f)
+			{
+				return false;
+			}
+			if (Utilities.GetXZDistance(((Component)me).transform.position, ((Component)target).transform.position) < CommitRange)
+			{
+				return false;
+			}
+			if (ModAirDamage.FuelOf(me) < MinFuel)
+			{
+				return false;
+			}
+			EngagementAI e = EngagementAI.instance;
+			if (e == null)
+			{
+				return false;
+			}
+			List<Unit> ships = (me.faction == Faction.Player) ? e.otherSea : e.playerSea;
+			Unit best = e.ModPickStrikeTarget(me, ships);
+			if (best == null || best == target)
+			{
+				return false;
+			}
+			bool torp = Utilities.GetIndexOfWeaponType(me, WeaponType.Aerial_Torpedo) != -1;
+			float now = Value(target, torp);
+			float better = Value(best, torp);
+			if (better < now * SwitchRatio)
+			{
+				return false;
+			}
+			if (logged < 80)
+			{
+				logged++;
+				Debug.Log((object)("[RETARGET] " + me.unitData.unitName + " id " + id + " (" + ((me.faction == Faction.Player) ? "ours" : "enemy") + ") was going for " + target.unitData.unitName + " (" + target.unitData.unitSubtype + "), now spotted " + best.unitData.unitName + " (" + best.unitData.unitSubtype + ") " + (Utilities.GetXZDistance(((Component)me).transform.position, ((Component)best).transform.position) * 10f).ToString("F0") + " m away: the flight switches to it"));
+			}
+			e.ModLaunchFlightAttack(me, best);
+			return true;
+		}
+		catch (Exception ex)
+		{
+			Enabled = false;
+			Debug.LogError((object)("[RETARGET] failed and was switched off: " + ex.Message));
+			return false;
+		}
+	}
+
+	// Same values as EngagementAI.ModPickStrikeTarget.
+	public static float Value(Unit ship, bool torp)
+	{
+		if (ship == null || ship.unitData == null)
+		{
+			return 1f;
+		}
+		float v;
+		switch (ship.unitData.unitSubtype)
+		{
+		case UnitSubType.Destroyer_Escort: v = 1.5f; break;
+		case UnitSubType.Destroyer: v = 2f; break;
+		case UnitSubType.Light_Cruiser: v = 3.5f; break;
+		case UnitSubType.Heavy_Cruiser: v = 4f; break;
+		case UnitSubType.Battlecruiser: v = 6f; break;
+		case UnitSubType.Battleship: v = 7f; break;
+		case UnitSubType.Light_Carrier: v = 7f; break;
+		case UnitSubType.Aircraft_Carrier: v = 10f; break;
+		case UnitSubType.Oiler: v = 3f; break;
+		case UnitSubType.Merchant: v = 3f; break;
+		default: v = 1f; break;
+		}
+		if (torp && (ship.unitData.unitSubtype == UnitSubType.Destroyer || ship.unitData.unitSubtype == UnitSubType.Destroyer_Escort))
+		{
+			v *= 0.4f;
+		}
+		return v;
+	}
+}
