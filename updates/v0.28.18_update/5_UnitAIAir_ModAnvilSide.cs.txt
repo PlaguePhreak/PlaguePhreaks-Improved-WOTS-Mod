@@ -1,0 +1,45 @@
+	// v0.28.18: hammer and anvil only when there are torpedo flights on both sides of the ship. Every flight now attacks from the side of the ship it
+	// is already on. Flights on both sides make a hammer and anvil; flights all on one side make a wave attack from that side. Before, the flights
+	// were split left/right by their number in the list, so half of them flew round the ship to the far side (and got caught in its AA).
+	// The side is only fixed once the flight is within 8 km (the ship may still turn before that). Log: [TORP] ... hammer and anvil / wave attack.
+	private float ModAnvilSide(Unit target, Vector3 toMe)
+	{
+		if (modTorpSide != 0f)
+		{
+			return modTorpSide;
+		}
+		float side = (Vector3.Dot(target.transform.right, toMe) >= 0f) ? 1f : -1f;
+		if (toMe.magnitude > 800f)
+		{
+			return side;
+		}
+		modTorpSide = side;
+		List<Unit> list = ModTorpFlights(target);
+		int same = 0;
+		int other = 0;
+		for (int i = 0; i < list.Count; i++)
+		{
+			Unit u = list[i];
+			if (u == null || u == parentUnit || u.unitAIAir == null)
+			{
+				continue;
+			}
+			float s2 = u.unitAIAir.modTorpSide;
+			if (s2 == 0f)
+			{
+				Vector3 d = u.transform.position - target.transform.position;
+				d.y = 0f;
+				s2 = (Vector3.Dot(target.transform.right, d) >= 0f) ? 1f : -1f;
+			}
+			if (s2 == side)
+			{
+				same++;
+			}
+			else
+			{
+				other++;
+			}
+		}
+		Debug.Log("[TORP] " + parentUnit.unitData.unitName + " id " + parentUnit.GetInstanceID() + " attacks " + target.unitData.unitName + " from its " + ((side > 0f) ? "starboard" : "port") + " side: " + ((same == 0 && other == 0) ? "the only flight" : (other > 0) ? ("hammer and anvil, " + (same + 1) + " flight(s) this side and " + other + " on the other") : ("wave attack, all " + (same + 1) + " flights on this side")));
+		return side;
+	}

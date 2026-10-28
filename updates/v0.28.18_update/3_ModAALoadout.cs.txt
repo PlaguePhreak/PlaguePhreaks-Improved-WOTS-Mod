@@ -1,0 +1,591 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+// v0.28.18: FIX, light AA fired from mid air on some ships. Many custom models (Fletcher42, Kagero43, Fuso44, Benson42, Kitakami, Hakuryu45...)
+// store tiny AA positions and scale the AA object up 10 to 110 times. The loadout was worked out on the hull (ship units) but written into the
+// AA object's own units, so on those ships every gun sat 10 to 110 times too far out: tens to hundreds of metres beside, above or ahead of the
+// ship. The guns are now converted into the AA object's units (its offset and scale on the ship), see Fill. Log: [AALOAD] ... AA object scale.
+// v0.27.1 Historical ship AA. Replaces the baked AA point list of ships with a historical light AA loadout
+// (MG, 20 mm, 25 mm, 40 mm). Heavy dual purpose guns (5 in etc.) are NOT included: they already fire at aircraft as normal guns.
+//
+// Two ways a ship gets its loadout:
+//   1. ExplicitShips: a hand-written list of guns for one ship (positions in the same units as the [AALOG] lines).
+//   2. ShipSpecs: the ship's role (DD, CL, CA, BB, CV, ESC, OLD, AUX) and era tier (0 = 1941-42, 1 = 1943, 2 = 1944-45, 3 = postwar).
+//      The number of guns = ship length x the density for that role and tier (Density table), split into gun types by nation (Mix table),
+//      and spread along the real hull. The densities are approximate, class-level values: tune them in the two tables.
+// A generated loadout is only used when the model's own AA is weak (8 points or fewer) or less than half of it, so well tuned custom ships keep their own AA.
+// Ships not listed anywhere, and ships with real AA meshes (hiyo), keep their normal AA.
+public static class ModAALoadout
+{
+	// Set to false to switch the whole feature off (Compile, Save Module).
+	public static bool Enabled = true;
+
+	private const int MG = 0;
+	private const int L20 = 1;
+	private const int L25 = 2;
+	private const int B40 = 3;
+
+	// Per gun type: range (150 = 1.5 km), shot rate, damage size.
+	private static readonly float[] Range = new float[] { 100f, 150f, 150f, 250f };
+	private static readonly float[] Rate = new float[] { 6f, 8f, 5f, 4f };
+	private static readonly float[] Size = new float[] { 1f, 2f, 2f, 3f };
+
+	// Guns (mounts) per 100 m of hull length, by role. Index = era tier 0, 1, 2, 3.
+	private static readonly Dictionary<string, float[]> Density = new Dictionary<string, float[]>
+	{
+		{ "OLD", new float[] { 3f, 5f, 7f, 5f } },
+		{ "ESC", new float[] { 6f, 9f, 12f, 10f } },
+		{ "DD", new float[] { 5f, 8f, 11f, 10f } },
+		{ "CL", new float[] { 6f, 12f, 18f, 16f } },
+		{ "CA", new float[] { 5f, 10f, 16f, 14f } },
+		{ "BB", new float[] { 6f, 13f, 22f, 20f } },
+		{ "CV", new float[] { 8f, 15f, 20f, 18f } },
+		{ "AUX", new float[] { 2f, 3f, 5f, 4f } }
+	};
+
+	// Share of each gun type { MG, 20 mm, 25 mm, 40 mm } by nation style and era tier.
+	private static readonly Dictionary<string, float[][]> Mix = new Dictionary<string, float[][]>
+	{
+		{ "us", new float[][] { new float[] { 0.2f, 0.8f, 0f, 0f }, new float[] { 0f, 0.65f, 0f, 0.35f }, new float[] { 0f, 0.5f, 0f, 0.5f }, new float[] { 0f, 0f, 0f, 1f } } },
+		{ "au", new float[][] { new float[] { 0f, 0.6f, 0f, 0.4f }, new float[] { 0f, 0.55f, 0f, 0.45f }, new float[] { 0f, 0.45f, 0f, 0.55f }, new float[] { 0f, 0f, 0f, 1f } } },
+		{ "jp", new float[][] { new float[] { 0.25f, 0f, 0.75f, 0f }, new float[] { 0.15f, 0f, 0.85f, 0f }, new float[] { 0f, 0f, 1f, 0f }, new float[] { 0f, 0f, 1f, 0f } } }
+	};
+
+	private class Gun
+	{
+		public int type;
+		public float x;
+		public float y;
+		public float z;
+	}
+
+	private class Spec
+	{
+		public string style;
+		public string role;
+		public int tier;
+	}
+
+	private static Dictionary<string, List<Gun>> explicitShips;
+	private static Dictionary<string, Spec> specs;
+
+	private static void Add(List<Gun> l, int type, float x, float y, float z)
+	{
+		Gun g = new Gun();
+		g.type = type;
+		g.x = x;
+		g.y = y;
+		g.z = z;
+		l.Add(g);
+	}
+
+	private static void Pair(List<Gun> l, int type, float x, float y, float z)
+	{
+		Add(l, type, -x, y, z);
+		Add(l, type, x, y, z);
+	}
+
+	// 'count' guns on each side, spread evenly from z0 to z1.
+	private static void Rows(List<Gun> l, int type, float x, float y, float z0, float z1, int count)
+	{
+		for (int i = 0; i < count; i++)
+		{
+			float z = (count == 1) ? (z0 + z1) * 0.5f : z0 + (z1 - z0) * i / (count - 1);
+			Pair(l, type, x, y, z);
+		}
+	}
+
+	// ids separated by spaces.
+	private static void S(string style, string role, int tier, string ids)
+	{
+		string[] list = ids.Split(' ');
+		for (int i = 0; i < list.Length; i++)
+		{
+			Spec s = new Spec();
+			s.style = style;
+			s.role = role;
+			s.tier = tier;
+			specs[list[i]] = s;
+		}
+	}
+
+	private static void BuildTables()
+	{
+		explicitShips = new Dictionary<string, List<Gun>>();
+		specs = new Dictionary<string, Spec>();
+
+		// Farragut class destroyer: 7 mounts as seen on the model (3 forward, 2 amidships, 2 aft), 20 mm.
+		List<Gun> farragut = new List<Gun>();
+		Add(farragut, L20, 0f, 1.2f, 2.33f);
+		Pair(farragut, L20, 0.45f, 0.9f, 1.9f);
+		Pair(farragut, L20, 0.34f, 0.7f, -0.35f);
+		Pair(farragut, L20, 0.3f, 0.8f, -2.9f);
+		explicitShips["farragut"] = farragut;
+
+		// Fletcher class (1942 model): 5 twin 40 mm (one point each) and 7 x 20 mm.
+		List<Gun> fletcher = new List<Gun>();
+		Pair(fletcher, B40, 0.36f, 0.78f, 2.45f);
+		Pair(fletcher, B40, 0.44f, 0.4f, -1.5f);
+		Add(fletcher, B40, 0f, 1.05f, -2.54f);
+		Pair(fletcher, L20, 0.5f, 0.9f, 1.0f);
+		Pair(fletcher, L20, 0.5f, 0.6f, -0.4f);
+		Pair(fletcher, L20, 0.5f, 0.6f, -2.2f);
+		Add(fletcher, L20, 0f, 1.3f, 0.5f);
+		explicitShips["fletcher42"] = fletcher;
+
+		// Yorktown class carrier (August 1942): 4 quad 1.1 in (as 40 mm class) and 24 x 20 mm along the deck edge galleries.
+		List<Gun> yorktown = new List<Gun>();
+		Pair(yorktown, B40, 1.6f, 1.8f, 11.0f);
+		Pair(yorktown, B40, 1.6f, 1.8f, -11.0f);
+		Rows(yorktown, L20, 1.65f, 1.75f, 8.5f, -8.5f, 12);
+		explicitShips["yorktown"] = yorktown;
+
+		// ---- USA ----
+		S("us", "OLD", 0, "clemson manley");
+		S("us", "ESC", 2, "rudderow44 tacoma44");
+		S("us", "DD", 0, "farragut porter mahan gridley bagley somers benham sims benson gleaves");
+		S("us", "DD", 1, "fletcher benson42 mahan42 porter42 somers42 fletcher43");
+		S("us", "DD", 2, "porter44 sumner44 gearing45");
+		S("us", "CL", 0, "brooklyn atlanta omaha sangamon");
+		S("us", "CL", 1, "cleveland atlanta42 cleveland42 stlouis42 oakland43 bogue");
+		S("us", "CL", 2, "atlanta44 oakland45");
+		S("us", "CL", 3, "austin47 worcester47");
+		S("us", "CA", 0, "pensacola northampton portland new_orleans wichita");
+		S("us", "CA", 1, "baltimore portland42 baltimore43 constellation43");
+		S("us", "CA", 2, "alaska45 wichita44 neworleans45 puertorico45");
+		S("us", "CA", 3, "desmoines48");
+		S("us", "BB", 0, "north_carolina south_dakota pennsylvania new_mexico tennessee colorado");
+		S("us", "BB", 1, "iowa northcarolina43 southdakota43");
+		S("us", "BB", 2, "iowa44 missouri45 nebraska44 nevada44");
+		S("us", "CV", 0, "lexington wasp lexington41");
+		S("us", "CV", 1, "essex saratoga42 ranger42 yorktown42 hornet42 independence43");
+		S("us", "CV", 2, "enterprise44 essex44 saratoga44 midway45 saipan");
+		S("us", "CV", 3, "midway46");
+		S("us", "AUX", 0, "c3_cargo cimarron heywood president_jackson attack_transport arcturus harris mount_hood patapsco mccawley");
+
+		// ---- Australia / Britain ----
+		S("au", "DD", 1, "arunta");
+		S("au", "DD", 2, "n_class44 tuv_class44 battle45");
+		S("au", "CL", 1, "amphion perth42");
+		S("au", "CL", 2, "leander44");
+		S("au", "CA", 0, "kent county42");
+		S("au", "CV", 2, "colossus45");
+		S("au", "AUX", 0, "hospital_ship");
+
+		// ---- Japan ----
+		S("jp", "ESC", 0, "chidori42 momi");
+		S("jp", "DD", 0, "mutsuki42 minekaze wakatake kamikaze mutsuki fubuki akatsuki hatsuharu shiratsuyu asashio kagero yugumo akizuki");
+		S("jp", "DD", 1, "ayanami42 shiratsuyu42 kagero43");
+		S("jp", "DD", 2, "akizuki44 shimakaze44 yugumo44 kitakaze45");
+		S("jp", "CL", 0, "tenryu kuma nagara sendai yubari kamikawa_maru");
+		S("jp", "CL", 1, "agano oyodo kitakami nisshin");
+		S("jp", "CL", 2, "agano44 isuzu44 agano_kai45");
+		S("jp", "CA", 0, "furutaka aoba myoko takao mogami tone");
+		S("jp", "CA", 2, "aoba44 maya44 mogami44 myoko44 tone44");
+		S("jp", "BB", 0, "kongo fuso ise nagato");
+		S("jp", "BB", 1, "yamato42 yamato");
+		S("jp", "BB", 2, "kongo44 fuso44 yamato45 satsuma45");
+		S("jp", "CV", 0, "ryujo zuiho hosho taiyo akitsu_maru chitose shokaku");
+		S("jp", "CV", 1, "ryuho shokaku42");
+		S("jp", "CV", 2, "zuikaku44 taiho44 hakuryu45 sekiryu45");
+		S("jp", "AUX", 0, "kamogawa_maru nippon_maru generic_maru type_a_merchant ural_maru akita_maru kasagisan_maru taihosan_maru hakushika_maru aratama_maru");
+	}
+
+	private static bool ShouldReplace(int existing, int generated)
+	{
+		return generated > existing && (existing <= 8 || existing * 2 < generated);
+	}
+
+	private static string Key(string name)
+	{
+		return (name == null) ? "" : name.Replace("(Clone)", "").Trim().ToLowerInvariant();
+	}
+
+	// Place n guns of one type: pairs from zHi to zLo (fractions of half length, + = bow), at xf of the half beam. An odd gun goes on the centreline aft.
+	private static void Place(List<Gun> res, int type, int n, float zHi, float zLo, float xf, float zc, float halfLen, float halfBeam, float y)
+	{
+		int pairs = n / 2;
+		for (int p = 0; p < pairs; p++)
+		{
+			float f = (pairs == 1) ? (zHi + zLo) * 0.5f : zHi + (zLo - zHi) * p / (pairs - 1);
+			Pair(res, type, halfBeam * xf, y, zc + f * halfLen);
+		}
+		if (n % 2 == 1)
+		{
+			Add(res, type, 0f, y + 0.15f, zc + zLo * halfLen);
+		}
+	}
+
+	// Generate the loadout of a ship from its role / tier / length. Units: model units (about 10.8 m each).
+	private static List<Gun> Generate(Spec s, float lengthM, float zc, float halfLen, float halfBeam, float y)
+	{
+		float[] dens;
+		float[][] mix;
+		if (!Density.TryGetValue(s.role, out dens) || !Mix.TryGetValue(s.style, out mix))
+		{
+			return null;
+		}
+		int tier = Mathf.Clamp(s.tier, 0, 3);
+		int total = Mathf.Clamp(Mathf.RoundToInt(lengthM / 100f * dens[tier]), 2, 60);
+		float[] m = mix[tier];
+		int nMg = Mathf.RoundToInt(total * m[0]);
+		int n40 = Mathf.RoundToInt(total * m[3]);
+		int n25 = Mathf.RoundToInt(total * m[2]);
+		int n20 = Mathf.Max(0, total - nMg - n40 - n25);
+		if (m[1] <= 0f)
+		{
+			// no 20 mm in this mix: give the rest to the main light gun of the nation (25 mm or 40 mm)
+			if (m[2] > 0f) { n25 += n20; } else { n40 += n20; }
+			n20 = 0;
+		}
+		bool carrier = (s.role == "CV");
+		float xf = carrier ? 0.97f : 0.7f;
+		float end = carrier ? 0.85f : 0.7f;
+		List<Gun> res = new List<Gun>();
+		Place(res, B40, n40, end - 0.1f, -end, xf, zc, halfLen, halfBeam, y + 0.1f);
+		Place(res, L20, n20, end, -end + 0.1f, xf + 0.1f, zc, halfLen, halfBeam, y);
+		Place(res, L25, n25, end, -end + 0.1f, xf + 0.1f, zc, halfLen, halfBeam, y);
+		Place(res, MG, nMg, 0.35f, -0.35f, xf - 0.2f, zc, halfLen, halfBeam, y);
+		return res;
+	}
+
+	// Bounds of the hull in the unit's own coordinates: z range and x half width. Returns false if it could not be worked out.
+	private static bool HullBounds(Unit unit, Dictionary<string, GameObject> everything, out float zMin, out float zMax, out float xHalf)
+	{
+		zMin = 0f;
+		zMax = 0f;
+		xHalf = 0f;
+		if (everything == null)
+		{
+			return false;
+		}
+		Transform ut = ((Component)unit).transform;
+		float x0 = 1e9f, x1 = -1e9f, z0 = 1e9f, z1 = -1e9f;
+		foreach (KeyValuePair<string, GameObject> kv in everything)
+		{
+			GameObject go = kv.Value;
+			if (go == null)
+			{
+				continue;
+			}
+			string n = kv.Key;
+			if (!(n.Contains("Hull") || n.Contains("Main_LOD") || n.Contains("Superstructure") || n.Contains("Accessories")) || n.StartsWith("COL_"))
+			{
+				continue;
+			}
+			MeshFilter mf = go.GetComponent<MeshFilter>();
+			if (mf == null || mf.sharedMesh == null)
+			{
+				continue;
+			}
+			Bounds b = mf.sharedMesh.bounds;
+			for (int i = 0; i < 8; i++)
+			{
+				Vector3 c = b.center + new Vector3(((i & 1) == 0 ? -1f : 1f) * b.extents.x, ((i & 2) == 0 ? -1f : 1f) * b.extents.y, ((i & 4) == 0 ? -1f : 1f) * b.extents.z);
+				Vector3 p = ut.InverseTransformPoint(go.transform.TransformPoint(c));
+				x0 = Mathf.Min(x0, p.x);
+				x1 = Mathf.Max(x1, p.x);
+				z0 = Mathf.Min(z0, p.z);
+				z1 = Mathf.Max(z1, p.z);
+			}
+		}
+		if (x1 < x0 || z1 < z0)
+		{
+			return false;
+		}
+		zMin = z0;
+		zMax = z1;
+		xHalf = (x1 - x0) * 0.5f;
+		return true;
+	}
+
+	private static void Fill(List<Gun> g, out Vector3[] pos, out Vector2[] harc, out Vector2[] varc, out float[] range, out float[] rate, out float[] size, out string[] refs)
+	{
+		Fill(g, out pos, out harc, out varc, out range, out rate, out size, out refs, Vector3.zero, 1f);
+	}
+
+	// v0.28.18: the guns are placed on the hull (ship units). off = where the AA object sits on the ship, k = ship scale / AA object scale:
+	// the position written is (gun - off) x k, in the AA object's own units. The arcs still come from the hull position.
+	private static void Fill(List<Gun> g, out Vector3[] pos, out Vector2[] harc, out Vector2[] varc, out float[] range, out float[] rate, out float[] size, out string[] refs, Vector3 off, float k)
+	{
+		int n = g.Count;
+		pos = new Vector3[n];
+		harc = new Vector2[n];
+		varc = new Vector2[n];
+		range = new float[n];
+		rate = new float[n];
+		size = new float[n];
+		refs = new string[n];
+		for (int i = 0; i < n; i++)
+		{
+			Gun a = g[i];
+			pos[i] = new Vector3((a.x - off.x) * k * 100f, (a.y - off.y) * k * 100f, (a.z - off.z) * k * 100f);
+			if (Mathf.Abs(a.x) < 0.15f)
+			{
+				// centreline: forward guns cover the bow half, aft guns the stern half.
+				harc[i] = (a.z >= 0f) ? new Vector2(250f, 110f) : new Vector2(70f, 290f);
+			}
+			else if (a.x < 0f)
+			{
+				harc[i] = new Vector2(190f, 350f);
+			}
+			else
+			{
+				harc[i] = new Vector2(10f, 170f);
+			}
+			varc[i] = new Vector2(0f, -85f);
+			range[i] = Range[a.type];
+			rate[i] = Rate[a.type];
+			size[i] = Size[a.type];
+			refs[i] = "gun_single";
+		}
+	}
+
+	private static HashSet<string> rawLogged = new HashSet<string>();
+
+	// Diagnostic: the AA positions as stored in the model data versus the real hull, once per ship type. Used to check the AA screen scale.
+	private static void LogRaw(string key, WeaponAAA aaa, Unit unit, Dictionary<string, GameObject> everything)
+	{
+		if (rawLogged.Contains(key) || aaa.aaaPositions == null || aaa.aaaPositions.Length == 0)
+		{
+			return;
+		}
+		rawLogged.Add(key);
+		float x0 = 1e9f, x1 = -1e9f, z0 = 1e9f, z1 = -1e9f;
+		for (int i = 0; i < aaa.aaaPositions.Length; i++)
+		{
+			Vector3 p = aaa.aaaPositions[i] / 100f;
+			x0 = Mathf.Min(x0, p.x);
+			x1 = Mathf.Max(x1, p.x);
+			z0 = Mathf.Min(z0, p.z);
+			z1 = Mathf.Max(z1, p.z);
+		}
+		float zMin, zMax, xHalf;
+		string hull = HullBounds(unit, everything, out zMin, out zMax, out xHalf) ? (zMin.ToString("F2") + ".." + zMax.ToString("F2") + " halfBeam " + xHalf.ToString("F2")) : "?";
+		string scale = ((Component)aaa).transform.lossyScale.x.ToString("F3");
+		Debug.Log((object)("[AARAW] " + key + " model data x " + x0.ToString("F2") + ".." + x1.ToString("F2") + " z " + z0.ToString("F2") + ".." + z1.ToString("F2") + " | real hull z " + hull + " | AA object scale " + scale + " | unit scale " + ((Component)unit).transform.lossyScale.x.ToString("F3")));
+	}
+
+	// Old two-argument forms of the hooks, kept so the game still runs while the hooks are being updated (hand-written ships only).
+	public static void Override(WeaponAAA aaa, Unit unit)
+	{
+		Override(aaa, unit, null);
+	}
+
+	public static void OverrideHolder(WeaponDataHolder holder, string prefab)
+	{
+	}
+
+	// Call from PrefabBuilder.SetAAAMount, straight after the AA data is read from the model.
+	public static void Override(WeaponAAA aaa, Unit unit, Dictionary<string, GameObject> everything)
+	{
+		if (!Enabled)
+		{
+			return;
+		}
+		try
+		{
+			if (specs == null)
+			{
+				BuildTables();
+			}
+			string key = Key(((UnityEngine.Object)unit).name);
+			int existing = (aaa.aaaPositions != null) ? aaa.aaaPositions.Length : 0;
+			aaScaleByKey[key] = ((Component)aaa).transform.lossyScale.x;
+			LogRaw(key, aaa, unit, everything);
+			// v0.28.18: where the AA object sits on the ship and how much it is scaled (the guns are worked out in ship units)
+			Transform ut = ((Component)unit).transform;
+			Transform at = ((Component)aaa).transform;
+			Vector3 off = ut.InverseTransformPoint(at.position);
+			float k = ut.lossyScale.x / Mathf.Max(0.0001f, at.lossyScale.x);
+			List<Gun> g;
+			string how = "listed";
+			if (!explicitShips.TryGetValue(key, out g))
+			{
+				Spec s;
+				UnitData ud;
+				if (!specs.TryGetValue(key, out s) || !EngagementManager.instance.unitDataDictionary.TryGetValue(((UnityEngine.Object)unit).name, out ud))
+				{
+					return;
+				}
+				float zMin, zMax, xHalf;
+				if (!HullBounds(unit, everything, out zMin, out zMax, out xHalf) || zMax - zMin < 1f)
+				{
+					Debug.Log((object)("[AALOAD] " + key + " skipped: could not measure the hull"));
+					return;
+				}
+				float y = 0.9f;
+				if (existing > 0)
+				{
+					float sum = 0f;
+					for (int i = 0; i < existing; i++)
+					{
+						sum += aaa.aaaPositions[i].y / 100f;
+					}
+					// v0.28.18: the model's own AA height, turned into ship units
+					y = off.y + (sum / existing) / k;
+				}
+				g = Generate(s, ud.length, (zMin + zMax) * 0.5f, (zMax - zMin) * 0.5f, xHalf, y);
+				how = s.style + " " + s.role + " tier " + s.tier + ", " + ud.length.ToString("F0") + " m";
+				if (g == null || !ShouldReplace(existing, g.Count))
+				{
+					Debug.Log((object)("[AALOAD] " + key + " kept its own AA (" + existing + " points, loadout would give " + ((g == null) ? 0 : g.Count) + ")"));
+					return;
+				}
+			}
+			if (g.Count == 0)
+			{
+				return;
+			}
+			Vector3[] pos;
+			Vector2[] harc;
+			Vector2[] varc;
+			float[] range;
+			float[] rate;
+			float[] size;
+			string[] refs;
+			Fill(g, out pos, out harc, out varc, out range, out rate, out size, out refs, off, k);
+			aaa.aaaPositions = pos;
+			aaa.horizontalArcs = harc;
+			aaa.verticalArcs = varc;
+			aaa.range = range;
+			aaa.rate = rate;
+			aaa.sizes = size;
+			aaa.particleRef = refs;
+			Debug.Log((object)("[AALOAD] " + key + " historical AA loadout applied: " + g.Count + " guns (was " + existing + "), " + how + ((Mathf.Abs(k - 1f) > 0.01f || off.sqrMagnitude > 0.0001f) ? (", AA object scale " + (1f / k).ToString("F1") + " offset " + off.x.ToString("F2") + "," + off.y.ToString("F2") + "," + off.z.ToString("F2") + ": positions converted (v0.28.18)") : "")));
+		}
+		catch (Exception ex)
+		{
+			Enabled = false;
+			Debug.LogError((object)("[AALOAD] failed and was switched off: " + ex.Message));
+		}
+	}
+
+	private static float arcScale = 1f;
+
+	// The AA object scale of each ship (custom models store tiny positions and scale the AA object up).
+	private static Dictionary<string, float> aaScaleByKey = new Dictionary<string, float>();
+
+	// Ships that kept their own AA: the model stores positions in small units, so stretch them to the real hull on the AA screen.
+	private static void Rescale(WeaponDataHolder holder, string prefab, float lengthM)
+	{
+		try
+		{
+			if (holder.aaaPositions == null || holder.aaaPositions.Length == 0)
+			{
+				return;
+			}
+			string key = Key(prefab);
+			float factor;
+			if (!aaScaleByKey.TryGetValue(key, out factor))
+			{
+				float z0 = 1e9f, z1 = -1e9f;
+				for (int i = 0; i < holder.aaaPositions.Length; i++)
+				{
+					z0 = Mathf.Min(z0, holder.aaaPositions[i].z / 100f);
+					z1 = Mathf.Max(z1, holder.aaaPositions[i].z / 100f);
+				}
+				float hull = lengthM / 10.8f;
+				factor = (z1 - z0 < hull * 0.12f) ? 10f : 1f;
+			}
+			if (factor <= 1.01f)
+			{
+				return;
+			}
+			for (int i = 0; i < holder.aaaPositions.Length; i++)
+			{
+				holder.aaaPositions[i] = holder.aaaPositions[i] * factor;
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError((object)("[AALOAD] rescale failed: " + ex.Message));
+		}
+	}
+
+	// Size of each arc circle on the AA screen: smaller when a ship has many guns so they do not pile into one blob.
+	public static float ArcScale()
+	{
+		return arcScale;
+	}
+
+	private static float ScaleFor(int count)
+	{
+		return Mathf.Clamp(1.4f - 0.04f * count, 0.35f, 1f);
+	}
+
+	// Call from UnitReference.GetAAAText so the AA screen shows the same guns (hull size estimated from the ship's length and width).
+	public static void OverrideHolder(WeaponDataHolder holder, string prefab, float lengthM, float widthM)
+	{
+		if (!OverrideHolderInner(holder, prefab, lengthM, widthM))
+		{
+			Rescale(holder, prefab, lengthM);
+		}
+		arcScale = (holder.horizontalArcs != null) ? ScaleFor(holder.horizontalArcs.Length) : 1f;
+	}
+
+	private static bool OverrideHolderInner(WeaponDataHolder holder, string prefab, float lengthM, float widthM)
+	{
+		if (!Enabled)
+		{
+			return false;
+		}
+		try
+		{
+			if (specs == null)
+			{
+				BuildTables();
+			}
+			string key = Key(prefab);
+			int existing = (holder.horizontalArcs != null) ? holder.horizontalArcs.Length : 0;
+			List<Gun> g;
+			if (!explicitShips.TryGetValue(key, out g))
+			{
+				Spec s;
+				if (!specs.TryGetValue(key, out s))
+				{
+					return false;
+				}
+				float halfLen = lengthM / 10.8f * 0.5f;
+				float halfBeam = widthM / 10.8f * 0.5f;
+				float y = 0.9f;
+				if (holder.aaaPositions != null && holder.aaaPositions.Length > 0)
+				{
+					float sum = 0f;
+					for (int i = 0; i < holder.aaaPositions.Length; i++)
+					{
+						sum += holder.aaaPositions[i].y / 100f;
+					}
+					y = sum / holder.aaaPositions.Length;
+				}
+				g = Generate(s, lengthM, 0f, halfLen, halfBeam, y);
+				if (g == null || !ShouldReplace(existing, g.Count))
+				{
+					return false;
+				}
+			}
+			if (g.Count == 0)
+			{
+				return false;
+			}
+			Vector3[] pos;
+			Vector2[] harc;
+			Vector2[] varc;
+			float[] range;
+			float[] rate;
+			float[] size;
+			string[] refs;
+			Fill(g, out pos, out harc, out varc, out range, out rate, out size, out refs);
+			holder.aaaPositions = pos;
+			holder.horizontalArcs = harc;
+			return true;
+		}
+		catch (Exception ex)
+		{
+			Enabled = false;
+			Debug.LogError((object)("[AALOAD] failed and was switched off: " + ex.Message));
+		}
+		return false;
+	}
+}

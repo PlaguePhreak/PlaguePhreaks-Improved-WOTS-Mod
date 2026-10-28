@@ -1,0 +1,80 @@
+v0.28.18 - four one-line edits (Edit Method, add the line, Compile)
+=====================================================================
+Do these AFTER ModFighterShips is in (step 4), or the first two will not compile.
+
+
+A) UnitAIAir.StrafeApproach   (fighters: off big ships)
+-------------------------------------------------------
+The method starts with:
+
+		if (ModFighterRules.CheckStrafe(this))
+		{
+			return;
+		}
+
+Add this ABOVE it, as the very first line of the method:
+
+		if (ModFighterShips.Check(this))
+		{
+			return;
+		}
+
+
+B) EngagementAI.ModPickStrikeTarget   (fighters: only small ships picked)
+-------------------------------------------------------------------------
+Near the top of the loop you will see:
+
+			if ((unitSubtype == UnitSubType.Submarine && Utilities.isUnitSubmerged(unit, -0.2f)) || this.ModIsShipCrippled(unit))
+			{
+				continue;
+			}
+
+(dnSpy may write it without "this.".) Add this straight UNDER it:
+
+			if (!ModFighterShips.MayAttack(leader, unit))
+			{
+				continue;
+			}
+
+
+C) EngagementAI.GetBestSeaTarget   (fighters: no big-ship fallback)
+-------------------------------------------------------------------
+The method starts with:
+
+		if (unit != null && unit.unitAir != null)
+		{
+			Unit unit2 = this.ModPickStrikeTarget(unit, units);
+			if (unit2 != null)
+			{
+				return unit2;
+			}
+		}
+
+Add one line inside that first block, after the inner "if", so it reads:
+
+		if (unit != null && unit.unitAir != null)
+		{
+			Unit unit2 = this.ModPickStrikeTarget(unit, units);
+			if (unit2 != null)
+			{
+				return unit2;
+			}
+			if (ModFighterRules.IsFighter(unit))
+			{
+				return null;
+			}
+		}
+
+(Without it the game falls back to its old picker, which can hand a fighter a battleship.)
+
+
+D) EngagementAI.AttackUnit   (torpedo side starts fresh for each new target)
+----------------------------------------------------------------------------
+Near the top:
+
+			attackingUnit.unitAIAir.modAutoStrike = false;
+			attackingUnit.unitAIAir.modTorpWaitStart = 0f;
+
+Add straight UNDER them:
+
+			attackingUnit.unitAIAir.modTorpSide = 0f;

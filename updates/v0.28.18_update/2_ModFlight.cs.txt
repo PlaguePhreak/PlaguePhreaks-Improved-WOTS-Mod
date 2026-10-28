@@ -1,0 +1,1722 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+// v0.28.18: End hands shot-down planes to ModAirDamage.Falling (explosions, spins after a wing is lost).
+// v0.28.17: stall freeze fixed (bombers hung in the air at speed 0): planes appear in the air with flying speed, a rudder turn is smaller for big planes and
+// fades with speed, turn drag only for the turn the plane can make, and a plane below its stall speed falls and sinks (RudderShare, StallFall, StallSink).
+// v0.28 additions (on top of the v0.27 energy model below): the speed limit is gone (compressibility drag, then wings come off: ModAirDamage), damage, fuel,
+// altitude and bombs change the live row every tick (ModAirDamage.Refresh), formation flying, collisions and avoidance (ModAirFormation, ModAirCollide),
+// four more acrobatic moves (Immelmann, pitchback, high-g barrel roll, barrel roll attack) and a windowed [BATTLE] energy line.
+// v0.27 flight core: THE ENERGY MODEL. The game flies planes by sliding them along their nose at a speed that never depends on pitch. On top of the
+// game's own movement (it still moves the plane, this class decides the speed, the turn rate, the bank and how far the nose may climb) every plane now
+// follows one rule: it has specific energy E = height + speed^2 / (2 g), thrust adds to it, drag takes from it, and nothing else changes it.
+//   Speed:     rebuilt every tick from thrust, parasite drag, turn drag and gravity along the nose (ModAirFlight has the formulas and the
+//              numbers for each aircraft). A dive turns height into speed, a climb turns speed into height, a turn costs speed.
+//              The game's own acceleration towards the wanted speed is replaced: wantedSpeed now sets the throttle.
+//   Climb:     the nose may only be pulled up as far as the engine (or spare speed, for a zoom climb) can pay for: ModAirFlight.ClimbLimit.
+//   Turn:      the turn rate is limited by lift below corner speed and by the airframe above it (ModAirFlight.TurnLimit). Every degree per second
+//              of turn costs speed (turn drag = (rate / max rate)^2 * wing loading * constant).
+//   Bank:      the bank angle is the one a coordinated turn needs at this speed: tan(bank) = rate * speed / g. Rolling into it is as fast as the
+//              plane's roll rate, which fades at high speed (heavy ailerons). The turn only builds as fast as the bank allows.
+//   Rudder:    the rudder adds a few degrees per second to a turn that the bank does not support yet (a skid). A skid costs extra speed and raises
+//              the stall speed a little. A rudder also swings the nose a few degrees off the flight path for a shot (v0.26.5.8 yaw, kept).
+//   Flaps:     combat flaps lower the stall speed (tighter turn at low speed), add parasite drag and cannot be used above a speed limit. The AI asks
+//              for them with FlapsRequest, otherwise they come out by themselves in a hard turn.
+//   Stall:     below the stall speed (raised by flaps up/down, skid and a hard pull) the nose drops until the plane has flying speed again.
+//   Idle:      fighters that are not fighting climb back to the altitude they cruised at (or the doctrine altitude).
+// v0.26 features kept: pitch control while lining up a shot, pilot rank, acrobatics (roll-over attack, split-S, barrel roll), mountain clearance.
+// Always on. Every number is below or in ModAirFlight and can be changed, then Compile and Save Module.
+public static class ModFlight
+{
+	// Not a player switch. Only set if the core throws an error, so one bug cannot spam the log or break a battle (the plane then flies the original way).
+	private static bool failed = false;
+
+	// Gravity along the nose in game units per second squared (9.81 m/s2, 10 m per game unit). EnergyScale 1 = real gravity.
+	public const float Gravity = 0.981f;
+	public const float EnergyScale = 1f;
+	// 0.28: the hard dive speed limit is gone (compressibility drag in ModAirFlight.Drag and wing break-up in ModAirDamage do its job). This is only a
+	// safety net against a runaway number: no plane is ever faster than this many times its structural speed.
+	public const float OverspeedSanity = 1.4f;
+	// The scripted dive-bomb manoeuvre (Dive_Bomb, DiveBomb_Dive) is flown by the game's own code; it keeps the v0.26.5 rule (stronger gravity, refund).
+	public const float BombGravityScale = 2f;
+	public const float DiveRefund = 0.8f;
+
+	// Longest slice the speed is integrated in (seconds). A longer tick is cut into several.
+	public const float MaxStep = 0.05f;
+	// Share of the turn drag that a full skid adds on top, and how much a full skid raises the stall speed.
+	public const float SkidDragShare = 1.0f;
+	public const float SkidStall = 0.12f;
+	// Degrees per second the rudder can add to a turn the bank does not support yet.
+	public const float RudderAssist = 3f;
+	// Slowest turn rate (rudder only) that a nearly stalled plane still has.
+	public const float MinRudderTurn = 3f;
+	// Nose angle the nose drops to while stalled (degrees, positive = down).
+	public const float StallNoseDrop = 20f;
+	// v0.28.17: the B-17 and B-25 stall freeze. A rudder turn is at most this share of the plane's instant turn rate (a B-17's 3 deg/s rudder turn cost
+	// as much as a hard bank and held it at the stall), and it fades to nothing as the speed falls to zero (no airflow, no rudder).
+	public const float RudderShare = 0.35f;
+	// v0.28.17: a plane below its stall speed falls: it gains speed at this share of g whatever its nose does, and sinks (game units per second at
+	// zero speed, less as it gets flying speed back). Before, a stalled plane could hang in the air at speed 0.
+	public const float StallFall = 0.5f;
+	public const float StallSink = 1.5f;
+	// v0.28.17: the game puts planes into a battle standing still in the air (speed 0). A plane first seen in the air starts at its wanted speed,
+	// and never below this multiple of its stall speed.
+	public const float SpawnSpeedOverStall = 1.5f;
+	private static HashSet<int> seen = new HashSet<int>();
+	// v0.28.17: dive brakes. A dive bomber in its bombing dive is held to this share of its structural speed limit as it is NOW (a damaged wing lowers
+	// the limit). Before, the dive was capped at the undamaged limit, so a Dauntless with a holed wing always tore its wings off in the dive.
+	public const float DiveBrakeShare = 0.95f;
+	private static int spawnLogged;
+
+	private static Dictionary<int, float> startSpeed = new Dictionary<int, float>();
+	private static Dictionary<int, float> lastStallLog = new Dictionary<int, float>();
+	private static Dictionary<int, float> aimPitch = new Dictionary<int, float>();
+	private static Dictionary<int, float> aimUntil = new Dictionary<int, float>();
+	// v0.26.3: the turn the pilot is easing toward, so the AI's sudden left/right wishes become smooth stick movements.
+	private static Dictionary<int, float> smoothTurn = new Dictionary<int, float>();
+	public const float StickTime = 0.35f;
+	private static HashSet<int> stalled = new HashSet<int>();
+	private static int bombLogged;
+	private static Dictionary<int, float> lastDiveLog = new Dictionary<int, float>();
+
+	// Pull rates in degrees per second at corner speed (they shrink towards half at high speed and near the stall: ModAirFlight.Authority).
+	public const float FighterPitchRate = 40f;
+	public const float OtherPitchRate = 20f;
+	public const float FighterEasyRate = 25f;
+	public const float OtherEasyRate = 12f;
+	public const float MaxAimDown = 60f;
+	public const float MaxAimUp = 50f;
+	// Banking. The bank itself comes from the speed and the wanted turn (coordinated turn); this is the most a plane will bank.
+	public const float MaxBank = 80f;
+	// v0.26.4 acrobatics (degrees per second, seconds, units of 10 m)
+	// Slow and heavy like a real fighter at speed: a half roll takes about 2.5 seconds and a full split-S about 6 seconds.
+	public const float RollOverRate = 70f;
+	public const float PullRate = 30f;
+	public const float BarrelTime = 3.5f;
+	public const float PullOutHeight = 45f;
+	public const float AcroMinHeight = 100f;
+	public const float BulletTravelSpeed = 80f;
+	// 0.28 acrobatics
+	public const float ImmelmannRate = 45f;        // degrees per second up the half loop
+	public const float ImmelmannRoll = 120f;       // degrees per second rolling upright at the top
+	public const float ImmelmannMinHeight = 60f;   // 600 m
+	public const float PitchbackRate = 55f;        // degrees per second pulling up
+	public const float PitchbackTop = 75f;         // nose angle at the top of the pull, degrees up
+	public const float PitchbackYaw = 80f;         // degrees per second the nose swings round at the top
+	public const float PitchbackDown = 60f;        // degrees per second the nose drops onto the target
+	public const float HighGBarrelTime = 4.5f;
+	public const float HighGBarrelPitch = 22f;     // degrees of nose-up at the top of the roll
+	public const float HighGTurnMul = 1.5f;
+	public const float HighGBleed = 0.12f;         // speed lost per second (game units) from the extra g
+	public const float BarrelAttackTime = 4f;
+	public const float BarrelAttackPitch = 14f;
+	public const float StallMargin = 1.15f;        // a loop must reach its top at this multiple of the stall speed
+	public static int[] acroStarted = new int[8];
+
+	// ---- idle climb (fighters that are not fighting go back to the altitude they cruised at)
+	public const bool IdleClimbOn = true;
+	public const float IdleMargin = 150f * 0.1f;   // only when this far below the cruise altitude
+	public const float IdleStep = 300f * 0.1f;     // asks for at most this much more height at a time
+	public const float IdleMinHeight = 400f * 0.1f; // never near the sea (take-off, landing)
+	private static Dictionary<int, float> cruiseY = new Dictionary<int, float>();
+	private static Dictionary<int, float> lastIdleLog = new Dictionary<int, float>();
+	private static int idleLogged;
+
+	// ---- combat flaps
+	public const float FlapHold = 1.5f;     // seconds flaps stay out or in once changed
+	public const float FlapAutoOn = 0.8f;   // an unasked turn above this share of the sustained rate puts the flaps out
+	public const float FlapAutoOff = 0.4f;  // ... and below this share brings them in
+	private static HashSet<int> flapsOn = new HashSet<int>();
+	private static Dictionary<int, float> flapReq = new Dictionary<int, float>();
+	private static Dictionary<int, float> flapReqUntil = new Dictionary<int, float>();
+	private static Dictionary<int, float> flapChanged = new Dictionary<int, float>();
+	private static int flapLogged;
+
+	// ---- logs
+	private class Acc
+	{
+		public float e;
+		public float h;
+		public float v;
+		public float dt;
+		public float below;
+		public HashSet<int> ids = new HashSet<int>();
+	}
+	private static void AddSample(Acc b, float e, float y, float speed, float dt, bool below, int id)
+	{
+		b.e += e * dt;
+		b.h += y * dt;
+		b.v += speed * dt;
+		b.dt += dt;
+		if (below)
+		{
+			b.below += dt;
+		}
+		b.ids.Add(id);
+	}
+	// index 0 = ours, 1 = enemy. window = since the last [ENERGY] line (10 s), battle = the whole battle.
+	private static Dictionary<string, Acc>[] window = new Dictionary<string, Acc>[] { new Dictionary<string, Acc>(), new Dictionary<string, Acc>() };
+	private static Acc[] battle = new Acc[] { new Acc(), new Acc() };
+	// 0.28: the [BATTLE] line shows the last 60 s (two 30 s halves) as well as the whole battle, so a recovery shows up in it. A gap of 30 s with no
+	// sample starts a new battle.
+	private static Acc[] recentA = new Acc[] { new Acc(), new Acc() };
+	private static Acc[] recentB = new Acc[] { new Acc(), new Acc() };
+	private static float recentStart;
+	private static float lastSample;
+	public const float RecentSeconds = 30f;
+	private static float nextEnergyLog;
+	public const float EnergyLogSeconds = 10f;
+	private static Dictionary<int, float> lastTurnLog = new Dictionary<int, float>();
+	private static int turnLogged;
+	private static HashSet<string> rowLogged = new HashSet<string>();
+
+	private class AcroState
+	{
+		public int kind;      // 1 roll-over attack, 2 split-S, 3 barrel roll, 4 Immelmann, 5 pitchback, 6 high-g barrel roll, 7 barrel roll attack
+		public int phase;     // 0 rolling inverted, 1 pulling, 2 pulling out
+		public float t;
+		public float x;       // nose angle, degrees, positive = down (past 90 the plane is going back the way it came)
+		public float yaw;
+		public float hold;    // seconds spent lined up on the target
+		public float z;       // roll, degrees (barrel roll: how far round)
+		public Unit target;
+	}
+
+	private static Dictionary<int, AcroState> acro = new Dictionary<int, AcroState>();
+	private static Dictionary<int, int> ranks = new Dictionary<int, int>();
+	private static bool crewLogged = false;
+	private static bool lastCrew = false;
+	// What the game's pitch and roll should read after an acrobatic tick (UnitAir copies these into currentPitch / currentRoll).
+	public static float AcroPitch = 0f;
+	public static float AcroRoll = 0f;
+
+	private static bool Applies(UnitAir ua)
+	{
+		if (failed || ua == null || ua.unitData == null || ua.isDestroyed || ua.shootDown || ua.isParked)
+		{
+			return false;
+		}
+		if (ua.unitAI == null)
+		{
+			return false;
+		}
+		Maneuvre m = ua.unitAI.currentManeuvre;
+		return m == Maneuvre.None || m == Maneuvre.Break_Left || m == Maneuvre.Break_Right;
+	}
+
+	// 0.26.5: a dive bomber in its dive (Dive_Bomb or DiveBomb_Dive) is flown by the game's own manoeuvre code, which turns the plane by hand-made
+	// curves. The energy rule (a dive builds speed) and the dive speed limit apply there too; stall, turn limits and the rest of the model do not.
+	private static bool Bombing(UnitAir ua)
+	{
+		if (failed || ua == null || ua.unitData == null || ua.isDestroyed || ua.shootDown || ua.isParked || ua.unitAI == null)
+		{
+			return false;
+		}
+		Maneuvre m = ua.unitAI.currentManeuvre;
+		return m == Maneuvre.Dive_Bomb || m == Maneuvre.DiveBomb_Dive;
+	}
+
+	// Call as the first line of UnitAir.UpdateMovementData.
+	public static void Begin(UnitAir ua)
+	{
+		if (failed)
+		{
+			return;
+		}
+		startSpeed[((UnityEngine.Object)ua).GetInstanceID()] = ua.currentSpeed;
+		// 0.28: damage, fuel, altitude and bombs write the plane's live row; a follower flies its slot; a pilot who sees a collision coming breaks away.
+		ModAirDamage.Refresh(ua);
+		ModAirFormation.Apply(ua);
+		ModAirCollide.Avoid(ua);
+	}
+
+	// The row of numbers for this plane. A hand-set row may replace the game's top speed for the type (once, logged).
+	private static ModAirFlight.Row Prepare(UnitAir ua, UnitData d)
+	{
+		ModAirFlight.Row r = ModAirFlight.Of(ua);
+		if (r.tuned && r.maxSpeed > 0f && Mathf.Abs(d.maxSpeed - r.maxSpeed) > 0.001f)
+		{
+			if (rowLogged.Add(d.unitName))
+			{
+				Debug.Log((object)("[AIRFLIGHT] " + d.unitName + " (" + r.name + "): top speed " + d.maxSpeed.ToString("F1") + " (" + (d.maxSpeed * 36f).ToString("F0") + " km/h) from the data file replaced by " + r.maxSpeed.ToString("F1") + " (" + (r.maxSpeed * 36f).ToString("F0") + " km/h) from ModAirFlight; corner " + (r.cornerSpeed * 36f).ToString("F0") + " km/h, stall " + (r.stallSpeed * 36f).ToString("F0") + " km/h, turn " + r.sustainedTurnRate.ToString("F1") + "/" + r.instantTurnRate.ToString("F1") + " deg/s, climb " + r.climbPower.ToString("F1") + " m/s"));
+			}
+			d.maxSpeed = r.maxSpeed;
+		}
+		else if (!r.tuned && rowLogged.Add(d.unitName))
+		{
+			Debug.Log((object)("[AIRFLIGHT] " + d.unitName + ": no hand-set row, flying on numbers made from the data file (top speed " + d.maxSpeed.ToString("F1") + ", turn " + d.maxTurnRate.ToString("F1") + " deg/s)"));
+		}
+		return r;
+	}
+
+	// The plane's bank angle in degrees (UnitAir.currentRoll is private; the plane's rotation carries the same value).
+	private static float RollOf(UnitAir ua)
+	{
+		float z = ((Component)ua).transform.eulerAngles.z;
+		return (z > 180f) ? z - 360f : z;
+	}
+
+	// Turn rate in degrees per second that the current bank supports at this speed (0 if the plane is not banked into this turn).
+	// The game's roll is negative for a positive turn rate.
+	private static float SupportedTurn(float roll, float turn, float speed)
+	{
+		if (roll * turn >= 0f)
+		{
+			return 0f;
+		}
+		float v = Mathf.Max(speed * 10f, 30f);
+		float bank = Mathf.Min(Mathf.Abs(roll), 85f) * Mathf.Deg2Rad;
+		return Mathf.Tan(bank) * ModAirFlight.G / v * Mathf.Rad2Deg;
+	}
+
+	// v0.28.17: the slowest turn the rudder still gives: MinRudderTurn, at most RudderShare of the plane's instant turn rate, fading to 0 below the stall speed.
+	public static float RudderTurn(ModAirFlight.Row r, float speed, float vs)
+	{
+		float rudder = Mathf.Min(MinRudderTurn, RudderShare * r.instantTurnRate);
+		return rudder * Mathf.Clamp01(speed / Mathf.Max(0.01f, vs));
+	}
+
+	// Call as the last line of UnitAir.UpdateMovementData.
+	public static void End(UnitAir ua, float duration)
+	{
+		try
+		{
+			// v0.28.6: the game hands over (frame time x Time.timeScale) and the frame time is already scaled, so at x10 the duration was 10 times the
+			// battle seconds. Speed, pitch, roll and the collision look-ahead all ran too fast at time compression (0.28.4 only fixed the fuel).
+			duration = duration / Mathf.Max(1f, Time.timeScale);
+			// v0.28.18: a shot-down plane can blow up, and one that lost a wing spins down (ModAirDamage.Falling)
+			if (ua.shootDown)
+			{
+				ModAirDamage.Falling(ua, duration);
+				return;
+			}
+			bool bombing = Bombing(ua);
+			if (duration <= 0f || (!Applies(ua) && !bombing))
+			{
+				return;
+			}
+			int id = ((UnityEngine.Object)ua).GetInstanceID();
+			float before;
+			if (!startSpeed.TryGetValue(id, out before))
+			{
+				return;
+			}
+			UnitData d = ua.unitData;
+			ModAirFlight.Row r = Prepare(ua, d);
+			float maxSpeed = d.maxSpeed;
+			if (maxSpeed <= 0f)
+			{
+				return;
+			}
+			bool fighter = d.unitSubtype == UnitSubType.Fighter;
+			Transform tr = ((Component)ua).transform;
+			float y = tr.position.y;
+			// Sine of the nose angle, positive = nose down. Taken from where the plane points, so inverted flight is right too.
+			float sinPitch = -tr.forward.y;
+			// v0.28.17: a plane that appears in the air standing still gets flying speed at once (see SpawnSpeedOverStall)
+			if (seen.Add(id) && y > 15f && before < r.stallSpeed * 1.2f)
+			{
+				before = Mathf.Min(maxSpeed, Mathf.Max(ua.wantedSpeed, r.stallSpeed * SpawnSpeedOverStall));
+				ua.currentSpeed = before;
+				startSpeed[id] = before;
+				if (spawnLogged < 20)
+				{
+					spawnLogged++;
+					Debug.Log((object)("[FLIGHT] " + d.unitName + " id " + id + " appeared in the air at a standstill: starts at " + (before * 36f).ToString("F0") + " km/h"));
+				}
+			}
+			float diveSpeed = maxSpeed * r.diveSpeed;
+
+			if (bombing)
+			{
+				// the game flies this manoeuvre; only the energy of the dive is added (v0.26.5 rule)
+				float bs = ua.currentSpeed;
+				if (sinPitch > 0.1f && bs < before)
+				{
+					bs += (before - bs) * DiveRefund * Mathf.Clamp01(sinPitch * 2f);
+				}
+				bs += Gravity * BombGravityScale * sinPitch * duration;
+				if (bs > diveSpeed)
+				{
+					bs = diveSpeed;
+				}
+				float brake = ModAirDamage.VneNow(ua) * DiveBrakeShare;
+				if (brake > 0f && bs > brake)
+				{
+					bs = brake;
+				}
+				ua.currentSpeed = bs;
+				ua.percentMaxSpeed = bs / maxSpeed * ua.currentSpeedPenalty;
+				ModAirDamage.Tick(ua, duration, 1f, bs);
+				ModAirCollide.Check(ua, duration * Mathf.Max(1f, Time.timeScale));
+				float lastDive;
+				if ((!lastDiveLog.TryGetValue(id, out lastDive) || Time.time - lastDive > 1f) && bombLogged < 300)
+				{
+					lastDiveLog[id] = Time.time;
+					bombLogged++;
+					Debug.Log((object)("[FLIGHT] " + d.unitName + " id " + id + " dive: nose " + (Mathf.Asin(Mathf.Clamp(sinPitch, -1f, 1f)) * 57.29578f).ToString("F0") + " deg down, speed " + bs.ToString("F1") + " of max " + maxSpeed.ToString("F1") + " (limit " + diveSpeed.ToString("F1") + "), height " + (y * 10f).ToString("F0") + " m"));
+				}
+				return;
+			}
+
+			// Flaps, skid, idle climb: the state this tick's physics is worked out with.
+			float turnDeg = Mathf.Abs(ua.currentTurnRate);
+			bool flaps = UpdateFlaps(ua, r, id, before, turnDeg, fighter);
+			float supported = SupportedTurn(RollOf(ua), ua.currentTurnRate, before);
+			float skid = (turnDeg > supported) ? Mathf.Clamp01((turnDeg - supported) / RudderAssist) : 0f;
+			IdleClimb(ua, r, id, y, fighter);
+
+			// v0.28.17: turn drag is paid only for the turn the plane can really make at this speed (before, a rudder turn faster than the wing allows
+			// cost full drag at any speed, even at a standstill, and a slow bomber hung at speed 0 turning in place)
+			float vs0 = ModAirFlight.StallSpeed(r, flaps);
+			float dragTurn = Mathf.Min(turnDeg, Mathf.Max(ModAirFlight.TurnLimit(r, before, flaps), RudderTurn(r, before, vs0)));
+			// SPEED: thrust - drag - turn drag (+ skid) + gravity along the nose, from the speed at the start of the tick. This replaces the game's
+			// own MoveTowards(currentSpeed, wantedSpeed, acceleration): wantedSpeed now only sets the throttle (ModAirFlight.Throttle).
+			float speed = before;
+			float throttle = 1f;
+			int steps = Mathf.Max(1, Mathf.CeilToInt(duration / MaxStep));
+			float dt = duration / (float)steps;
+			// v0.28.5: chase power (emergency thrust for a fighter running down a plane it cannot gain on). duration is in game seconds multiplied by the time compression twice.
+			float boost = ModAirFlight.ChaseFactor(ua, duration);
+			for (int i = 0; i < steps; i++)
+			{
+				throttle = ModAirFlight.Throttle(r, speed, ua.wantedSpeed, sinPitch, dragTurn, flaps);
+				float a = ModAirFlight.Accel(r, speed, throttle, flaps, dragTurn, skid, SkidDragShare) + Gravity * EnergyScale * sinPitch;
+				// v0.28.17: below the stall speed the plane falls and picks up airspeed whatever its nose is doing
+				if (speed < vs0 && y > 1f)
+				{
+					a += Gravity * StallFall;
+				}
+				if (boost > 1f)
+				{
+					a += (boost - 1f) * throttle * ModAirFlight.ThrustAvail(r, speed) / 10f;
+				}
+				speed += a * dt;
+				// 0.28: no dive speed limit. Drag rises steeply near the structural speed (ModAirFlight.Drag) and above it the wings come off.
+				if (speed > diveSpeed * OverspeedSanity)
+				{
+					speed = diveSpeed * OverspeedSanity;
+				}
+				if (speed < 0f)
+				{
+					speed = 0f;
+				}
+			}
+
+			// STALL: below the stall speed (flaps lower it, a skid raises it) the plane cannot hold its nose up. Keep a margin once recovered so the nose does not flicker.
+			float vs = ModAirFlight.StallSpeed(r, flaps) * (1f + SkidStall * skid);
+			if (speed >= vs * 1.25f)
+			{
+				stalled.Remove(id);
+			}
+			if (speed < vs * 1.05f && y > 15f)
+			{
+				stalled.Add(id);
+				if (ua.wantedHeight > y - 10f)
+				{
+					ua.wantedHeight = y - 10f;
+				}
+				float last;
+				if (!lastStallLog.TryGetValue(id, out last) || Time.time - last > 5f)
+				{
+					lastStallLog[id] = Time.time;
+					Debug.Log((object)("[FLIGHT] " + d.unitName + " id " + id + " stalling at speed " + speed.ToString("F1") + " (stall " + vs.ToString("F1") + (flaps ? ", flaps out" : "") + "): nose dropping"));
+				}
+			}
+			// v0.28.17: and it sinks while it has no flying speed (the game only moves a plane along its nose, so at speed 0 it hung in the air)
+			if (speed < vs0 && y > 1f)
+			{
+				float sink = StallSink * (1f - Mathf.Clamp01(speed / Mathf.Max(0.01f, vs0))) * duration;
+				tr.position = tr.position - Vector3.up * sink;
+			}
+			ua.currentSpeed = speed;
+			// The game's own turn penalty on the speed is switched off: the turn costs speed through turn drag instead (it would count twice).
+			ua.currentSpeedPenalty = 1f;
+			ua.percentMaxSpeed = speed / maxSpeed;
+			// 0.28: fuel, fire and overspeed break-up; then collisions with other aircraft.
+			ModAirDamage.Tick(ua, duration, (boost > 1f) ? throttle * ModAirFlight.ChaseFuel : throttle, speed);
+			ModAirCollide.Check(ua, duration * Mathf.Max(1f, Time.timeScale));
+
+			// TURN LIMIT by speed (lift below corner speed, airframe above), flaps included.
+			float cap = ModAirFlight.TurnLimit(r, speed, flaps);
+			if (cap < MinRudderTurn || stalled.Contains(id))
+			{
+				cap = Mathf.Max(stalled.Contains(id) ? 0f : cap, RudderTurn(r, speed, vs));
+			}
+			if (ua.currentTurnRate > cap)
+			{
+				ua.currentTurnRate = cap;
+			}
+			else if (ua.currentTurnRate < -cap)
+			{
+				ua.currentTurnRate = -cap;
+			}
+			ModFlight.Yaw(ua, duration, fighter, speed, vs);
+
+			if (fighter)
+			{
+				Sample(ua, d, r, id, y, speed, duration);
+				TurnLog(ua, d, r, id, y, speed, before, duration, turnDeg, flaps, skid, throttle, cap);
+			}
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[FLIGHT] flight core failed and stopped: " + ex.Message + " " + ex.StackTrace));
+		}
+	}
+
+	// ---------------- combat flaps ----------------
+	// The AI calls this every tick it wants flaps out (on = true) or in (false); a request lasts 0.6 s. Without a request the flaps come out
+	// by themselves in a hard turn. Flaps are always retracted above the plane's flap speed limit and during acrobatics.
+	public static void FlapsRequest(UnitAir ua, bool on)
+	{
+		if (failed || ua == null)
+		{
+			return;
+		}
+		int id = ((UnityEngine.Object)ua).GetInstanceID();
+		flapReq[id] = on ? 1f : 0f;
+		flapReqUntil[id] = Time.time + 0.6f;
+	}
+
+	public static bool FlapsOut(Unit u)
+	{
+		return u != null && u.unitAir != null && flapsOn.Contains(((UnityEngine.Object)u.unitAir).GetInstanceID());
+	}
+
+	private static bool UpdateFlaps(UnitAir ua, ModAirFlight.Row r, int id, float speed, float turnDeg, bool fighter)
+	{
+		float now = Time.time;
+		bool on = flapsOn.Contains(id);
+		bool want;
+		float until;
+		float req;
+		if (flapReqUntil.TryGetValue(id, out until) && now <= until && flapReq.TryGetValue(id, out req))
+		{
+			want = req > 0.5f;
+		}
+		else
+		{
+			want = fighter && turnDeg > (on ? FlapAutoOff : FlapAutoOn) * r.sustainedTurnRate;
+		}
+		bool forced = speed > r.flapSpeedLimit || AcroActive(ua);
+		if (forced)
+		{
+			want = false;
+		}
+		float changed;
+		if (!flapChanged.TryGetValue(id, out changed))
+		{
+			changed = -100f;
+		}
+		if (want != on && (forced || now - changed >= FlapHold))
+		{
+			if (want)
+			{
+				flapsOn.Add(id);
+			}
+			else
+			{
+				flapsOn.Remove(id);
+			}
+			flapChanged[id] = now;
+			on = want;
+			if (flapLogged < 150)
+			{
+				flapLogged++;
+				Debug.Log((object)("[TURN] " + ua.unitData.unitName + " id " + id + " (" + SideName(ua) + ") combat flaps " + (on ? "OUT" : "IN") + (forced && !on ? " (over the flap speed limit " + (r.flapSpeedLimit * 36f).ToString("F0") + " km/h or in a manoeuvre)" : "") + " at " + (speed * 36f).ToString("F0") + " km/h, turning " + turnDeg.ToString("F1") + " deg/s (sustained " + r.sustainedTurnRate.ToString("F1") + ")"));
+			}
+		}
+		return on;
+	}
+
+	private static string SideName(UnitAir ua)
+	{
+		return (ua.unitAI != null && ua.unitAI.parentUnit != null && ua.unitAI.parentUnit.faction == Faction.Player) ? "ours" : "enemy";
+	}
+
+	// ---------------- idle climb ----------------
+	// A fighter that is flying to a waypoint or following its leader (not fighting) remembers the height it cruises at. If it is more than 150 m below
+	// that (a fight pulled it down) it asks for more height, at the speed its engine climbs best. Followers copy the leader's wanted height.
+	private static void IdleClimb(UnitAir ua, ModAirFlight.Row r, int id, float y, bool fighter)
+	{
+		if (!IdleClimbOn || !fighter || ua.unitAI == null)
+		{
+			return;
+		}
+		AIAction act = ua.unitAI.currentAIAction;
+		if (act != AIAction.Follow_Nav_Points && act != AIAction.Follow_Unit)
+		{
+			return;
+		}
+		if (y < IdleMinHeight)
+		{
+			return;
+		}
+		float c;
+		if (!cruiseY.TryGetValue(id, out c))
+		{
+			c = 0f;
+		}
+		if (y > c && Mathf.Abs(y - ua.wantedHeight) < 5f && ua.currentSpeed > r.cornerSpeed * 0.7f)
+		{
+			cruiseY[id] = y;
+			c = y;
+		}
+		if (c <= 0f)
+		{
+			c = ModAirFlight.Cruise(ua.unitAI.parentUnit);
+		}
+		if (y > c - IdleMargin)
+		{
+			return;
+		}
+		float want = Mathf.Min(c, y + IdleStep);
+		if (ua.wantedHeight < want)
+		{
+			ua.wantedHeight = want;
+		}
+		float climbSpeed = r.maxSpeed * ModAirFlight.BestClimbShare * 1.25f;
+		if (ua.wantedSpeed < climbSpeed)
+		{
+			ua.wantedSpeed = climbSpeed;
+		}
+		float last;
+		if (idleLogged < 60 && (!lastIdleLog.TryGetValue(id, out last) || Time.time - last > 30f))
+		{
+			lastIdleLog[id] = Time.time;
+			idleLogged++;
+			Debug.Log((object)("[ENERGY] " + ua.unitData.unitName + " id " + id + " (" + SideName(ua) + ") is not fighting and sits at " + (y * 10f).ToString("F0") + " m, climbing back to its cruise altitude of " + (c * 10f).ToString("F0") + " m"));
+		}
+	}
+
+	// ---------------- helpers for the fighter AI (ModDogfight) ----------------
+	// Specific energy in metres (height + v^2 / 2g).
+	public static float EnergyOf(Unit u)
+	{
+		if (u == null)
+		{
+			return 0f;
+		}
+		return ModAirFlight.Energy(u.transform.position.y, u.currentSpeed);
+	}
+
+	// The turn rate the plane can pull right now (lift and airframe limit at its speed, flaps as they are).
+	public static float TurnLimitNow(Unit u)
+	{
+		ModAirFlight.Row r = ModAirFlight.Of(u);
+		if (r == null)
+		{
+			return u.unitData.maxTurnRate;
+		}
+		return Mathf.Max(MinRudderTurn, ModAirFlight.TurnLimit(r, u.currentSpeed, FlapsOut(u)));
+	}
+
+	// The turn rate the plane can hold without losing speed right now.
+	public static float SustainedTurnNow(Unit u)
+	{
+		ModAirFlight.Row r = ModAirFlight.Of(u);
+		if (r == null)
+		{
+			return u.unitData.maxTurnRate * 0.7f;
+		}
+		return Mathf.Max(MinRudderTurn, ModAirFlight.SustainedTurn(r, u.currentSpeed, FlapsOut(u)));
+	}
+
+	// The height this fighter normally cruises at, in game units: what it was last seen cruising at, or the doctrine height for its nation.
+	public static float CruiseHeight(Unit u)
+	{
+		float c;
+		if (u != null && u.unitAir != null && cruiseY.TryGetValue(((UnityEngine.Object)u.unitAir).GetInstanceID(), out c) && c > 0f)
+		{
+			return c;
+		}
+		return ModAirFlight.Cruise(u);
+	}
+
+	// ---------------- energy statistics and logs ----------------
+	private static void AddTo(Dictionary<string, Acc> dict, string key, int id, float e, float h, float v, float dt, bool below)
+	{
+		Acc a;
+		if (!dict.TryGetValue(key, out a))
+		{
+			a = new Acc();
+			dict[key] = a;
+		}
+		a.e += e * dt;
+		a.h += h * dt;
+		a.v += v * dt;
+		a.dt += dt;
+		if (below)
+		{
+			a.below += dt;
+		}
+		a.ids.Add(id);
+	}
+
+	private static void Sample(UnitAir ua, UnitData d, ModAirFlight.Row r, int id, float y, float speed, float dt)
+	{
+		int side = (ua.unitAI.parentUnit.faction == Faction.Player) ? 0 : 1;
+		float e = ModAirFlight.Energy(y, speed);
+		bool below = speed < r.cornerSpeed;
+		AddTo(window[side], d.unitName, id, e, y, speed, dt, below);
+		float now = Time.time;
+		if (now - lastSample > 30f)
+		{
+			for (int k = 0; k < 2; k++)
+			{
+				battle[k] = new Acc();
+				recentA[k] = new Acc();
+				recentB[k] = new Acc();
+			}
+			recentStart = now;
+		}
+		lastSample = now;
+		if (now - recentStart >= RecentSeconds)
+		{
+			recentB = recentA;
+			recentA = new Acc[] { new Acc(), new Acc() };
+			recentStart = now;
+		}
+		// v0.28.8: no per-sample array (this ran for every plane every tick)
+		ModFlight.AddSample(battle[side], e, y, speed, dt, below, id);
+		ModFlight.AddSample(recentA[side], e, y, speed, dt, below, id);
+		if (now >= nextEnergyLog)
+		{
+			if (nextEnergyLog > 0f)
+			{
+				LogEnergy(now);
+			}
+			nextEnergyLog = now + EnergyLogSeconds;
+		}
+	}
+
+	// [ENERGY] every 10 s: per side and aircraft type, the number of planes seen, average specific energy, height, speed and the share of time spent
+	// below corner speed (too slow to turn at its best).
+	private static void LogEnergy(float now)
+	{
+		string line = "";
+		float[] sideE = new float[2];
+		float[] sideDt = new float[2];
+		for (int s = 0; s < 2; s++)
+		{
+			foreach (KeyValuePair<string, Acc> kv in window[s])
+			{
+				Acc a = kv.Value;
+				if (a.dt <= 0f)
+				{
+					continue;
+				}
+				sideE[s] += a.e;
+				sideDt[s] += a.dt;
+				line += (s == 0 ? "ours " : "enemy ") + kv.Key + " x" + a.ids.Count + ": E " + (a.e / a.dt).ToString("F0") + " m (height " + (a.h / a.dt * 10f).ToString("F0") + " m, speed " + (a.v / a.dt * 36f).ToString("F0") + " km/h, below corner speed " + (a.below / a.dt * 100f).ToString("F0") + "%); ";
+			}
+			window[s].Clear();
+		}
+		if (line.Length == 0)
+		{
+			return;
+		}
+		line += "| average E ours " + (sideDt[0] > 0f ? (sideE[0] / sideDt[0]).ToString("F0") : "-") + " m, enemy " + (sideDt[1] > 0f ? (sideE[1] / sideDt[1]).ToString("F0") : "-") + " m";
+		Debug.Log((object)("[ENERGY] " + now.ToString("F0") + " s: " + line));
+	}
+
+	// For ModDogfight.Status ([BATTLE] every 60 s). 0.28: the average energy is now the last 60 s and the whole battle side by side. In 0.27 only the
+	// cumulative figure was shown, so a plane that had recovered still read as low.
+	public static string BattleEnergyText()
+	{
+		string t = "";
+		for (int s = 0; s < 2; s++)
+		{
+			Acc w = new Acc();
+			w.e = recentA[s].e + recentB[s].e;
+			w.h = recentA[s].h + recentB[s].h;
+			w.dt = recentA[s].dt + recentB[s].dt;
+			w.below = recentA[s].below + recentB[s].below;
+			Acc b = battle[s];
+			t += (s == 0 ? "ours" : "enemy") + " E last 60 s " + (w.dt > 0f ? (w.e / w.dt).ToString("F0") : "-") + " m (height " + (w.dt > 0f ? (w.h / w.dt * 10f).ToString("F0") : "-") + " m, below corner speed " + (w.dt > 0f ? (w.below / w.dt * 100f).ToString("F0") : "-") + "%), whole battle E " + (b.dt > 0f ? (b.e / b.dt).ToString("F0") : "-") + " m (below corner speed " + (b.dt > 0f ? (b.below / b.dt * 100f).ToString("F0") : "-") + "%)" + (s == 0 ? "; " : "");
+		}
+		return t;
+	}
+
+	// [TURN]: a fighter in a hard turn, at most once every 6 s per plane and 250 lines in all. Shows what the turn costs.
+	private static void TurnLog(UnitAir ua, UnitData d, ModAirFlight.Row r, int id, float y, float speed, float before, float dt, float turnDeg, bool flaps, float skid, float throttle, float cap)
+	{
+		if (turnLogged >= 250 || turnDeg < 0.6f * r.sustainedTurnRate)
+		{
+			return;
+		}
+		float last;
+		if (lastTurnLog.TryGetValue(id, out last) && Time.time - last < 6f)
+		{
+			return;
+		}
+		lastTurnLog[id] = Time.time;
+		turnLogged++;
+		float v = speed * 10f;
+		float n = Mathf.Sqrt(1f + Mathf.Pow(v * turnDeg * Mathf.Deg2Rad / ModAirFlight.G, 2f));
+		float spare = ModAirFlight.ThrustAvail(r, speed) - ModAirFlight.Drag(r, speed, flaps);
+		Debug.Log((object)("[TURN] " + d.unitName + " id " + id + " (" + SideName(ua) + ") turning " + turnDeg.ToString("F1") + " deg/s (limit here " + cap.ToString("F1") + ", sustained " + ModAirFlight.SustainedTurn(r, speed, flaps).ToString("F1") + ", instant " + r.instantTurnRate.ToString("F1") + "), speed " + (speed * 36f).ToString("F0") + " km/h (corner " + (r.cornerSpeed * 36f).ToString("F0") + ", stall " + (ModAirFlight.StallSpeed(r, flaps) * 36f).ToString("F0") + "), flaps " + (flaps ? "OUT" : "in") + ", bank " + Mathf.Abs(RollOf(ua)).ToString("F0") + ", " + n.ToString("F1") + " g, turn drag " + ModAirFlight.TurnDrag(r, turnDeg, flaps).ToString("F2") + " m/s2 vs spare thrust " + spare.ToString("F2") + ", skid " + skid.ToString("F2") + ", throttle " + throttle.ToString("F2") + ", speed change " + ((speed - before) / Mathf.Max(dt, 0.001f) * 10f).ToString("F2") + " m/s2, E " + ModAirFlight.Energy(y, speed).ToString("F0") + " m"));
+	}
+
+	// ---------------- v0.26.5.8 yaw (rudder) ----------------
+	// A fighter lining up a shot may swing its nose sideways with the rudder, without banking. The nose points at the target while the plane keeps
+	// flying where it was going (a slip). The slip then bleeds away, which turns the flight path onto the nose. Slipping costs a little speed.
+	// Pilot rank scales it: Green half, Trained 3/4, Veteran full, Elite 1.25 times.
+	public const float YawRate = 12f;      // degrees per second the rudder can swing the nose (v0.28.7: was 30, the nose snapped left and right)
+	public const float SlipMax = 4f;       // the most the nose may point off the flight path, degrees (v0.28.7: was 8)
+	public const float YawReach = 12f;     // the rudder is only used when the aim error is this small, degrees
+	public const float YawDeadband = 1.5f; // v0.28.7: no rudder for an aim error smaller than this, degrees (was 0.5)
+	public const float YawMaxTurn = 3f;    // v0.28.7: no rudder while the plane is in a banked turn faster than this (deg/s): the bank and the rudder used to fight over the same error
+	public const float SlipBleed = 6f;     // degrees per second the flight path catches up with the nose
+	// 0.26.5.9: how much pilot rank changes the rudder (0 = every pilot the same, 1 = Green half to Elite 1.25 times)
+	public const float YawRankEffect = 0.25f;
+	public const float SlipDrag = 0.3f;    // speed lost per second at full slip (v0.28.7: was 0.6)
+	private static Dictionary<int, float> slip = new Dictionary<int, float>();
+	private static Dictionary<int, float> yawErr = new Dictionary<int, float>();
+	private static Dictionary<int, float> yawUntil = new Dictionary<int, float>();
+	private static Dictionary<int, float> lastYawLog = new Dictionary<int, float>();
+	private static int yawLogged;
+
+	// Called every tick by ModDogfight.GunRun: err = signed angle the nose must turn to reach the aim point, degrees.
+	public static void AimYaw(UnitAir ua, float err)
+	{
+		if (failed || ua == null)
+		{
+			return;
+		}
+		int id = ((UnityEngine.Object)ua).GetInstanceID();
+		yawErr[id] = err;
+		yawUntil[id] = Time.time + 0.3f;
+	}
+
+	private static void Yaw(UnitAir ua, float duration, bool fighter, float speed, float stall)
+	{
+		int id = ((UnityEngine.Object)ua).GetInstanceID();
+		float s;
+		slip.TryGetValue(id, out s);
+		float ds = 0f;
+		float until;
+		float err;
+		if (fighter && speed > stall * 1.3f && Mathf.Abs(ua.currentTurnRate) < YawMaxTurn && yawUntil.TryGetValue(id, out until) && Time.time <= until && yawErr.TryGetValue(id, out err) && Mathf.Abs(err) > YawDeadband && Mathf.Abs(err) <= YawReach)
+		{
+			float skill = Mathf.Lerp(1f, 0.5f + 0.25f * (float)ModFlight.Rank(ua.unitAI.parentUnit), YawRankEffect);
+			float step = YawRate * skill * duration;
+			float want = Mathf.Clamp(err * 0.8f, -step, step);
+			float ns = Mathf.Clamp(s + want, -SlipMax * skill, SlipMax * skill);
+			ds = ns - s;
+			s = ns;
+		}
+		if (Mathf.Abs(ds) > 0.0001f)
+		{
+			Vector3 e = ((Component)ua).transform.eulerAngles;
+			e.y += ds;
+			((Component)ua).transform.eulerAngles = e;
+		}
+		if (s != 0f)
+		{
+			float b = Mathf.Min(Mathf.Abs(s), SlipBleed * duration);
+			s -= Mathf.Sign(s) * b;
+			ua.currentSpeed = Mathf.Max(0f, ua.currentSpeed - SlipDrag * Mathf.Abs(s) / SlipMax * duration);
+		}
+		slip[id] = s;
+		float last;
+		if (Mathf.Abs(ds) > 0.5f && yawLogged < 60 && (!lastYawLog.TryGetValue(id, out last) || Time.time - last > 3f))
+		{
+			lastYawLog[id] = Time.time;
+			yawLogged++;
+			Debug.Log((object)("[YAW] " + ua.unitData.unitName + " id " + id + " (" + ((ua.unitAI.parentUnit.faction == Faction.Player) ? "ours" : "enemy") + "): rudder swung the nose " + ds.ToString("F1") + " deg, slip now " + s.ToString("F1") + " deg"));
+		}
+	}
+
+	// Replaces the Translate line of UnitAir.ApplyUnitMovement: flies along the flight path, which is the nose turned back by the slip.
+	public static void Move(UnitAir ua, float distance)
+	{
+		float s;
+		if (!failed && slip.TryGetValue(((UnityEngine.Object)ua).GetInstanceID(), out s) && Mathf.Abs(s) > 0.01f)
+		{
+			Vector3 dir = Quaternion.AngleAxis(-s, Vector3.up) * ((Component)ua).transform.forward;
+			((Component)ua).transform.position += dir * distance;
+		}
+		else
+		{
+			((Component)ua).transform.Translate(0f, 0f, distance);
+		}
+	}
+
+	// Called every tick by ModDogfight.GunRun: pitchDown is the nose angle that points at the aim point, in degrees, positive = nose down.
+	public static void Aim(UnitAir ua, float pitchDown)
+	{
+		if (failed || ua == null)
+		{
+			return;
+		}
+		int id = ((UnityEngine.Object)ua).GetInstanceID();
+		aimPitch[id] = pitchDown;
+		aimUntil[id] = Time.time + 0.5f;
+	}
+
+	public static string AcroCounts()
+	{
+		return "acrobatics started: Immelmann " + acroStarted[4] + ", pitchback " + acroStarted[5] + ", high-g barrel roll " + acroStarted[6] + ", barrel roll attack " + acroStarted[7];
+	}
+
+	public static string AcroName(int kind)
+	{
+		switch (kind)
+		{
+		case 1: return "roll-over-attack";
+		case 2: return "split-S";
+		case 3: return "barrel-roll";
+		case 4: return "Immelmann";
+		case 5: return "pitchback";
+		case 6: return "high-g-barrel-roll";
+		case 7: return "barrel-roll-attack";
+		default: return "none";
+		}
+	}
+
+	// Text for the flight log: the pitch the pilot is aiming for, then acrobatics, pilot rank, slip, flaps and energy.
+	public static string AimText(UnitAir ua)
+	{
+		int id = ((UnityEngine.Object)ua).GetInstanceID();
+		float until;
+		float p;
+		string acroText = "";
+		AcroState a;
+		if (acro.TryGetValue(id, out a))
+		{
+			acroText = " acro " + AcroName(a.kind);
+		}
+		string pilot = "";
+		int r;
+		if (ranks.TryGetValue(id, out r))
+		{
+			pilot = " pilot " + RankName(r);
+		}
+		float sl;
+		if (slip.TryGetValue(id, out sl) && Mathf.Abs(sl) > 0.5f)
+		{
+			pilot += " slip " + sl.ToString("F1");
+		}
+		if (flapsOn.Contains(id))
+		{
+			pilot += " flaps";
+		}
+		if (stalled.Contains(id))
+		{
+			pilot += " STALLED";
+		}
+		pilot += " E " + ModAirFlight.Energy(((Component)ua).transform.position.y, ua.currentSpeed).ToString("F0");
+		pilot += ModAirDamage.FlightTag(ua);
+		if (aimUntil.TryGetValue(id, out until) && Time.time <= until && aimPitch.TryGetValue(id, out p))
+		{
+			return " aim " + p.ToString("F1") + acroText + pilot;
+		}
+		return acroText + pilot;
+	}
+
+	// Replaces the pitch line of UnitAir.ApplyFlightControls. current = the plane's pitch now, heightGap = the game's own wish (positive = nose down).
+	// The nose can only be pulled up as far as ModAirFlight.ClimbLimit allows (engine power, or spare speed for a zoom climb), and the pull rate
+	// shrinks at high speed and near the stall (a fast dive needs room to pull out).
+	public static float Pitch(UnitAir ua, float current, float heightGap, float duration)
+	{
+		duration = duration / Mathf.Max(1f, Time.timeScale);   // v0.28.6: battle seconds, see End
+		try
+		{
+			if (failed || ua.unitData == null)
+			{
+				return Mathf.SmoothDampAngle(current, heightGap, ref ua.pitchVelocity, 1f, 10f, duration);
+			}
+			int id = ((UnityEngine.Object)ua).GetInstanceID();
+			bool fighter = ua.unitData.unitSubtype == UnitSubType.Fighter;
+			bool applies = Applies(ua);
+			ModAirFlight.Row row = ModAirFlight.Of(ua);
+			bool flaps = flapsOn.Contains(id);
+			float authority = applies ? ModAirFlight.Authority(row, ua.currentSpeed, flaps) : 1f;
+			float upLimit = applies ? ModAirFlight.ClimbLimit(row, ua.currentSpeed, flaps) : 90f;
+			if (((Component)ua).transform.position.y < 30f)
+			{
+				// close to the sea or the deck: always allow a gentle climb (take-off, pulling out of a low attack)
+				upLimit = Mathf.Max(upLimit, 8f);
+			}
+			float until;
+			float wanted;
+			float y = ((Component)ua).transform.position.y;
+			if (aimUntil.TryGetValue(id, out until) && Time.time <= until && aimPitch.TryGetValue(id, out wanted) && applies)
+			{
+				// Do not fly into the sea: the lower the plane, the less it may dive.
+				float maxDown = MaxAimDown;
+				if (y < 50f)
+				{
+					maxDown = Mathf.Clamp((y - 10f) * 1.5f, 0f, MaxAimDown);
+				}
+				float target = Mathf.Clamp(wanted, -Mathf.Min(MaxAimUp, upLimit), maxDown);
+				if (y < 12f)
+				{
+					target = Mathf.Min(target, -5f);
+				}
+				if (stalled.Contains(id))
+				{
+					target = Mathf.Max(target, StallNoseDrop);
+				}
+				ua.pitchVelocity = 0f;
+				return Mathf.MoveTowards(current, target, (fighter ? FighterPitchRate : OtherPitchRate) * authority * duration);
+			}
+			float result = Mathf.SmoothDampAngle(current, heightGap, ref ua.pitchVelocity, 1f, (fighter ? FighterEasyRate : OtherEasyRate) * authority, duration);
+			if (applies)
+			{
+				if (result < -upLimit)
+				{
+					// more nose up than the engine or the speed can pay for: ease the nose down to the limit
+					result = Mathf.MoveTowards(current, -upLimit, (fighter ? FighterPitchRate : OtherPitchRate) * authority * duration);
+				}
+				if (stalled.Contains(id))
+				{
+					result = Mathf.MoveTowards(current, Mathf.Max(heightGap, StallNoseDrop), (fighter ? FighterPitchRate : OtherPitchRate) * duration);
+				}
+			}
+			return result;
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[FLIGHT] pitch control failed and stopped: " + ex.Message));
+			return Mathf.SmoothDampAngle(current, heightGap, ref ua.pitchVelocity, 1f, 10f, duration);
+		}
+	}
+
+	// Replaces the roll line of UnitAir.ApplyFlightControls. Rolls toward the bank a coordinated turn needs at this speed:
+	// tan(bank) = turn rate * speed / g. The roll rate is the plane's own and fades at high speed (heavy ailerons).
+	public static float Roll(UnitAir ua, float currentRoll, float currentTurnRate, float wantedTurnRate, float duration)
+	{
+		duration = duration / Mathf.Max(1f, Time.timeScale);   // v0.28.6: battle seconds, see End
+		try
+		{
+			if (failed || ua.unitData == null)
+			{
+				return Mathf.MoveTowards(currentRoll, currentTurnRate * -5f, 40f * duration);
+			}
+			float eased = wantedTurnRate;
+			if (!smoothTurn.TryGetValue(((UnityEngine.Object)ua).GetInstanceID(), out eased))
+			{
+				eased = wantedTurnRate;
+			}
+			ModAirFlight.Row row = ModAirFlight.Of(ua);
+			float v = Mathf.Max(ua.currentSpeed * 10f, 30f);
+			float bank = Mathf.Atan(Mathf.Abs(eased) * Mathf.Deg2Rad * v / ModAirFlight.G) * Mathf.Rad2Deg;
+			float target = ((eased < 0f) ? 1f : -1f) * Mathf.Min(bank, MaxBank);
+			return Mathf.MoveTowards(currentRoll, target, ModAirFlight.RollRate(row, ua.currentSpeed) * duration);
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[FLIGHT] roll control failed and stopped: " + ex.Message));
+			return Mathf.MoveTowards(currentRoll, currentTurnRate * -5f, 40f * duration);
+		}
+	}
+
+	// Replaces the turn rate line of UnitAir.ApplyFlightControls. The turn rate still moves toward the wish at the plane's own rate,
+	// but cannot be faster than the current bank supports at this speed, plus a few degrees per second of rudder (a skid, which costs speed).
+	public static float TurnRate(UnitAir ua, float current, float wanted, float currentRoll, float duration)
+	{
+		duration = duration / Mathf.Max(1f, Time.timeScale);   // v0.28.6: battle seconds, see End
+		float next = Mathf.MoveTowards(current, wanted, duration * ua.unitData.turnRate);
+		try
+		{
+			if (failed)
+			{
+				return next;
+			}
+			int id = ((UnityEngine.Object)ua).GetInstanceID();
+			float eased;
+			if (!smoothTurn.TryGetValue(id, out eased))
+			{
+				eased = current;
+			}
+			eased = Mathf.Lerp(eased, wanted, 1f - Mathf.Exp(-duration / StickTime));
+			smoothTurn[id] = eased;
+			next = Mathf.MoveTowards(current, eased, duration * ua.unitData.turnRate);
+			float allowed = SupportedTurn(currentRoll, next, ua.currentSpeed) + RudderAssist;
+			if (Mathf.Abs(next) > allowed && Mathf.Abs(next) > Mathf.Abs(current))
+			{
+				next = Mathf.Sign(next) * allowed;
+			}
+			return next;
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[FLIGHT] bank control failed and stopped: " + ex.Message));
+			return next;
+		}
+	}
+
+	// ---------------- v0.26.4 pilot rank ----------------
+	// 0 Green, 1 Trained, 2 Veteran, 3 Elite. Crews off (Mod Options) = every pilot is Elite so every manoeuvre can be tested and planes are never
+	// locked into simple attacks. Until air crew experience exists the rank comes from nation and year, fixed for each plane by its id.
+	public static int Rank(Unit u)
+	{
+		try
+		{
+			if (u == null || u.unitData == null)
+			{
+				return 3;
+			}
+			bool crewOn = ModOptions.Crew;
+			if (!crewLogged || crewOn != lastCrew)
+			{
+				crewLogged = true;
+				lastCrew = crewOn;
+				string camp = "no campaign seen";
+				if (CampaignManager.instance != null && CampaignManager.instance.campaignData != null)
+				{
+					camp = "campaign '" + CampaignManager.instance.campaignData.campaignID + "'";
+				}
+				Debug.Log((object)("[FLIGHT] Mod Options crew system reads " + (crewOn ? "ON (pilot ranks used)" : "OFF (every pilot Elite)") + ", " + camp));
+			}
+			if (!crewOn)
+			{
+				return 3;
+			}
+			int id = ((UnityEngine.Object)u).GetInstanceID();
+			int r;
+			if (ranks.TryGetValue(id, out r))
+			{
+				return r;
+			}
+			int year = 1942;
+			if (CampaignInterface.instance != null && CampaignInterface.instance.dateTime.Year > 1900)
+			{
+				year = CampaignInterface.instance.dateTime.Year;
+			}
+			// chance in percent of Green, Trained, Veteran (Elite is the rest)
+			int g;
+			int t;
+			int v;
+			if (u.unitData.nationIndex == 3)
+			{
+				if (year <= 1942) { g = 5; t = 25; v = 45; }
+				else if (year == 1943) { g = 15; t = 40; v = 35; }
+				else { g = 40; t = 40; v = 17; }
+			}
+			else
+			{
+				if (year <= 1942) { g = 15; t = 45; v = 30; }
+				else if (year == 1943) { g = 10; t = 35; v = 40; }
+				else { g = 5; t = 25; v = 45; }
+			}
+			int roll = new System.Random(id).Next(0, 100);
+			r = 3;
+			if (roll < g) { r = 0; }
+			else if (roll < g + t) { r = 1; }
+			else if (roll < g + t + v) { r = 2; }
+			ranks[id] = r;
+			Debug.Log((object)("[FLIGHT] " + u.unitData.unitName + " id " + id + " pilot is " + RankName(r) + " (nation " + u.unitData.nationIndex + ", " + year + ")"));
+			return r;
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[FLIGHT] pilot rank failed and stopped: " + ex.Message));
+			return 3;
+		}
+	}
+
+	public static string RankName(int rank)
+	{
+		switch (rank)
+		{
+		case 0: return "Green";
+		case 1: return "Trained";
+		case 2: return "Veteran";
+		default: return "Elite";
+		}
+	}
+
+	// How well the pilot leads his shots: 1 = perfect.
+	public static float LeadScale(Unit u)
+	{
+		int r = Rank(u);
+		if (r == 0)
+		{
+			return 0.6f;
+		}
+		if (r == 1)
+		{
+			return 0.85f;
+		}
+		return 1f;
+	}
+
+	// ---------------- v0.26.4 acrobatics ----------------
+	public static bool AcroActive(UnitAir ua)
+	{
+		return ua != null && acro.ContainsKey(((UnityEngine.Object)ua).GetInstanceID());
+	}
+
+	public static int AcroKind(UnitAir ua)
+	{
+		AcroState a;
+		if (ua != null && acro.TryGetValue(((UnityEngine.Object)ua).GetInstanceID(), out a))
+		{
+			return a.kind;
+		}
+		return 0;
+	}
+
+	private static AcroState NewAcro(UnitAir ua, int kind)
+	{
+		AcroState a = new AcroState();
+		a.kind = kind;
+		Vector3 e = ((Component)ua).transform.eulerAngles;
+		a.x = Wrap(e.x);
+		a.yaw = e.y;
+		a.z = Wrap(e.z);
+		acro[((UnityEngine.Object)ua).GetInstanceID()] = a;
+		return a;
+	}
+
+	private static float Wrap(float angle)
+	{
+		while (angle > 180f)
+		{
+			angle -= 360f;
+		}
+		while (angle < -180f)
+		{
+			angle += 360f;
+		}
+		return angle;
+	}
+
+	// 0.26.4.2.1: ground clearance. Battles can be fought over mountains; acrobatics must not dive into them.
+	// Height of the land under a point (0 over sea or when terrain is off), in game units (x 0.1 = metres).
+	public static float GroundAt(Vector3 p)
+	{
+		try
+		{
+			if (TerrainTiles.instance == null || TerrainTiles.instance.disableTerrain)
+			{
+				return 0f;
+			}
+			float g = TerrainTiles.instance.GetTerrainHeightAtWorldPosition(p);
+			return (g > 0f) ? g : 0f;
+		}
+		catch (Exception)
+		{
+			return 0f;
+		}
+	}
+
+	// Highest ground under the plane and along its heading, up to 'ahead' units out
+	public static float GroundAhead(Vector3 pos, Vector3 fwd, float ahead)
+	{
+		fwd.y = 0f;
+		if (fwd.sqrMagnitude < 0.01f)
+		{
+			fwd = Vector3.forward;
+		}
+		fwd.Normalize();
+		float m = GroundAt(pos);
+		for (int i = 1; i <= 4; i++)
+		{
+			float h = GroundAt(pos + fwd * (ahead * i / 4f));
+			if (h > m)
+			{
+				m = h;
+			}
+		}
+		return m;
+	}
+
+	// Roll over and dive down on a plane below. False if the plane cannot do it now (already in a manoeuvre, too low).
+	public static bool StartRollAttack(UnitAir ua, Unit target)
+	{
+		try
+		{
+			if (!Applies(ua) || target == null || AcroActive(ua) || ((Component)ua).transform.position.y < AcroMinHeight)
+			{
+				return false;
+			}
+			// 0.26.4.2.1: needs at least 600 m of air under it (over mountains too)
+			if (((Component)ua).transform.position.y - GroundAhead(((Component)ua).transform.position, ((Component)ua).transform.forward, 60f) < 60f)
+			{
+				return false;
+			}
+			AcroState a = NewAcro(ua, 1);
+			a.target = target;
+						Debug.Log((object)("[FLIGHT] " + ua.unitData.unitName + " id " + ((UnityEngine.Object)ua).GetInstanceID() + " roll-over attack: rolling inverted at " + (((Component)ua).transform.position.y * 10f).ToString("F0") + " m"));
+			return true;
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[FLIGHT] roll-over attack failed and stopped: " + ex.Message));
+			return false;
+		}
+	}
+
+	// Roll inverted and pull through into a dive away (split-S). Needs height.
+	public static bool StartSplitS(UnitAir ua)
+	{
+		try
+		{
+			if (!Applies(ua) || AcroActive(ua) || ((Component)ua).transform.position.y < 110f)
+			{
+				return false;
+			}
+			// 0.26.4.2.1: a split-S loses about 700 m, so it needs that much air under it
+			if (((Component)ua).transform.position.y - GroundAhead(((Component)ua).transform.position, ((Component)ua).transform.forward, 60f) < 80f)
+			{
+				return false;
+			}
+			NewAcro(ua, 2);
+			Debug.Log((object)("[FLIGHT] " + ua.unitData.unitName + " id " + ((UnityEngine.Object)ua).GetInstanceID() + " split-S at " + (((Component)ua).transform.position.y * 10f).ToString("F0") + " m"));
+			return true;
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[FLIGHT] split-S failed and stopped: " + ex.Message));
+			return false;
+		}
+	}
+
+	// A quick full roll while turning. Does nothing if an acrobatic move is already running.
+	public static void StartBarrelRoll(UnitAir ua)
+	{
+		try
+		{
+			if (!Applies(ua) || AcroActive(ua))
+			{
+				return;
+			}
+			AcroState a = NewAcro(ua, 3);
+			a.z = 0f;
+			if (ua.currentTurnRate < 0f)
+			{
+				a.z = 0.001f;
+			}
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[FLIGHT] barrel roll failed and stopped: " + ex.Message));
+		}
+	}
+
+	// ---------------- v0.28 acrobatics ----------------
+	// The ground and the ceiling: a loop up needs air above it too (the AI never aims above ModDogfight.MaxHeight).
+	private static bool AirUnder(UnitAir ua, float need)
+	{
+		Transform tr = ((Component)ua).transform;
+		return tr.position.y - GroundAhead(tr.position, tr.forward, 60f) >= need;
+	}
+
+	// Can this plane reach the top of a half loop (height gain about two loop radii) with flying speed left? Thrust is ignored, so it is a cautious check.
+	private static bool CanLoop(UnitAir ua, float rate, out float topSpeed)
+	{
+		ModAirFlight.Row r = ModAirFlight.Of(ua);
+		float v = ua.currentSpeed * 10f;
+		float radius = v / (rate * Mathf.Deg2Rad);
+		float vTop2 = v * v - 2f * ModAirFlight.G * 2f * radius;
+		topSpeed = (vTop2 > 0f) ? Mathf.Sqrt(vTop2) / 10f : 0f;
+		return topSpeed >= ModAirFlight.StallSpeed(r, false) * StallMargin && ((Component)ua).transform.position.y + 2f * radius / 10f < 650f;
+	}
+
+	private static void LogAcro(UnitAir ua, string text)
+	{
+		Debug.Log((object)("[FLIGHT] " + ua.unitData.unitName + " id " + ((UnityEngine.Object)ua).GetInstanceID() + " (" + SideName(ua) + ") " + text + " at " + (((Component)ua).transform.position.y * 10f).ToString("F0") + " m, " + (ua.currentSpeed * 36f).ToString("F0") + " km/h"));
+	}
+
+	// Immelmann: half loop up, roll upright at the top. Reverses the heading and gains height; costs speed. False if it cannot be flown now.
+	public static bool StartImmelmann(UnitAir ua)
+	{
+		try
+		{
+			float top;
+			if (!Applies(ua) || AcroActive(ua) || ((Component)ua).transform.position.y < ImmelmannMinHeight || !AirUnder(ua, 40f) || !CanLoop(ua, ImmelmannRate, out top))
+			{
+				return false;
+			}
+			NewAcro(ua, 4);
+			acroStarted[4]++;
+			float topSpeed;
+			CanLoop(ua, ImmelmannRate, out topSpeed);
+			LogAcro(ua, "Immelmann: half loop up and roll upright, reaching the top at about " + (topSpeed * 36f).ToString("F0") + " km/h");
+			return true;
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[FLIGHT] Immelmann failed and stopped: " + ex.Message));
+			return false;
+		}
+	}
+
+	// Pitchback: pull up steeply, swing the nose round at the top and drop it back onto the target that passed underneath.
+	public static bool StartPitchback(UnitAir ua, Unit target)
+	{
+		try
+		{
+			ModAirFlight.Row r = ModAirFlight.Of(ua);
+			if (!Applies(ua) || AcroActive(ua) || target == null || ((Component)ua).transform.position.y < ImmelmannMinHeight || !AirUnder(ua, 40f) || ua.currentSpeed < ModAirFlight.StallSpeed(r, false) * 1.5f)
+			{
+				return false;
+			}
+			AcroState a = NewAcro(ua, 5);
+			a.target = target;
+			acroStarted[5]++;
+			LogAcro(ua, "pitchback: pulling up steeply to come back down onto " + target.unitData.unitName);
+			return true;
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[FLIGHT] pitchback failed and stopped: " + ex.Message));
+			return false;
+		}
+	}
+
+	// High-g barrel roll: a wide, slow roll with a climb to make an attacker close behind overshoot. Costs speed.
+	public static bool StartHighGBarrel(UnitAir ua)
+	{
+		try
+		{
+			ModAirFlight.Row r = ModAirFlight.Of(ua);
+			if (!Applies(ua) || AcroActive(ua) || ((Component)ua).transform.position.y < 40f || !AirUnder(ua, 25f) || ua.currentSpeed < ModAirFlight.StallSpeed(r, false) * 1.4f)
+			{
+				return false;
+			}
+			AcroState a = NewAcro(ua, 6);
+			a.z = (ua.currentTurnRate < 0f) ? 0.001f : 0f;
+			acroStarted[6]++;
+			LogAcro(ua, "high-g barrel roll: wide roll with a climb to make the attacker overshoot");
+			return true;
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[FLIGHT] high-g barrel roll failed and stopped: " + ex.Message));
+			return false;
+		}
+	}
+
+	// Barrel roll attack: a roll round the target's line of flight that keeps the nose coming round onto it, so a fast closing pass does not overshoot.
+	public static bool StartBarrelAttack(UnitAir ua, Unit target)
+	{
+		try
+		{
+			ModAirFlight.Row r = ModAirFlight.Of(ua);
+			if (!Applies(ua) || AcroActive(ua) || target == null || ((Component)ua).transform.position.y < 40f || !AirUnder(ua, 25f) || ua.currentSpeed < ModAirFlight.StallSpeed(r, false) * 1.3f)
+			{
+				return false;
+			}
+			AcroState a = NewAcro(ua, 7);
+			a.target = target;
+			a.z = (ua.currentTurnRate < 0f) ? 0.001f : 0f;
+			acroStarted[7]++;
+			LogAcro(ua, "barrel roll attack round " + target.unitData.unitName);
+			return true;
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[FLIGHT] barrel roll attack failed and stopped: " + ex.Message));
+			return false;
+		}
+	}
+
+	// Gives the plane back level (or upright on the reversed heading) when a loop cannot be finished.
+	private static bool AbortLoop(UnitAir ua, AcroState a, int id, Transform tr, float y, string why)
+	{
+		float heading = (a.x < -90f) ? a.yaw + 180f : a.yaw;
+		tr.rotation = Quaternion.Euler(0f, heading, 0f);
+		AcroPitch = 0f;
+		AcroRoll = 0f;
+		ua.currentTurnRate = 0f;
+		ua.wantedTurnRate = 0f;
+		ua.wantedHeight = y;
+		ua.pitchVelocity = 0f;
+		acro.Remove(id);
+		LogAcro(ua, "acrobatic move given up: " + why);
+		return true;
+	}
+
+	private static bool ImmelmannStep(UnitAir ua, AcroState a, int id, Transform tr, float y, float dur)
+	{
+		ModAirFlight.Row r = ModAirFlight.Of(ua);
+		if (a.phase == 0)
+		{
+			if (ua.currentSpeed < ModAirFlight.StallSpeed(r, false) * 1.02f && a.x < -20f)
+			{
+				return AbortLoop(ua, a, id, tr, y, "speed ran out on the way up");
+			}
+			a.z = Mathf.MoveTowards(a.z, 0f, ImmelmannRoll * dur);
+			a.x = Mathf.MoveTowards(a.x, -180f, ImmelmannRate * dur);
+			if (a.x <= -179.5f)
+			{
+				a.phase = 1;
+				a.z = 180f;
+				tr.rotation = Quaternion.Euler(0f, a.yaw + 180f, 180f);
+			}
+			else
+			{
+				tr.rotation = Quaternion.Euler(a.x, a.yaw, a.z);
+			}
+		}
+		else
+		{
+			a.z = Mathf.MoveTowards(a.z, 0f, ImmelmannRoll * dur);
+			tr.rotation = Quaternion.Euler(0f, a.yaw + 180f, a.z);
+			if (a.z <= 0.5f)
+			{
+				tr.rotation = Quaternion.Euler(0f, a.yaw + 180f, 0f);
+				AcroPitch = 0f;
+				AcroRoll = 0f;
+				ua.currentTurnRate = 0f;
+				ua.wantedTurnRate = 0f;
+				ua.wantedHeight = y;
+				ua.pitchVelocity = 0f;
+				acro.Remove(id);
+				LogAcro(ua, "Immelmann finished, upright and heading back the way it came");
+				return true;
+			}
+		}
+		Vector3 now = tr.eulerAngles;
+		AcroPitch = Wrap(now.x);
+		AcroRoll = Wrap(now.z);
+		return true;
+	}
+
+	private static bool PitchbackStep(UnitAir ua, AcroState a, int id, Transform tr, float y, float dur)
+	{
+		ModAirFlight.Row r = ModAirFlight.Of(ua);
+		if (a.phase == 0)
+		{
+			a.z = Mathf.MoveTowards(a.z, 0f, ImmelmannRoll * dur);
+			a.x = Mathf.MoveTowards(a.x, -PitchbackTop, PitchbackRate * dur);
+			if (a.x <= -PitchbackTop + 1f || ua.currentSpeed < ModAirFlight.StallSpeed(r, false) * 1.25f || a.t > 6f)
+			{
+				a.phase = 1;
+			}
+		}
+		else
+		{
+			Unit t = a.target;
+			float bearing = a.yaw + 180f;
+			if (t != null && !t.isDestroyed)
+			{
+				Vector3 to = t.transform.position - tr.position;
+				bearing = Mathf.Atan2(to.x, to.z) * Mathf.Rad2Deg;
+			}
+			a.yaw = Mathf.MoveTowardsAngle(a.yaw, bearing, PitchbackYaw * dur);
+			a.x = Mathf.MoveTowards(a.x, 15f, PitchbackDown * dur);
+			if (Mathf.Abs(Mathf.DeltaAngle(a.yaw, bearing)) < 10f && a.x >= 5f || a.t > 12f)
+			{
+				tr.rotation = Quaternion.Euler(a.x, a.yaw, 0f);
+				AcroPitch = a.x;
+				AcroRoll = 0f;
+				ua.currentTurnRate = 0f;
+				ua.wantedTurnRate = 0f;
+				ua.wantedHeight = y;
+				ua.pitchVelocity = 0f;
+				acro.Remove(id);
+				LogAcro(ua, "pitchback finished, nose back down on the target");
+				return true;
+			}
+		}
+		tr.rotation = Quaternion.Euler(a.x, a.yaw, a.z);
+		Vector3 now = tr.eulerAngles;
+		AcroPitch = Wrap(now.x);
+		AcroRoll = Wrap(now.z);
+		return true;
+	}
+
+	// Called from UnitAir.ApplyUnitMovement in place of the game's rotation. pitch and roll are the game's own currentPitch and currentRoll.
+	// Returns true when it turned the plane this tick (the game's rotation is then skipped); the caller copies AcroPitch and AcroRoll back.
+	public static bool Acro(UnitAir ua, float dur, float pitch, float roll)
+	{
+		try
+		{
+			if (failed || ua == null)
+			{
+				return false;
+			}
+			int id = ((UnityEngine.Object)ua).GetInstanceID();
+			AcroState a;
+			if (!acro.TryGetValue(id, out a))
+			{
+				return false;
+			}
+			if (!Applies(ua))
+			{
+				acro.Remove(id);
+				return false;
+			}
+			Transform tr = ((Component)ua).transform;
+			float y = tr.position.y;
+			a.t += dur;
+			AcroPitch = pitch;
+			AcroRoll = roll;
+
+			if (a.kind == 3 || a.kind == 6 || a.kind == 7)
+			{
+				// Barrel roll: the normal flight with an extra turn round the nose. 0.28: the high-g version (6) rolls more slowly, pitches up and over,
+				// turns harder and bleeds speed for it; the attack version (7) keeps the nose coming round onto its target through the roll.
+				float sign = (ua.currentTurnRate < 0f) ? -1f : 1f;
+				float time = (a.kind == 3) ? BarrelTime : ((a.kind == 6) ? HighGBarrelTime : BarrelAttackTime);
+				float amp = (a.kind == 3) ? 0f : ((a.kind == 6) ? HighGBarrelPitch : BarrelAttackPitch);
+				a.z += 360f / time * dur;
+				if (a.z >= 360f)
+				{
+					acro.Remove(id);
+					return false;
+				}
+				float turn = ua.currentTurnRate * ((a.kind == 6) ? HighGTurnMul : 1f);
+				if (a.kind == 6)
+				{
+					ua.currentSpeed = Mathf.Max(0f, ua.currentSpeed - HighGBleed * dur);
+				}
+				else if (a.kind == 7 && a.target != null && !a.target.isDestroyed)
+				{
+					Vector3 fl = tr.forward;
+					fl.y = 0f;
+					Vector3 tp = a.target.transform.position;
+					float ang = Utilities.GetSignedAngleToPosition(fl, tr.position, new Vector3(tp.x, tr.position.y, tp.z));
+					float lim = Mathf.Max(MinRudderTurn, ModAirFlight.TurnLimit(ModAirFlight.Of(ua), ua.currentSpeed, false));
+					turn = Mathf.Clamp(ang * 2f, -lim, lim);
+				}
+				Vector3 e = tr.eulerAngles;
+				e.x = pitch - amp * Mathf.Sin(a.z * Mathf.Deg2Rad);
+				e.y += turn * dur;
+				e.z = roll - sign * a.z;
+				tr.eulerAngles = e;
+				return true;
+			}
+			if (a.kind == 4)
+			{
+				return ImmelmannStep(ua, a, id, tr, y, dur);
+			}
+			if (a.kind == 5)
+			{
+				return PitchbackStep(ua, a, id, tr, y, dur);
+			}
+
+			// 0.26.4.2.1: terrain below or ahead: give up the move and pull up (4 of 7 Wildcat losses in a mountain battle were in a roll-over or split-S)
+			float clear = y - GroundAhead(tr.position, tr.forward, 40f);
+			if (clear < 25f && a.t > 0.3f)
+			{
+				Debug.Log((object)("[FLIGHT] " + ua.unitData.unitName + " id " + id + " acrobatic move abandoned: only " + (clear * 10f).ToString("F0") + " m above the ground, pulling up"));
+				tr.rotation = Quaternion.Euler(-12f, tr.eulerAngles.y, 0f);
+				AcroPitch = -12f;
+				AcroRoll = 0f;
+				ua.wantedHeight = y + 60f;
+				acro.Remove(id);
+				return true;
+			}
+			if (a.t > 30f)
+			{
+				// Safety: no acrobatic move lasts this long. Give the plane back level.
+				tr.rotation = Quaternion.Euler(0f, tr.eulerAngles.y, 0f);
+				AcroPitch = 0f;
+				AcroRoll = 0f;
+				ua.wantedHeight = y;
+				acro.Remove(id);
+				return true;
+			}
+			if (y < 35f && a.phase < 2)
+			{
+				a.phase = 2;
+			}
+			if (a.phase == 0)
+			{
+				a.z = Mathf.MoveTowards(a.z, 180f, RollOverRate * dur);
+				if (a.z >= 179.9f)
+				{
+					a.phase = 1;
+				}
+			}
+			if (a.phase == 1)
+			{
+				float goal = 180f;
+				if (a.kind == 1)
+				{
+					// Half roll, then pull through the bottom of a loop. Past 90 degrees the plane is upright again, diving on the
+					// target on the way back (heading is the reverse of where it started). Follow the target down to the end.
+					Unit t = a.target;
+					if (t == null || t.isDestroyed || y < PullOutHeight)
+					{
+						a.phase = 2;
+					}
+					else
+					{
+						Vector3 toNow = t.transform.position - tr.position;
+						float dist = toNow.magnitude;
+						Vector3 to = t.transform.position + t.transform.forward * t.currentActualSpeed * (dist / BulletTravelSpeed) - tr.position;
+						float flat = new Vector2(to.x, to.z).magnitude;
+						float down = Mathf.Atan2(-to.y, Mathf.Max(flat, 1f)) * 57.29578f;
+						goal = 180f - Mathf.Clamp(down, 10f, 70f);
+						if (a.x > 90f)
+						{
+							a.yaw = Mathf.MoveTowardsAngle(a.yaw, Mathf.Atan2(to.x, to.z) * 57.29578f + 180f, 30f * dur);
+						}
+						// finished: lined up for 4 seconds, passed the target, or too close
+						if (a.x >= goal - 2f)
+						{
+							a.hold += dur;
+							if (a.hold > 4f || dist < 12f)
+							{
+								a.phase = 2;
+							}
+						}
+						else if (a.t > 14f)
+						{
+							a.phase = 2;
+						}
+					}
+				}
+				if (a.kind != 1)
+				{
+					// split-S: straight on through to the pull-out
+					a.phase = 2;
+				}
+				if (a.phase == 1)
+				{
+					a.x = Mathf.MoveTowards(a.x, goal, PullRate * dur);
+				}
+			}
+			if (a.phase == 2)
+			{
+				a.x = Mathf.MoveTowards(a.x, 180f, PullRate * dur);
+				if (a.x >= 179.5f)
+				{
+					// Finished upright and level, flying back the way it came.
+					tr.rotation = Quaternion.Euler(0f, a.yaw + 180f, 0f);
+					AcroPitch = 0f;
+					AcroRoll = 0f;
+					ua.currentTurnRate = 0f;
+					ua.wantedTurnRate = 0f;
+					ua.wantedHeight = y;
+					ua.pitchVelocity = 0f;
+					acro.Remove(id);
+					return true;
+				}
+			}
+			tr.rotation = Quaternion.Euler(a.x, a.yaw, a.z);
+			Vector3 now = tr.eulerAngles;
+			AcroPitch = Wrap(now.x);
+			AcroRoll = Wrap(now.z);
+			return true;
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError((object)("[FLIGHT] acrobatics failed and stopped: " + ex.Message));
+			return false;
+		}
+	}
+}

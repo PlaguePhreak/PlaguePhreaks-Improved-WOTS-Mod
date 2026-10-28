@@ -1,0 +1,31 @@
+	// v0.28.18: a flight whose side is not fixed yet counts on the side it is on now (before, every second flight was counted on the far side).
+	private bool ModAllTorpFlightsReady(Unit target)
+	{
+		List<Unit> list = ModTorpFlights(target);
+		if (list.Count <= 1)
+		{
+			return true;
+		}
+		Vector3 position = target.transform.position;
+		Vector3 forward = target.transform.forward;
+		forward.y = 0f;
+		forward.Normalize();
+		for (int i = 0; i < list.Count; i++)
+		{
+			Unit unit = list[i];
+			if (unit.unitAir != null && !unit.unitAir.hasDroppedPayload && unit.unitAIAir.modTorpWaitStart >= 0f)
+			{
+				Vector3 val = unit.transform.position - position;
+				val.y = 0f;
+				float magnitude = val.magnitude;
+				float num2 = (Vector3.Dot(target.transform.right, val) >= 0f) ? 1f : -1f;
+				float num = (unit.unitAIAir.modTorpSide != 0f) ? unit.unitAIAir.modTorpSide : num2;
+				float num3 = Vector3.Angle(forward, val);
+				if (num2 != num || ((num3 <= 25f || num3 >= 120f || magnitude >= 600f) && magnitude >= 250f))
+				{
+					return false;
+				}
+			}
+		}
+		return true;
+	}

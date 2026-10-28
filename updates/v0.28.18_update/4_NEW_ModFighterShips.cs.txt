@@ -1,0 +1,125 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+// v0.28.18 NEW CLASS. Fighters only attack small ships.
+// Testers saw fighters strafing battleships, cruisers and carriers. A fighter's guns could not hurt those ships and the AA shot it to pieces.
+// Now a fighter may only go for a small ship: a merchant, an oiler, a destroyer, a destroyer escort or a surfaced submarine (SmallShip).
+// Two places use it:
+//   EngagementAI.ModPickStrikeTarget (one line, MayAttack): the target picker never hands a fighter a big ship, so the enemy AI and our own
+//   auto strikes send fighters only at small ships, and a fighter with no small ship to attack is not sent at a ship at all.
+//   UnitAIAir.StrafeApproach (one line, Check): a fighter that is already on its way to a big ship (the game also picks ships in other ways,
+//   e.g. the closest ship) is moved to a small ship, or, if there is none, breaks off, climbs and finds something else to do
+//   (enemy aircraft, its escort job, or circling).
+// Planes you order yourself are left alone (PlayerOrdersToo = false): if you send your fighters at a battleship, they go.
+public static class ModFighterShips
+{
+	// true = also keep your own fighters off big ships when you order them there yourself
+	public const bool PlayerOrdersToo = false;
+
+	private static Dictionary<int, int> lastLog = new Dictionary<int, int>();
+	public static int logged;
+
+	// A ship a fighter may attack.
+	public static bool SmallShip(Unit s)
+	{
+		if (s == null || s.unitData == null || s.unitSea == null)
+		{
+			return false;
+		}
+		switch (s.unitData.unitSubtype)
+		{
+		case UnitSubType.Merchant:
+		case UnitSubType.Oiler:
+		case UnitSubType.Destroyer:
+		case UnitSubType.Destroyer_Escort:
+		case UnitSubType.Submarine:
+			return true;
+		default:
+			return false;
+		}
+	}
+
+	// May this plane attack this ship? Every plane but a fighter may attack anything; a fighter only a small ship.
+	public static bool MayAttack(Unit plane, Unit ship)
+	{
+		if (!ModFighterRules.IsFighter(plane) || ship == null || ship.unitSea == null)
+		{
+			return true;
+		}
+		return SmallShip(ship);
+	}
+
+	// Call first in UnitAIAir.StrafeApproach: if (ModFighterShips.Check(this)) return;
+	// true = the fighter was taken off a big ship this tick.
+	public static bool Check(UnitAIAir ai)
+	{
+		try
+		{
+			if (ai == null)
+			{
+				return false;
+			}
+			Unit me = ai.parentUnit;
+			Unit ship = ai.focusedUnit;
+			if (me == null || ship == null || ship.isDestroyed || ship.unitSea == null || !ModFighterRules.IsFighter(me) || SmallShip(ship))
+			{
+				return false;
+			}
+			if (me.faction == Faction.Player)
+			{
+				// the plane you are flying, or an order you gave yourself
+				if (CombatInterface.instance != null && CombatInterface.instance.currentUnit == me)
+				{
+					return false;
+				}
+				if (!ai.modAutoStrike && !PlayerOrdersToo)
+				{
+					return false;
+				}
+			}
+			EngagementAI e = EngagementAI.instance;
+			if (e == null)
+			{
+				return false;
+			}
+			List<Unit> ships = (me.faction == Faction.Player) ? e.otherSea : e.playerSea;
+			// ModPickStrikeTarget only hands a fighter small ships (MayAttack)
+			Unit small = e.ModPickStrikeTarget(me, ships);
+			bool auto = ai.modAutoStrike;
+			if (small != null && small != ship)
+			{
+				ai.focusedUnit = small;
+				e.AttackUnit(me);
+				ai.modAutoStrike = auto;
+				Log(me, ship, "going for " + small.unitData.unitName + " instead");
+				return true;
+			}
+			// nothing small to attack: climb away and find something else (the game's own 'target gone' code)
+			me.wantedHeight = ai.SetAircraftWantedHeight(200f);
+			ai.focusedUnit = null;
+			e.OnTargetDestroyed(me);
+			Log(me, ship, "no small ship to attack, breaks off");
+			return true;
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError((object)("[FIGHTSHIP] check failed: " + ex.Message));
+			return false;
+		}
+	}
+
+	private static void Log(Unit me, Unit ship, string what)
+	{
+		int id = ((UnityEngine.Object)me).GetInstanceID();
+		int sid = ((UnityEngine.Object)ship).GetInstanceID();
+		int last;
+		if (logged >= 100 || (lastLog.TryGetValue(id, out last) && last == sid))
+		{
+			return;
+		}
+		lastLog[id] = sid;
+		logged++;
+		Debug.Log((object)("[FIGHTSHIP] " + me.unitData.unitName + " id " + id + " (" + ((me.faction == Faction.Player) ? "ours" : "enemy") + ") was sent at " + ship.unitData.unitName + " (" + ship.unitData.unitSubtype + "): fighters only attack small ships, " + what));
+	}
+}
