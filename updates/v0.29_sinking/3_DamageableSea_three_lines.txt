@@ -1,0 +1,49 @@
+Three one-line additions, all in the class DamageableSea. Do steps 1 and 2 of the README first (the two new classes), or these lines won't compile.
+For each one: right-click the method in the tree > Edit Method (C#)... > add the line > Compile.
+
+
+A) DamageableSea.SinkShip  (every ship that sinks now sinks the new way)
+------------------------------------------------------------------------
+1. Scroll to the very bottom of the method. It ends with a block that starts
+       if (this.parentUnit.unitData.unitSubtype != UnitSubType.Submarine)
+   (or "!= 0"), with two "for" loops inside it, then the method's last }.
+2. Click just before that very last } of the method (after the block has closed) and add a new line:
+
+       ModSinking.Begin(this);
+
+3. Compile.
+
+
+B) DamageableSea.ApplyMagazineExplosion  (a lethal magazine blast sinks the ship)
+-------------------------------------------------------------------------------
+1. The last line of the method is the message:
+       MessageLog.instance.SendMessageToLog("MagExplosion", ... );
+2. Add a new line straight after it (before the method's last }):
+
+       ModSinking.AfterMagazine(this, cv);
+
+   (cv is the method's own input. If dnSpy calls it something else, use the word in the brackets of
+    "private void ApplyMagazineExplosion(CellVariable cv)".)
+3. Compile.
+
+
+C) DamageableSea.ApplyDamage  (a torpedo that breaks a destroyer's back splits it)
+---------------------------------------------------------------------------------
+1. Press Ctrl+F in the edit window and search for:   diagonalsPattern(this.parentUnit.unitData, Utilities.GetCompartmentIntArray(this.parentUnit.unitData, text)
+   It is in the torpedo part of the method, about two thirds of the way down. It looks like this:
+
+       if (this.cellVariables.ContainsKey(text))
+       {
+           List<string> coordsToDestroy = Utilities.plusPattern(this.parentUnit.unitData, Utilities.GetCompartmentIntArray(this.parentUnit.unitData, text), 1, true);
+           this.ApplyMagazineDamage(coordsToDestroy);
+           coordsToDestroy = Utilities.diagonalsPattern(this.parentUnit.unitData, Utilities.GetCompartmentIntArray(this.parentUnit.unitData, text), 1, true);
+           this.ApplyMagazineDamage(coordsToDestroy);
+           ModSinking.TorpedoBreakBack(this, text);        <-- ADD THIS LINE
+       }
+
+2. Add the line after the SECOND ApplyMagazineDamage, inside the same { }.
+   If dnSpy shows a different word than "text" in "this.cellVariables.ContainsKey(text)", use that word instead
+   (it is the keel square, e.g. text2 or text3). The other names (coordsToDestroy, list...) don't matter.
+3. Compile. This method already has your ModHitLog.BeginHit line at the top: leave it there.
+
+If a Compile shows a red error, don't save: send me the error text.
