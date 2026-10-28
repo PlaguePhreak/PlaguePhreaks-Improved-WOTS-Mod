@@ -1,0 +1,14 @@
+CampaignManager.CheckDaily: one new line
+========================================
+
+1. In dnSpy, open the class CampaignManager and find the method CheckDaily.
+2. Right-click inside the method and choose Edit Method (C#).
+3. Find this line:
+
+		ModConvoy.Daily();
+
+4. Add this new line directly under it:
+
+		ModHistory.Daily();
+
+5. Click Compile.

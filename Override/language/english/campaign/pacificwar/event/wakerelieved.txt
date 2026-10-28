@@ -1,0 +1,1 @@
+{"nextAction":"","header":"Wake Island","content":"<size=18><b>WAKE ISLAND RELIEVED</b></size>\nDecember 23rd 1941. Your ships reached <color=#caa809>WAKE ISLAND</color> in time. The Japanese second invasion force turned back, and the garrison that sank two enemy destroyers on December 11th is reinforced. History is changed: Wake holds.\n\n+100 command points.","imagePath":""}

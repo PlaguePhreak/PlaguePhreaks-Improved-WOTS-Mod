@@ -1,0 +1,13 @@
+// Historical events for The Pacific War (read by ModHistory in the DLL). One event per line.
+// date: day, month, year. location: locationID. ifOwner: only if the location belongs to 0 player, 1 enemy, 2 neutral (-1 any).
+// check: none, carriers (your carriers) or ships (your warships) within rangeKm; minCount needed to pass.
+// pass/fail: Event (popup file in language/.../event), Owner (new owner, -1 none), Troops, CP (command points).
+{"id":"guam","day":10,"month":12,"year":1941,"location":"guam","ifOwner":0,"check":"ships","rangeKm":300,"minCount":3,"passEvent":"guamheld","failEvent":"guamfallen","failOwner":1,"failTroops":5000,"passCP":50}
+{"id":"makin","day":10,"month":12,"year":1941,"location":"makin","ifOwner":2,"check":"ships","rangeKm":300,"minCount":3,"passEvent":"","failEvent":"makintaken","failOwner":1,"failTroops":300}
+{"id":"wake","day":23,"month":12,"year":1941,"location":"wake","ifOwner":0,"check":"ships","rangeKm":500,"minCount":4,"passEvent":"wakerelieved","failEvent":"wakefallen","failOwner":1,"failTroops":2000,"passCP":100}
+{"id":"doolittle","day":18,"month":4,"year":1942,"location":"yokosuka","ifOwner":1,"check":"carriers","rangeKm":1500,"minCount":1,"passEvent":"doolittle","failEvent":"","passCP":100}
+{"id":"midway","day":4,"month":6,"year":1942,"location":"midway","ifOwner":0,"check":"carriers","rangeKm":800,"minCount":2,"passEvent":"midwayheld","failEvent":"midwayfallen","failOwner":1,"failTroops":5000,"passCP":200,"failCP":-50}
+{"id":"kiska","day":6,"month":6,"year":1942,"location":"kiska","ifOwner":2,"check":"ships","rangeKm":400,"minCount":3,"passEvent":"","failEvent":"kiskataken","failOwner":1,"failTroops":1200}
+{"id":"attu","day":7,"month":6,"year":1942,"location":"attu","ifOwner":2,"check":"ships","rangeKm":400,"minCount":3,"passEvent":"","failEvent":"attutaken","failOwner":1,"failTroops":1100}
+{"id":"nauru","day":26,"month":8,"year":1942,"location":"nauru","ifOwner":2,"check":"ships","rangeKm":300,"minCount":3,"passEvent":"","failEvent":"naurutaken","failOwner":1,"failTroops":500}
+{"id":"tarawa","day":15,"month":9,"year":1942,"location":"tarawa","ifOwner":2,"check":"ships","rangeKm":300,"minCount":3,"passEvent":"","failEvent":"tarawataken","failOwner":1,"failTroops":1500}

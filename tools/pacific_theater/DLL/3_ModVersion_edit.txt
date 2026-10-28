@@ -1,0 +1,19 @@
+ModVersion: show v0.29 on the main menu
+=======================================
+
+1. In dnSpy, open the class ModVersion and choose Edit Class (C#).
+2. Replace the line that starts with  public const string Current  with:
+
+	public const string Current = "0.29";
+
+3. Replace the whole ChangelogBody block (from  private const string ChangelogBody =  down to the line ending in  ";) with:
+
+	private const string ChangelogBody =
+		"<color=#E0B030><b>0.29 The Pacific War</b></color> (Mega Patch 01):\n" +
+		"- New campaign: the Pacific from 8 December 1941\n" +
+		"- New map from Japan to the US west coast, 39 locations\n" +
+		"- Pearl Harbor starts wrecked: rebuild your forward base\n" +
+		"- Historical events: Wake, Guam, Doolittle Raid, Midway, the Aleutians\n" +
+		"- Your carriers decide whether history repeats itself";
+
+4. Click Compile.

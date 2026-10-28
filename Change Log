@@ -24,7 +24,9 @@ v0.29 - "The Pacific War" (Mega Patch 01) (pending test)
 * Pearl Harbor starts wrecked by the 7 December raid: a rank 3 port and a rank 1 airfield. The start briefing and a new Pearl Harbor briefing use the real events and losses (Arizona, Oklahoma, 188 aircraft, the tank farm and dry docks spared, the carriers at sea) and tell you to rebuild it as the US forward operating base.
 * Historical garrisons: Wake about 450 (1st Defense Battalion and VMF-211), Guam about 550.
 * Ships can be disbanded at any port of rank 3 or higher (stock: rank 5), so the damaged Pearl Harbor can still disband ships.
-* Install: Override files only, plus one new line in language/english/campaign/campaigns.txt (tools/pacific_theater/campaigns_line.txt) and a copy of campaign001's rules.txt in the pacificwar language folder.
+* Historical events (new DLL class ModHistory, data in campaign/pacificwar/history.txt): Guam and Makin (10 Dec 1941), Wake (23 Dec), the Doolittle Raid (18 Apr 1942), the Battle of Midway (4 Jun), Kiska and Attu (6-7 Jun), Nauru (26 Aug) and Tarawa (Sep). History repeats unless you have ships or carriers in position. For example, if 2 or more of your carriers are within 800 km of Midway on 4 June, Midway holds and you get +200 command points. If not, Midway falls to Japan.
+* The main menu shows v0.29.
+* Install: Override files plus 3 DLL steps (tools/pacific_theater/DLL), plus one new line in language/english/campaign/campaigns.txt (tools/pacific_theater/campaigns_line.txt) and a copy of campaign001's rules.txt in the pacificwar language folder.
 
 v0.24.2 - New aircraft from RamZ's catalogue and TTE (pending test)
 -----------------------------------------------------------
