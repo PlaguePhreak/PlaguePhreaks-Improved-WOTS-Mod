@@ -317,3 +317,14 @@ Open points to decide when this is built:
 - Port and air base ranks may want different weights. Check what each upgrade costs (`suppliesPerUpgrade0` and the fuel and engineering lists in setup.txt) and match the CP reward to it.
 - Whether the AI should earn CP from bases too (today the enemy gets none, which makes the player's economy the only one that rewards base levels).
 - Rules popup and docs text that mention command points from sinking ships need updating.
+
+
+## 0.30: Allied AI (planned)
+
+Friendly AI task forces on the player's side (for example the Royal Australian Navy) that run their own missions. Agreed with Aaron on 28 Oct 2026, to be built after the 0.29 Pacific War tests.
+
+- They are not a third side. The game only has Player, Enemy and Neutral, and every battle has 2 teams. Allied ships are faction 0 task forces that the mod spawns and steers, like the ModConvoy supply convoy.
+- Planned behaviour: spawn at their own home port from the `australia` ships in seaUnits.txt, patrol their area, escort convoys, attack spotted enemy groups nearby, and go home to repair when damaged.
+- They show in the spare yellow colour (`factionColours[3]`). The player cannot give them orders.
+- Open question: their battles. The game has no "watch only" side, so they either auto-resolve their own fights or only join the player's battles.
+- The Pacific War map has no Australian port. Use Pearl Harbor (the RAN served with the US fleet) or extend the map south.
