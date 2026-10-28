@@ -1,0 +1,251 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+// v0.28.18 NEW CLASS. The torpedo strike gets ahead of the formation first, then splits and swings in together (Aaron, 28 Oct).
+// The way Japanese torpedo squadrons attacked: drop to attack height, run up the side of the enemy formation out of AA range, gather about
+// 3.5 km ahead of it, then split to both bows and turn in together, so whichever way the target turns it is beam-on to someone.
+// Phases, for every torpedo flight going for the same ship (called from UnitAIAir.ModTorpedoSetup, one inserted block):
+//   1. Get ahead. A flight that is not ahead of the formation yet runs up its own side, WideOffset out from the target (outside light AA),
+//      always aiming a little ahead of where it is now, then cuts across to the gathering point AheadDistance in front of the formation's
+//      leading ship. Level, at the flight's attack height.
+//   2. Wait. A flight at the gathering point circles there until every flight is in place, or GatherTimeout seconds after the first got there.
+//   3. Split. With 2 or more flights, they are shared out to port and starboard by where they are (left half port, right half starboard): a
+//      hammer and anvil. A single flight takes the side it is on. The flights then swing in from the bow with the game's own run-in
+//      (ModAnvilSide side, wait in the drop window for each other, drop together).
+// A flight that is already inside InsideRange of the target when the attack starts skips phases 1 and 2 (too late to go round).
+// Distances in game units (1 = 10 m). Log: [TORPSTRIKE].
+public static class ModTorpStrike
+{
+	public static bool Enabled = true;
+
+	public const float AheadDistance = 350f;     // 3.5 km ahead of the formation's leading ship
+	public const float FormationRange = 300f;    // ships of the target's side within 3 km count as its formation
+	public const float WideOffset = 450f;        // 4.5 km out from the target while running up the side
+	public const float LeadStep = 200f;          // aim 2 km ahead of where the flight is now while running up
+	public const float InPlaceRange = 70f;       // within 700 m of the gathering point = in place
+	public const float CircleRadius = 80f;       // circles 800 m round the gathering point while waiting
+	public const float GatherTimeout = 240f;     // battle seconds
+	public const float InsideRange = 300f;       // a flight already within 3 km goes straight in
+	public const float FlightSpread = 30f;       // flights gather 300 m apart, side by side
+
+	private class Strike
+	{
+		public float firstInPlace = -1f;
+		public bool split;
+		public float splitTime;
+		public HashSet<int> inPlace = new HashSet<int>();
+		public HashSet<int> skip = new HashSet<int>();
+		public bool logged;
+	}
+
+	private static Dictionary<int, Strike> strikes = new Dictionary<int, Strike>();
+	private static Dictionary<int, int> flightTarget = new Dictionary<int, int>();
+
+	// Called from UnitAIAir.ModTorpedoSetup. true = steer this flight to 'point' this tick (phases 1 and 2); false = the game's own run-in.
+	public static bool Ahead(UnitAIAir ai, Unit target, out Vector3 point)
+	{
+		point = Vector3.zero;
+		if (!Enabled || ai == null || target == null || ai.parentUnit == null)
+		{
+			return false;
+		}
+		try
+		{
+			if (ai.modTorpSide != 0f || ai.modTorpWaitStart < 0f)
+			{
+				return false;
+			}
+			Unit me = ai.parentUnit;
+			int id = ((UnityEngine.Object)me).GetInstanceID();
+			int tid = ((UnityEngine.Object)target).GetInstanceID();
+			Strike s;
+			// a strike that split more than 5 minutes ago is over: a new strike on the same ship gathers again
+			if (!strikes.TryGetValue(tid, out s) || (s.split && Time.time - s.splitTime > 300f))
+			{
+				s = new Strike();
+				strikes[tid] = s;
+			}
+			int old;
+			if (!flightTarget.TryGetValue(id, out old) || old != tid)
+			{
+				flightTarget[id] = tid;
+				s.inPlace.Remove(id);
+				Vector3 d0 = ((Component)me).transform.position - ((Component)target).transform.position;
+				d0.y = 0f;
+				if (d0.magnitude < InsideRange)
+				{
+					s.skip.Add(id);
+				}
+			}
+			if (s.split || s.skip.Contains(id))
+			{
+				return false;
+			}
+			List<Unit> flights = Flights(me, target);
+			Vector3 fwd = ((Component)target).transform.forward;
+			fwd.y = 0f;
+			if (fwd.sqrMagnitude < 0.001f)
+			{
+				return false;
+			}
+			fwd.Normalize();
+			Vector3 right = new Vector3(fwd.z, 0f, -fwd.x);
+			Vector3 tp = ((Component)target).transform.position;
+			tp.y = 0f;
+			float front = FrontOf(target, fwd);
+			// gathering point, flights side by side
+			int idx = Mathf.Max(0, flights.IndexOf(me));
+			float slot = ((idx % 2 == 0) ? 1f : -1f) * FlightSpread * ((idx + 1) / 2);
+			Vector3 gather = tp + fwd * (front + AheadDistance) + right * slot;
+			Vector3 mp = ((Component)me).transform.position;
+			mp.y = 0f;
+			Vector3 rel = mp - tp;
+			float along = Vector3.Dot(rel, fwd);
+			float across = Vector3.Dot(rel, right);
+			float toGather = (mp - gather).magnitude;
+			if (s.inPlace.Contains(id) || toGather < InPlaceRange)
+			{
+				if (s.inPlace.Add(id))
+				{
+					if (s.firstInPlace < 0f)
+					{
+						s.firstInPlace = Time.time;
+					}
+					Debug.Log((object)("[TORPSTRIKE] " + me.unitData.unitName + " id " + id + " is in place " + ((front + AheadDistance) * 10f).ToString("F0") + " m ahead of " + target.unitData.unitName + "'s formation (" + s.inPlace.Count + " of " + flights.Count + " flights)"));
+				}
+				// everyone here, or waited long enough: split and swing in
+				bool all = true;
+				for (int i = 0; i < flights.Count; i++)
+				{
+					if (!s.inPlace.Contains(((UnityEngine.Object)flights[i]).GetInstanceID()) && !s.skip.Contains(((UnityEngine.Object)flights[i]).GetInstanceID()))
+					{
+						all = false;
+					}
+				}
+				if (all || Time.time - s.firstInPlace > GatherTimeout)
+				{
+					Split(s, flights, target, tp, right, all);
+					return false;
+				}
+				point = gather + Quaternion.Euler(0f, Time.time * 6f, 0f) * Vector3.forward * CircleRadius;
+				return true;
+			}
+			// run up the side, out of AA range, until ahead of the formation
+			float side = (across >= 0f) ? 1f : -1f;
+			if (along < front + AheadDistance * 0.5f)
+			{
+				float a = Mathf.Min(along + LeadStep, front + AheadDistance);
+				point = tp + fwd * a + right * side * WideOffset;
+				if (Mathf.Abs(across) > WideOffset * 0.8f && along > front)
+				{
+					point = gather;
+				}
+			}
+			else
+			{
+				point = gather;
+			}
+			return true;
+		}
+		catch (Exception ex)
+		{
+			Enabled = false;
+			Debug.LogError((object)("[TORPSTRIKE] failed and was switched off: " + ex.Message));
+			return false;
+		}
+	}
+
+	// How far ahead of the target the formation's leading ship is (0 if the target leads).
+	private static float FrontOf(Unit target, Vector3 fwd)
+	{
+		float front = 0f;
+		if (EngagementAI.instance == null)
+		{
+			return 0f;
+		}
+		List<Unit> mine = (target.faction == Faction.Player) ? EngagementAI.instance.playerSea : EngagementAI.instance.otherSea;
+		Vector3 tp = ((Component)target).transform.position;
+		for (int i = 0; i < mine.Count; i++)
+		{
+			Unit u = mine[i];
+			if (u == null || u.isDestroyed)
+			{
+				continue;
+			}
+			Vector3 d = ((Component)u).transform.position - tp;
+			d.y = 0f;
+			if (d.magnitude < FormationRange)
+			{
+				front = Mathf.Max(front, Vector3.Dot(d, fwd));
+			}
+		}
+		return front;
+	}
+
+	// The torpedo flight leaders going for this ship (the same test as UnitAIAir.ModTorpFlights).
+	private static List<Unit> Flights(Unit me, Unit target)
+	{
+		List<Unit> r = new List<Unit>();
+		List<Unit> all = (me.faction == Faction.Player) ? EngagementAI.instance.playerAir : EngagementAI.instance.otherAir;
+		for (int i = 0; i < all.Count; i++)
+		{
+			Unit u = all[i];
+			if (u == null || u.isDestroyed || u.unitAIAir == null || u.unitAI == null || u.unitAir == null || u.unitAir.hasDroppedPayload)
+			{
+				continue;
+			}
+			if (u.unitAI.followingUnit != null && !u.unitAI.followingUnit.isDestroyed)
+			{
+				continue;
+			}
+			if (u.unitAI.focusedUnit != target || u.unitAIAir.aiAttack != AIAttack.Aerial_Torpedo)
+			{
+				continue;
+			}
+			if (u.faction == Faction.Player && !u.unitAIAir.modAutoStrike)
+			{
+				continue;
+			}
+			r.Add(u);
+		}
+		if (!r.Contains(me))
+		{
+			r.Add(me);
+		}
+		return r;
+	}
+
+	// Shares the flights out to port and starboard by where they are across the target's course, and lets them swing in.
+	private static void Split(Strike s, List<Unit> flights, Unit target, Vector3 tp, Vector3 right, bool all)
+	{
+		s.split = true;
+		s.splitTime = Time.time;
+		List<Unit> f = new List<Unit>(flights);
+		f.Sort((a, b) => Vector3.Dot(((Component)a).transform.position - tp, right).CompareTo(Vector3.Dot(((Component)b).transform.position - tp, right)));
+		int port = 0;
+		int star = 0;
+		for (int i = 0; i < f.Count; i++)
+		{
+			float side;
+			if (f.Count == 1)
+			{
+				side = (Vector3.Dot(((Component)f[i]).transform.position - tp, right) >= 0f) ? 1f : -1f;
+			}
+			else
+			{
+				side = (i < f.Count / 2) ? -1f : 1f;
+			}
+			f[i].unitAIAir.modTorpSide = side;
+			if (side < 0f)
+			{
+				port++;
+			}
+			else
+			{
+				star++;
+			}
+		}
+		Debug.Log((object)("[TORPSTRIKE] " + f.Count + " flight(s) ahead of " + target.unitData.unitName + (all ? "" : " (did not wait any longer for the rest)") + " split and swing in: " + ((f.Count > 1) ? ("hammer and anvil, " + port + " to port, " + star + " to starboard") : ("one flight, from " + (star > 0 ? "starboard" : "port")))));
+	}
+}

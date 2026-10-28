@@ -1,0 +1,20 @@
+v0.28.18 - one block in UnitAIAir.ModTorpedoSetup (Edit Method, add the block, Compile)
+=======================================================================================
+Do this AFTER ModTorpStrike is in.
+
+About two thirds of the way down the method there is this line (the only ModAnvilSide line in the method):
+
+		float num = this.ModAnvilSide(unit3, val);
+
+(dnSpy may call "unit3", "val" and "num" something else, and may leave out "this.".)
+Add this block straight ABOVE that line. If the ModAnvilSide line uses another name than "unit3" for the ship,
+use that name in the first "if" line too:
+
+		Vector3 modAhead;
+		if (ModTorpStrike.Ahead(this, unit3, out modAhead))
+		{
+			modAhead.y = base.transform.position.y;
+			this.parentUnit.wantedTurnRate = this.GetRequiredTurnRateFlat(modAhead);
+			this.parentUnit.wantedHeight = this.SetAircraftWantedHeight(this.attackHeight);
+			return true;
+		}
