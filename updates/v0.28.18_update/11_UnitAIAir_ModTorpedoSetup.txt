@@ -7,8 +7,13 @@ About two thirds of the way down the method there is this line (the only ModAnvi
 		float num = this.ModAnvilSide(unit3, val);
 
 (dnSpy may call "unit3", "val" and "num" something else, and may leave out "this.".)
-Add this block straight ABOVE that line. If the ModAnvilSide line uses another name than "unit3" for the ship,
-use that name in the first "if" line too:
+Add this block straight ABOVE that line. In the "if" line, the ship is the FIRST name inside ModAnvilSide( ... ),
+not the second. In Aaron's dnSpy that line reads  this.ModAnvilSide(focusedUnit, vector)  so use  focusedUnit :
+
+		Vector3 modAhead;
+		if (ModTorpStrike.Ahead(this, focusedUnit, out modAhead))
+
+Written with the names in this file:
 
 		Vector3 modAhead;
 		if (ModTorpStrike.Ahead(this, unit3, out modAhead))

@@ -23,7 +23,7 @@ When everything is in: **File > Save Module**.
 8. **ModAirSpawn** (NEW class, added 28 Oct after the first five): Add Class (C#) like step 4, paste all of `8_NEW_ModAirSpawn.cs.txt`, **Compile**. Then one line in **EngagementData.CreateUnitGroup**, see `9_EngagementData_CreateUnitGroup.txt`. If you already did steps 1 to 7, just do this step and Save Module.
 9. **ModTorpStrike** (NEW class, added 28 Oct): Add Class (C#), paste all of `10_NEW_ModTorpStrike.cs.txt`, **Compile**. Then one block in **UnitAIAir.ModTorpedoSetup**, see `11_UnitAIAir_ModTorpedoSetup.txt`. Needs steps 5 and 6 (ModAnvilSide) in.
 10. **ModStrikeRetarget** (NEW class, added 28 Oct): Add Class (C#), paste all of `12_NEW_ModStrikeRetarget.cs.txt`, **Compile**. Then one line in **UnitAIAir.ModCheckAutoStrike**, see `13_UnitAIAir_ModCheckAutoStrike.txt`.
-11. Optional: in **ModVersion** change `Current` to `"0.28.18"`.
+11. **ModVersion** (main menu): Edit Class, paste all of `14_ModVersion.cs.txt` (or just change the two lines: `Current = "0.28.18"` and the last Changelog line to `"- 0.28.18: many new fixes"`), **Compile**.
 12. **File > Save Module**.
 
 No new hooks besides the one-line edits above. The panel, stick and chase cam (0.28.14 to 0.28.16) are not touched.
