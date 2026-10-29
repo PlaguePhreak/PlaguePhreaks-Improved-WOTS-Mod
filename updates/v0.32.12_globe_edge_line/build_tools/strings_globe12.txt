@@ -1,0 +1,15 @@
+ModVersion
+0.32.10
+---
+0.32.12
+===
+~ModVersion
+Version 0.32.10 globe test 10
+---
+Version 0.32.12 globe test 12
+===
+~ModVersion
+<b>0.32.10</b></color> globe test 10:
+---
+<b>0.32.12</b></color> globe test 12:\n- No yellow map-edge line on the globe when the campaign map goes right round the world\n- Main menu keeps its video (menu globe not used)\n<color=#E0B030><b>0.32.10</b></color> globe test 10:
+===
