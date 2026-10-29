@@ -1,0 +1,379 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+using WorldMapStrategyKit;
+
+// 0.29.10 bail-out rescues [BAILOUT].
+// In battle: airmen who come down by parachute float in the sea; a ship of ours that stops next to one picks him up
+// (our airmen are saved, enemy airmen become prisoners).
+// After a campaign battle: airmen still in the water become a survivors marker on the campaign map
+// (the same orange/red markers as ModCrew's ship survivors, name ends in " aircrew").
+// On the campaign map: a flying boat (PBY, PBM, H6K, H8K, Sunderland) or a floatplane of ours that reaches the marker
+// lands, picks up as many of our airmen as it can carry and flies home. A task force can pick them up too.
+// Enemy aircrew markers are left to ModCrew: a task force takes them prisoner.
+public static class ModAirRescue
+{
+	public const bool On = true;
+	public const float MarkerHours = 36f;        // life vests and dinghies: longer than ship survivors (24 h)
+	public const int BoatSeats = 10;             // airmen one flying boat can carry
+	public const int FloatSeats = 1;             // airmen one floatplane can carry
+	public const float AirmanPoints = 0.25f;     // command points per airman of ours brought home
+	public const float PrisonerPoints = 0.1f;    // same as ModCrew.PrisonerPoints
+
+	public static readonly string[] FlyingBoats = { "pby", "pbm", "h6k", "emily", "sunderland" };
+	public static readonly string[] Floatplanes = { "jake", "pete", "kingfisher", "walrus", "walrusmk1", "e13a1", "e14y", "os2u3", "soc1", "j2f" };
+
+	public const string Tag = " aircrew";
+
+	// airmen of one side in the sea in this battle, waiting to go on the campaign map
+	public class Pending
+	{
+		public int side;
+		public int men;
+		public List<string> planes = new List<string>();
+	}
+
+	private static readonly Pending[] pending = { new Pending(), new Pending() };
+	private static bool havePos;
+	private static Vector2 mapPos;
+	private static string campaignId = string.Empty;
+	private static int savedInBattle;     // our airmen picked up by our ships in this battle
+	private static int prisonersInBattle; // enemy airmen picked up by our ships in this battle
+	private static float nextCheck;
+	private static bool failed;
+
+	// ModParachute.Land: an airman is now in the sea
+	public static void Splash(ModParachute p)
+	{
+		if (failed || p == null)
+		{
+			return;
+		}
+		try
+		{
+			if (EngagementData.instance == null || !EngagementData.instance.isCampaignEngagement || CampaignManager.instance == null || CampaignManager.instance.campaignData == null)
+			{
+				return;
+			}
+			CampaignData cd = CampaignManager.instance.campaignData;
+			Vector2 here;
+			if (!BattleSpot(out here))
+			{
+				return;
+			}
+			if (havePos && (cd.campaignID != campaignId || Vector2.Distance(here, mapPos) > 0.01f))
+			{
+				// left over from a battle that never got back to the map (quit to menu): drop it
+				Debug.Log("[BAILOUT] dropping " + (pending[0].men + pending[1].men) + " airmen from an earlier battle that never returned to the map");
+				Clear();
+			}
+			havePos = true;
+			mapPos = here;
+			campaignId = cd.campaignID;
+			Pending pe = pending[p.side == 0 ? 0 : 1];
+			pe.side = p.side == 0 ? 0 : 1;
+			pe.men++;
+			if (!pe.planes.Contains(p.planeName))
+			{
+				pe.planes.Add(p.planeName);
+			}
+			p.counted = true;
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError("[BAILOUT] rescue bookkeeping failed and stopped: " + ex.ToString());
+		}
+	}
+
+	// map position of this battle: our engaged task force (or air group), else theirs
+	private static bool BattleSpot(out Vector2 pos)
+	{
+		pos = Vector2.zero;
+		CampaignManager cm = CampaignManager.instance;
+		int i = cm.campaignData.playerObjectEngaged;
+		if (i >= 0 && cm.playerMobile != null && i < cm.playerMobile.Count && cm.playerMobile[i] != null)
+		{
+			pos = cm.playerMobile[i].currentMap2DLocation;
+			return true;
+		}
+		i = cm.campaignData.otherObjectEngaged;
+		if (i >= 0 && cm.otherMobile != null && i < cm.otherMobile.Count && cm.otherMobile[i] != null)
+		{
+			pos = cm.otherMobile[i].currentMap2DLocation;
+			return true;
+		}
+		return false;
+	}
+
+	// ModParachute.Water, once a second: is one of our ships stopped next to him?
+	public static bool TryPickup(ModParachute p)
+	{
+		if (failed || p == null || EngagementManager.instance == null || EngagementManager.instance.playerUnits == null)
+		{
+			return false;
+		}
+		List<Unit> units = EngagementManager.instance.playerUnits;
+		Vector3 at = p.transform.position;
+		for (int i = 0; i < units.Count; i++)
+		{
+			Unit u = units[i];
+			if (u == null || u.isDestroyed || u.unitSea == null || u.damageableSea == null)
+			{
+				continue;
+			}
+			Vector3 d = u.transform.position - at;
+			d.y = 0f;
+			if (d.magnitude > ModCrew.RescueRange || Utilities.ConvertMetrePerSecondToKnots(u.currentSpeed) > ModCrew.RescueKnots)
+			{
+				continue;
+			}
+			string ship = u.unitInstanceName;
+			if (p.side == 0)
+			{
+				savedInBattle++;
+				ModCrew.SendLog("ModRescued", ship + " picked up a downed airman of our " + p.planeName);
+			}
+			else
+			{
+				prisonersInBattle++;
+				ModCrew.SendLog("ModRescued", ship + " took a downed " + p.planeName + " airman prisoner");
+			}
+			ModBailOut.Say(ship + " picked up an airman of " + p.planeName + (p.side == 0 ? " (ours)" : " (enemy)"));
+			if (p.counted)
+			{
+				Pending pe = pending[p.side == 0 ? 0 : 1];
+				pe.men = Mathf.Max(0, pe.men - 1);
+				p.counted = false;
+			}
+			return true;
+		}
+		return false;
+	}
+
+	private static void Clear()
+	{
+		for (int i = 0; i < 2; i++)
+		{
+			pending[i].men = 0;
+			pending[i].planes.Clear();
+		}
+		havePos = false;
+		savedInBattle = 0;
+		prisonersInBattle = 0;
+	}
+
+	// ModCampaignRescue.Update (campaign map only): put the last battle's airmen on the map, then look for rescuers
+	public static void CampaignTick()
+	{
+		if (failed || !ModOptions.Rescue)
+		{
+			return;
+		}
+		try
+		{
+			CampaignManager cm = CampaignManager.instance;
+			if (cm == null || cm.campaignData == null || cm.playerMobile == null)
+			{
+				return;
+			}
+			if (havePos || savedInBattle > 0 || prisonersInBattle > 0)
+			{
+				Flush(cm);
+			}
+			ModAutoRescue.Tick(cm);
+			if (Time.unscaledTime < nextCheck)
+			{
+				return;
+			}
+			nextCheck = Time.unscaledTime + 0.5f;
+			Pickups(cm);
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError("[BAILOUT] campaign rescue failed and stopped: " + ex.ToString());
+		}
+	}
+
+	private static void Flush(CampaignManager cm)
+	{
+		CampaignData cd = cm.campaignData;
+		if (havePos && cd.campaignID != campaignId)
+		{
+			Clear();
+			return;
+		}
+		int points = Mathf.RoundToInt(savedInBattle * AirmanPoints + prisonersInBattle * PrisonerPoints);
+		if (savedInBattle > 0 || prisonersInBattle > 0)
+		{
+			Debug.Log("[BAILOUT] in the battle our ships picked up " + savedInBattle + " of our airmen and " + prisonersInBattle + " enemy airmen (+" + points + " command points)");
+		}
+		string text = string.Empty;
+		for (int i = 0; i < 2; i++)
+		{
+			Pending pe = pending[i];
+			if (!havePos || pe.men <= 0)
+			{
+				continue;
+			}
+			string name = Names(pe.planes) + Tag;
+			Vector2 jitter = new Vector2(UnityEngine.Random.Range(-0.002f, 0.002f), UnityEngine.Random.Range(-0.002f, 0.002f));
+			ModCrew.AddMapSurvivors(mapPos + jitter, pe.men, i, name, MarkerHours);
+			Debug.Log("[BAILOUT] " + pe.men + " " + (i == 0 ? "of our" : "enemy") + " airmen still in the water after the battle: map marker '" + name + "'");
+			if (i == 0)
+			{
+				text += pe.men + (pe.men == 1 ? " of our airmen is" : " of our airmen are") + " still in the water where the battle was fought (" + name + "). Send a PBY or another flying boat, or a task force, to the orange marker within " + MarkerHours.ToString("F0") + " hours to bring them home.";
+			}
+			else
+			{
+				text += (text.Length > 0 ? " " : string.Empty) + pe.men + " enemy airmen are in the water too (red marker): a task force can take them prisoner.";
+			}
+		}
+		if (points > 0 && cd.commandPoints != null && cd.commandPoints.Length != 0)
+		{
+			cd.commandPoints[0] += points;
+		}
+		if (savedInBattle > 0 || prisonersInBattle > 0)
+		{
+			string s = "Our ships picked up " + savedInBattle + " of our downed airmen" + (prisonersInBattle > 0 ? " and took " + prisonersInBattle + " enemy airmen prisoner" : string.Empty) + (points > 0 ? " (+" + points + " command points)." : ".");
+			text = text.Length > 0 ? s + " " + text : s;
+		}
+		if (text.Length > 0)
+		{
+			ModCrew.CampaignMessage("SurvivorsReported", text);
+		}
+		Clear();
+	}
+
+	private static string Names(List<string> planes)
+	{
+		if (planes.Count == 0)
+		{
+			return "downed";
+		}
+		if (planes.Count == 1)
+		{
+			return planes[0];
+		}
+		if (planes.Count == 2)
+		{
+			return planes[0] + " and " + planes[1];
+		}
+		return planes[0] + ", " + planes[1] + " and other";
+	}
+
+	public static int Seats(string prefab)
+	{
+		string p = (prefab ?? string.Empty).ToLower();
+		if (Array.IndexOf(FlyingBoats, p) >= 0)
+		{
+			return BoatSeats;
+		}
+		if (Array.IndexOf(Floatplanes, p) >= 0)
+		{
+			return FloatSeats;
+		}
+		return 0;
+	}
+
+	// our own aircrew markers only: rescue by flying boat/floatplane, or by a task force
+	private static void Pickups(CampaignManager cm)
+	{
+		List<string> list = ModCrew.MapRecords();
+		if (list.Count == 0)
+		{
+			return;
+		}
+		bool changed = false;
+		float range = cm.campaignData.interactionDistanceMetres;
+		for (int r = list.Count - 1; r >= 0; r--)
+		{
+			Vector2 pos;
+			float men;
+			int faction;
+			float hours;
+			string name;
+			if (!ModCrew.ReadRecord(list[r], out pos, out men, out faction, out hours, out name) || faction != 0 || !name.EndsWith(Tag))
+			{
+				continue;
+			}
+			for (int j = 0; j < cm.playerMobile.Count && men >= 1f; j++)
+			{
+				GameObjectAnimator goa = cm.playerMobile[j];
+				if (goa == null || goa.mobileMapObject == null)
+				{
+					continue;
+				}
+				MobileMapObject mmo = goa.mobileMapObject;
+				if (mmo.currentFaction != 0 || mmo.unitPrefabs == null || mmo.unitPrefabs.Count == 0 || (mmo.type != 0 && mmo.type != 1))
+				{
+					continue;
+				}
+				if (cm.GetDistanceInMetresBetweenMapObjects(goa.currentMap2DLocation, pos) > range)
+				{
+					continue;
+				}
+				int got;
+				string text;
+				if (mmo.type == 1)
+				{
+					if (mmo.currentCampaignAction == 1)
+					{
+						continue; // already flying home
+					}
+					int seats = 0;
+					for (int k = 0; k < mmo.unitPrefabs.Count; k++)
+					{
+						seats += Seats(mmo.unitPrefabs[k]);
+					}
+					if (seats == 0)
+					{
+						continue; // can't land on the sea
+					}
+					got = Mathf.Min(seats, Mathf.RoundToInt(men));
+					men -= got;
+					int pts = Mathf.Max(1, Mathf.RoundToInt(got * AirmanPoints));
+					AddPoints(cm, pts);
+					text = mmo.mobileName + " landed on the sea and picked up " + got + (got == 1 ? " airman" : " airmen") + " of the " + name + ". They are flying home (+" + pts + " command points).";
+					if (men >= 1f)
+					{
+						text += " About " + Mathf.RoundToInt(men) + " are still waiting.";
+					}
+					cm.AirReturnToBase(goa);
+				}
+				else
+				{
+					got = Mathf.RoundToInt(men);
+					men = 0f;
+					int pts = Mathf.Max(1, Mathf.RoundToInt(got * AirmanPoints));
+					AddPoints(cm, pts);
+					text = mmo.mobileName + " picked up " + got + (got == 1 ? " airman" : " airmen") + " of the " + name + " (+" + pts + " command points).";
+				}
+				Debug.Log("[BAILOUT] " + text);
+				ModCrew.CampaignMessage("SurvivorsRescued", text);
+				changed = true;
+			}
+			if (men < 1f)
+			{
+				list.RemoveAt(r);
+			}
+			else
+			{
+				list[r] = ModCrew.MakeRecord(pos, men, faction, hours, name);
+			}
+		}
+		if (changed)
+		{
+			ModCrew.RebuildMapMarkers();
+		}
+	}
+
+	private static void AddPoints(CampaignManager cm, int pts)
+	{
+		if (pts > 0 && cm.campaignData.commandPoints != null && cm.campaignData.commandPoints.Length != 0)
+		{
+			cm.campaignData.commandPoints[0] += pts;
+		}
+	}
+}

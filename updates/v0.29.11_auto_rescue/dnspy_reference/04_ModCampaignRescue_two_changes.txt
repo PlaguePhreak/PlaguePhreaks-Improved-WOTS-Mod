@@ -1,0 +1,19 @@
+TWO CHANGES IN ModCampaignRescue
+
+A) ModCampaignRescue.Update: right-click Update > Edit Method (C#)...
+   Add the line marked NEW just above "ModCrew.CampaignRescueCheck();" (inside the try):
+
+			ModAirRescue.CampaignTick();      // NEW
+			ModCrew.CampaignRescueCheck();
+
+   Compile.
+
+B) New method OnDisable: right-click ModCampaignRescue > Add Method (C#)... (or Edit Class and paste it in
+   above FitMessagePanel):
+
+	private void OnDisable()
+	{
+		ModAutoRescue.Hide();
+	}
+
+   Compile. (It removes the rescue button while a battle is on, like the FUEL button.)

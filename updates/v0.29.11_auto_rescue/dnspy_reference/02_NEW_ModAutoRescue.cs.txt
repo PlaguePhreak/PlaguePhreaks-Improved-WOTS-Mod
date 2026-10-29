@@ -1,0 +1,260 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.Events;
+using UnityEngine.UI;
+using WorldMapStrategyKit;
+
+// 0.29.11 auto rescue: a button in the campaign map's top-left column (under BOOK, BELL, FUEL).
+// When it is on, each of our downed-aircrew markers that no flying boat is heading for gets one (or two)
+// flying boats from the nearest of our airfields that has them free and can reach the marker and fly back.
+// They fly there by themselves; ModAirRescue.Pickups does the pick-up and sends them home.
+public static class ModAutoRescue
+{
+	public const int ButtonIndex = 3;            // ModTFOverlay.MakeButton row: 0 BOOK, 1 BELL, 2 FUEL
+	public const int MaxPlanes = 2;              // flying boats per marker
+	public const float RangeMargin = 0.9f;       // keep 10% of the radius in hand
+	public const float CheckSeconds = 2f;        // real seconds between looks at the map
+	public const string PrefKey = "ModAutoRescue";
+
+	public static bool on;
+	private static bool loaded;
+	private static GameObject button;
+	private static Image buttonBack;
+	private static bool buttonReported;
+	private static float nextCheck;
+	private static bool failed;
+
+	private class Flight
+	{
+		public GameObjectAnimator goa;
+		public Vector2 target;
+	}
+
+	private static readonly List<Flight> flights = new List<Flight>();
+
+	// ModAirRescue.CampaignTick, every frame on the campaign map
+	public static void Tick(CampaignManager cm)
+	{
+		if (failed)
+		{
+			return;
+		}
+		try
+		{
+			if (!loaded)
+			{
+				loaded = true;
+				on = PlayerPrefs.GetInt(PrefKey, 0) == 1;
+			}
+			if (button == null)
+			{
+				Build();
+			}
+			if (buttonBack != null)
+			{
+				buttonBack.color = on ? new Color(0.5f, 0.3f, 0.08f, 0.95f) : new Color(0.07f, 0.12f, 0.19f, 0.92f);
+			}
+			if (!on || Time.unscaledTime < nextCheck)
+			{
+				return;
+			}
+			nextCheck = Time.unscaledTime + CheckSeconds;
+			Dispatch(cm);
+		}
+		catch (Exception ex)
+		{
+			failed = true;
+			Debug.LogError("[BAILOUT] auto rescue failed and stopped: " + ex.ToString());
+		}
+	}
+
+	// ModCampaignRescue.OnDisable: the map is hidden for a battle
+	public static void Hide()
+	{
+		if (button != null)
+		{
+			UnityEngine.Object.Destroy(button);
+		}
+		button = null;
+		buttonBack = null;
+	}
+
+	private static void Build()
+	{
+		CampaignInterface ci = CampaignInterface.instance;
+		if (ci == null || ci.pauseButtonImage == null || ci.pauseButtonImage.canvas == null)
+		{
+			return;
+		}
+		Transform root = ci.pauseButtonImage.canvas.rootCanvas.transform;
+		Sprite icon = ModCrew.SurvivorIcon();
+		button = ModTFOverlay.MakeButton(root, ButtonIndex, icon, "SAR", "Auto rescue by flying boat", new UnityAction(Toggle), out buttonBack);
+		if (!buttonReported)
+		{
+			buttonReported = true;
+			Debug.Log("[BAILOUT] auto rescue button added (" + (on ? "on" : "off") + ")");
+		}
+	}
+
+	private static void Toggle()
+	{
+		on = !on;
+		nextCheck = 0f;
+		try
+		{
+			PlayerPrefs.SetInt(PrefKey, on ? 1 : 0);
+			PlayerPrefs.Save();
+		}
+		catch
+		{
+		}
+		Debug.Log("[BAILOUT] auto rescue " + (on ? "on" : "off"));
+		ModCrew.CampaignMessage("SurvivorsReported", on
+			? "Auto rescue ON: flying boats will fly out to our downed airmen by themselves."
+			: "Auto rescue OFF: send flying boats to downed airmen yourself.");
+	}
+
+	private static void Dispatch(CampaignManager cm)
+	{
+		if (!ModOptions.Rescue || cm.campaignData == null || cm.landMapLocations == null || CampaignInterface.instance == null)
+		{
+			return;
+		}
+		if (!cm.campaignData.airOpHours[CampaignInterface.instance.dateTime.Hour])
+		{
+			return; // the game won't fly outside air operation hours
+		}
+		for (int i = flights.Count - 1; i >= 0; i--)
+		{
+			Flight f = flights[i];
+			if (f.goa == null || f.goa.mobileMapObject == null || f.goa.mobileMapObject.currentCampaignAction == 1)
+			{
+				flights.RemoveAt(i);
+			}
+		}
+		List<string> list = ModCrew.MapRecords();
+		for (int r = 0; r < list.Count; r++)
+		{
+			Vector2 pos;
+			float men;
+			int faction;
+			float hours;
+			string name;
+			if (!ModCrew.ReadRecord(list[r], out pos, out men, out faction, out hours, out name) || faction != 0 || !name.EndsWith(ModAirRescue.Tag) || men < 1f)
+			{
+				continue;
+			}
+			if (Covered(pos))
+			{
+				continue;
+			}
+			Launch(cm, pos, Mathf.RoundToInt(men), name);
+		}
+	}
+
+	private static bool Covered(Vector2 pos)
+	{
+		for (int i = 0; i < flights.Count; i++)
+		{
+			if (Vector2.Distance(flights[i].target, pos) < 0.0001f)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// nearest of our airfields with a free flying boat in range of the marker (out and back)
+	private static void Launch(CampaignManager cm, Vector2 target, int men, string name)
+	{
+		MapLocation best = null;
+		int bestType = -1;
+		int bestFree = 0;
+		float bestDist = float.MaxValue;
+		for (int i = 0; i < cm.landMapLocations.Count; i++)
+		{
+			MapLocation ml = cm.landMapLocations[i];
+			if (ml == null || ml.currentFaction != 0 || ml.airfieldLevel < 1 || ml.aircraftCooldown > 0f || ml.inTheAir == null)
+			{
+				continue;
+			}
+			List<string> types = cm.GetAirTypesAtLocation(ml);
+			List<int> numbers = cm.GetAirNumbersAtLocation(ml);
+			int baseIdx = (ml.airfieldLevel - 1) * types.Count;
+			Vector2 at = ml.gameObjectAnimator != null ? ml.gameObjectAnimator.currentMap2DLocation : ml.locationPosition;
+			float dist = cm.GetDistanceInMetresBetweenMapObjects(at, target);
+			if (dist >= bestDist)
+			{
+				continue;
+			}
+			for (int j = 0; j < types.Count; j++)
+			{
+				if (ModAirRescue.Seats(types[j]) < ModAirRescue.BoatSeats || j + baseIdx >= numbers.Count || j >= ml.inTheAir.Count)
+				{
+					continue; // flying boats only: floatplanes stay with their ships
+				}
+				int free = numbers[j + baseIdx] - ml.inTheAir[j];
+				if (ml.destroyedAir != null && j < ml.destroyedAir.Count)
+				{
+					free -= ml.destroyedAir[j];
+				}
+				UnitData ud;
+				if (free <= 0 || !EngagementManager.instance.unitDataDictionary.TryGetValue(types[j], out ud))
+				{
+					continue;
+				}
+				if (dist > ud.range * 1000f / 2f * RangeMargin)
+				{
+					continue; // radius = half the range, as the game's own strike panel shows it
+				}
+				best = ml;
+				bestType = j;
+				bestFree = free;
+				bestDist = dist;
+				break;
+			}
+		}
+		if (best == null)
+		{
+			return;
+		}
+		string prefab = cm.GetAirTypesAtLocation(best)[bestType];
+		int count = Mathf.Clamp(Mathf.CeilToInt(men / (float)ModAirRescue.BoatSeats), 1, Mathf.Min(MaxPlanes, bestFree));
+		if (EngagementManager.instance.unitDataDictionary[prefab].unitSubtype == UnitSubType.Scout)
+		{
+			count = 1; // the game launches scouts one at a time
+		}
+		CampaignInterface ci = CampaignInterface.instance;
+		MobileMapObject tf = CampaignAI.instance.newTaskForce;
+		ci.ClearNewGroupData(tf);
+		tf.unitPrefabs = new List<string>();
+		for (int k = 0; k < count; k++)
+		{
+			tf.unitPrefabs.Add(prefab);
+			tf.paint.Add(0);
+		}
+		tf.currentFaction = 0;
+		tf.type = 1;
+		tf.formation = 5;
+		tf.formationSpacing = 50;
+		tf.payload = new List<int>();
+		best.inTheAir[bestType] += count;
+		cm.ApplyCooldownToAirLauncher(best, null, -1, tf);
+		List<string> createdBy = new List<string> { best.locationID };
+		Vector2 from = best.gameObjectAnimator != null ? best.gameObjectAnimator.currentMap2DLocation : best.locationPosition;
+		GameObjectAnimator selected = ci.currentMapObject;
+		GameObjectAnimator goa = ci.CreateNewMobileObject(CampaignObjectType.Air, tf, from, false, createdBy, best.locationName);
+		ci.currentMapObject = selected; // don't take the player's selection
+		if (goa == null)
+		{
+			return;
+		}
+		CampaignAI.instance.StartCoroutine(CampaignAI.instance.MoveMobileNextFrame(goa, target, true));
+		flights.Add(new Flight { goa = goa, target = target });
+		string plane = EngagementManager.instance.unitDataDictionary[prefab].unitName;
+		string text = "Auto rescue: " + count + " " + plane + (count == 1 ? " is" : "s are") + " flying from " + best.locationName + " to pick up " + men + (men == 1 ? " airman" : " airmen") + " of the " + name + " (" + Mathf.RoundToInt(bestDist / 1000f) + " km).";
+		Debug.Log("[BAILOUT] " + text);
+		ModCrew.CampaignMessage("SurvivorsReported", text);
+	}
+}

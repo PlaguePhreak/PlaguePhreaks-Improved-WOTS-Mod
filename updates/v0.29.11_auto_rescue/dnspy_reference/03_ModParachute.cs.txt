@@ -1,0 +1,278 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using UnityEngine;
+
+public class ModParachute : MonoBehaviour
+{
+	private const float Sway = 6.5f;    // pivot of the swing: the canopy centre, metres above the harness
+	private const float Riser = 1.1f;   // top of the risers above the harness
+	private const float Descent = 6f;   // m/s under the canopy
+
+	private UnitAir plane;
+	private string nat;
+	private float wait;
+	private int phase;                  // 0 waiting in the plane, 1 in the air, 2 in the water
+	private float t;                    // seconds since the jump (or since landing in phase 2)
+	private float v;                    // falling speed m/s
+	private Vector3 drift;              // game units/s, thrown out at the plane's speed, dies away
+	private Vector3 wind;
+	private Transform sway;
+	private Transform pilot;
+	private Transform chute;
+	private MeshFilter pilotMesh;
+	private bool canopyGone;
+	private float spinRate;
+	private string who;
+	private float fallTime;
+	public int side = 1;               // 0 ours, 1 enemy (ModAirRescue)
+	public string planeName = "plane";
+	public bool counted;               // on ModAirRescue's list of airmen in the water
+	private float pickTimer;
+
+	public void Init(UnitAir ua, string nation, float delay)
+	{
+		plane = ua;
+		nat = nation;
+		who = ((ua.unitData != null) ? ua.unitData.unitName : "plane") + " (" + (ua.unitAI != null && ua.unitAI.parentUnit != null && ua.unitAI.parentUnit.faction == Faction.Player ? "ours" : "enemy") + ")";
+		wait = delay;
+		side = (ua.unitAI != null && ua.unitAI.parentUnit != null && ua.unitAI.parentUnit.faction == Faction.Player) ? 0 : 1;
+		planeName = (ua.unitData != null) ? ua.unitData.unitName : "plane";
+		ModBailOut.Active.Add(this);
+	}
+
+	private void OnDestroy()
+	{
+		ModBailOut.Active.Remove(this);
+		ModBailOut.InWater.Remove(this);
+	}
+
+	private void Update()
+	{
+		float dt = Time.deltaTime;
+		if (dt <= 0f)
+		{
+			return;
+		}
+		try
+		{
+			if (phase == 0)
+			{
+				Waiting(dt);
+			}
+			else if (phase == 1)
+			{
+				Air(dt);
+			}
+			else
+			{
+				Water(dt);
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[BAILOUT] parachute failed: " + ex.Message);
+			Destroy(gameObject);
+		}
+	}
+
+	private void Waiting(float dt)
+	{
+		if (plane == null || plane.transform.position.y < 0.3f)
+		{
+			ModBailOut.Say(who + ": airman did not get out in time, went down with the plane");
+			Destroy(gameObject);   // went into the sea with the plane
+			return;
+		}
+		wait -= dt;
+		if (wait > 0f)
+		{
+			return;
+		}
+		// a plane that blew up while he was still in it: most of the crew did not make it
+		if (plane.unitGraphic != null && !plane.unitGraphic.activeSelf && UnityEngine.Random.value > ModBailOut.ExplodedChance / ModBailOut.JumpChance)
+		{
+			ModBailOut.Say(who + ": the plane blew up before the airman could get out");
+			Destroy(gameObject);
+			return;
+		}
+		Build();
+		FollowOrigin();
+		Transform pt = plane.transform;
+		transform.position = pt.position + UnityEngine.Random.insideUnitSphere * 0.15f;
+		drift = pt.forward * plane.currentActualSpeed * 0.6f;
+		float a = UnityEngine.Random.Range(0f, 360f);
+		wind = Quaternion.Euler(0f, a, 0f) * Vector3.forward * 0.1f;   // 1 m/s
+		transform.rotation = Quaternion.Euler(0f, pt.eulerAngles.y + UnityEngine.Random.Range(-30f, 30f), 0f);
+		spinRate = UnityEngine.Random.Range(-8f, 8f);
+		phase = 1;
+		t = 0f;
+		v = 0f;
+		ModBailOut.Say(who + ": airman bails out at " + (transform.position.y * 10f).ToString("F0") + " m");
+	}
+
+	private void Build()
+	{
+		transform.localScale = Vector3.one * 0.1f;
+		sway = new GameObject("sway").transform;
+		sway.SetParent(transform, false);
+		sway.localPosition = new Vector3(0f, Sway, 0f);
+		pilot = Part("pilot", sway, ModChuteAssets.Airman(nat, "hanging"), ModChuteAssets.AirmanMat(nat));
+		pilot.localPosition = new Vector3(0f, -Sway, 0f);
+		pilotMesh = pilot.GetComponent<MeshFilter>();
+		chute = Part("chute", sway, ModChuteAssets.Canopy(nat), ModChuteAssets.CanopyMat(nat));
+		chute.localPosition = new Vector3(0f, -Sway, -0.15f);
+		chute.localScale = Vector3.one * 0.01f;
+	}
+
+	private static Transform Part(string name, Transform parent, Mesh mesh, Material mat)
+	{
+		GameObject g = new GameObject(name);
+		g.transform.SetParent(parent, false);
+		g.AddComponent<MeshFilter>().sharedMesh = mesh;
+		MeshRenderer r = g.AddComponent<MeshRenderer>();
+		r.sharedMaterial = mat;
+		return g.transform;
+	}
+
+	private void Air(float dt)
+	{
+		t += dt;
+		fallTime += dt;
+		// falling speed: free fall, the opening shock, then a steady 6 m/s
+		if (t < 1.5f)
+		{
+			v += 9.8f * dt;
+		}
+		else if (t < 2.6f)
+		{
+			v += (Descent - v) * Mathf.Min(1f, dt * 4.5f);
+		}
+		else
+		{
+			v += (Descent - v) * Mathf.Min(1f, dt * 2f);
+		}
+		drift *= Mathf.Exp(-dt * (t < 2.6f ? 0.8f : 2.5f));
+		Vector3 p = transform.position + (drift + wind) * dt;
+		p.y -= v * dt * 0.1f;
+		transform.position = p;
+		transform.Rotate(0f, spinRate * dt, 0f, Space.World);
+
+		// the airman pitches forward in free fall (never past about 50 degrees), jerked upright when the canopy opens
+		pilot.localRotation = Quaternion.Euler(Keys(t, PitchT, PitchV), 0f, Keys(t, PitchT, RollV));
+		// the canopy: packed, streams out, blossoms, then breathes
+		float sx = Keys(t, ChuteT, ChuteW);
+		float sy = Keys(t, ChuteT, ChuteH);
+		if (t > 3.3f)
+		{
+			float b = 1f + 0.01f * (1f + Mathf.Sin(t * 4.2f));
+			sx = b;
+			sy = 2f - b;
+		}
+		chute.localScale = new Vector3(sx, sy, sx);
+		float out01 = Mathf.Clamp01((t - 1f) / 0.5f);
+		chute.localPosition = Vector3.Lerp(new Vector3(0f, -Sway, -0.15f), new Vector3(0f, Riser - Sway, 0f), out01);
+		// swing under the canopy, dying away
+		float amp = (5f + 11f * Mathf.Exp(-(t - 2.6f) / 4f)) * Mathf.Clamp01((t - 2.3f) / 0.4f);
+		sway.localRotation = Quaternion.Euler(amp * Mathf.Sin(6.2832f * (t - 2.3f) / 3.4f), 0f, 0.45f * amp * Mathf.Sin(6.2832f * (t - 2.6f) / 4.7f));
+
+		if (transform.position.y <= 0.14f)   // his feet reach the water
+		{
+			Land();
+		}
+	}
+
+	private void Land()
+	{
+		phase = 2;
+		t = 0f;
+		GameObject fx;
+		if (Library.instance != null && Library.instance.particleEffectsDictionary != null && Library.instance.particleEffectsDictionary.TryGetValue("splashTiny", out fx) && fx != null)
+		{
+			Vector3 at = transform.position;
+			at.y = 0f;
+			ObjectPoolManager.CreatePooled(fx, at, Quaternion.identity);
+		}
+		// floating pose: chest at the waterline, leaning back in his life vest
+		pilotMesh.sharedMesh = ModChuteAssets.Airman(nat, "floating");
+		pilot.localRotation = Quaternion.identity;
+		ModBailOut.InWater.Add(this);
+		FollowOrigin();
+		ModAirRescue.Splash(this);
+		ModBailOut.Say(who + ": airman lands in the sea after " + fallTime.ToString("F0") + " s under the canopy, " + ModBailOut.InWater.Count + " in the water now");
+	}
+
+	// ride along when the floating origin shifts the world (like ModCrew's survivor anchors), so ships can find him
+	private void FollowOrigin()
+	{
+		if (transform.parent == null && FloatingOrigin.instance != null && FloatingOrigin.instance.transformsToMove != null && FloatingOrigin.instance.transformsToMove.Length != 0 && FloatingOrigin.instance.transformsToMove[0] != null)
+		{
+			transform.SetParent(FloatingOrigin.instance.transformsToMove[0], true);
+		}
+	}
+
+	private void Water(float dt)
+	{
+		t += dt;
+		Vector3 p = transform.position;
+		p.y = Mathf.Lerp(p.y, -0.005f * Mathf.Sin(t * 2.5f), Mathf.Min(1f, dt * 2f));
+		transform.position = p + wind * 0.3f * dt;
+		sway.localRotation = Quaternion.Slerp(sway.localRotation, Quaternion.identity, Mathf.Min(1f, dt * 3f));
+		if (!canopyGone)
+		{
+			// the canopy tips over downwind and settles flat on the sea, then sinks after a minute
+			float k = Mathf.Clamp01(t / 4f);
+			float tip = (t < 0.8f) ? (-25f * t / 0.8f) : ((t < 2.2f) ? Mathf.Lerp(-25f, -35f, (t - 0.8f) / 1.4f) : Mathf.Lerp(-35f, 0f, Mathf.Clamp01((t - 2.2f) / 1.8f)));
+			chute.localRotation = Quaternion.Euler(tip, 0f, 0f);
+			chute.localScale = new Vector3(Mathf.Lerp(1f, 1.3f, k), Mathf.Lerp(1f, 0.03f, Mathf.SmoothStep(0f, 1f, k)), Mathf.Lerp(1f, 1.3f, k));
+			float sink = (t > 60f) ? (t - 60f) * 0.3f : 0f;
+			chute.localPosition = new Vector3(0f, Mathf.Lerp(Riser - Sway, -Sway - 0.12f, k) - sink, Mathf.Lerp(0f, -4f, k));
+			if (t > 90f)
+			{
+				canopyGone = true;
+				Destroy(chute.gameObject);
+			}
+		}
+		pickTimer += dt;
+		if (pickTimer >= 1f)
+		{
+			pickTimer = 0f;
+			if (ModAirRescue.TryPickup(this))
+			{
+				Destroy(gameObject);
+				return;
+			}
+		}
+		if (t > ModBailOut.FloatSeconds)
+		{
+			Destroy(gameObject);
+		}
+	}
+
+	// keyframes, linear between them
+	private static readonly float[] PitchT = { 0f, 0.5f, 1f, 1.5f, 1.85f, 2.2f, 2.6f, 3.1f };
+	private static readonly float[] PitchV = { 0f, 25f, 45f, 50f, 15f, -14f, 5f, 0f };
+	private static readonly float[] RollV = { 0f, 10f, 18f, 12f, 4f, -4f, 0f, 0f };
+	private static readonly float[] ChuteT = { 0f, 1f, 1.2f, 1.5f, 1.9f, 2.25f, 2.6f, 2.95f, 3.3f };
+	private static readonly float[] ChuteW = { 0.01f, 0.01f, 0.03f, 0.06f, 0.18f, 0.7f, 1.15f, 0.95f, 1f };
+	private static readonly float[] ChuteH = { 0.01f, 0.01f, 0.25f, 1.05f, 1.08f, 1.02f, 0.88f, 1.03f, 1f };
+
+	private static float Keys(float x, float[] xs, float[] ys)
+	{
+		if (x <= xs[0])
+		{
+			return ys[0];
+		}
+		for (int i = 1; i < xs.Length; i++)
+		{
+			if (x <= xs[i])
+			{
+				return Mathf.Lerp(ys[i - 1], ys[i], (x - xs[i - 1]) / (xs[i] - xs[i - 1]));
+			}
+		}
+		return ys[ys.Length - 1];
+	}
+}
+
+// Reads the parachute and airman models (OBJ + PNG) from War on the Sea\ModAssets\parachutes\ once, and keeps them.
