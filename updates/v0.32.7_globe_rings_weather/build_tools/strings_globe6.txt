@@ -1,0 +1,15 @@
+ModVersion
+0.32.5
+---
+0.32.6
+===
+~ModVersion
+Version 0.32.5 globe test 5
+---
+Version 0.32.6 globe test 6
+===
+~ModVersion
+<b>0.32.5</b></color> globe, phase 3 (test build 5):
+---
+<b>0.32.6</b></color> globe, phase 4 (test build 6):\n- Clicks on the globe work like the flat map: click an icon to select it, hover for its tooltip\n- Plot Course on the globe: click waypoints on the Earth, right-click to finish; the ruler works too\n- The game's route lines are drawn on the globe\n<color=#E0B030><b>0.32.5</b></color> globe, phase 3 (test build 5):
+===
