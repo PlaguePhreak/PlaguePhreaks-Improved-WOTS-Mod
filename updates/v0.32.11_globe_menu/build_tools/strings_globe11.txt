@@ -1,0 +1,15 @@
+ModVersion
+0.32.10
+---
+0.32.11
+===
+~ModVersion
+Version 0.32.10 globe test 10
+---
+Version 0.32.11 globe test 11
+===
+~ModVersion
+<b>0.32.10</b></color> globe test 10:
+---
+<b>0.32.11</b></color> globe test 11:\n- The globe spins in the main menu where the video used to be\n<color=#E0B030><b>0.32.10</b></color> globe test 10:
+===

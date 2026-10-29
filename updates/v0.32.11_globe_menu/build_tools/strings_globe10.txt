@@ -1,0 +1,15 @@
+ModVersion
+0.32.9
+---
+0.32.10
+===
+~ModVersion
+Version 0.32.9 globe test 9
+---
+Version 0.32.10 globe test 10
+===
+~ModVersion
+<b>0.32.9</b></color> globe, phase 6 (test build 9):
+---
+<b>0.32.10</b></color> globe test 10:\n- Task force fuel now drains whether or not F9 is on (the 0.30 fuel hotfix)\n<color=#E0B030><b>0.32.9</b></color> globe, phase 6 (test build 9):
+===

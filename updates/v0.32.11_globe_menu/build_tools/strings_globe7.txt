@@ -1,0 +1,15 @@
+ModVersion
+0.32.6
+---
+0.32.7
+===
+~ModVersion
+Version 0.32.6 globe test 6
+---
+Version 0.32.7 globe test 7
+===
+~ModVersion
+<b>0.32.6</b></color> globe, phase 4 (test build 6):
+---
+<b>0.32.7</b></color> globe, phase 5 (test build 7):\n- Base range rings on the globe, same size and visibility as the flat map\n- Weather cells and sea states on the globe\n- Map notes on the globe; the ruler and map-note keys work on the globe\n<color=#E0B030><b>0.32.6</b></color> globe, phase 4 (test build 6):
+===
