@@ -36,6 +36,8 @@ static class P
         if (Environment.GetEnvironmentVariable("HOOK_TORPEDOHIT") == "1") HookTorpedoHit();
         if (Environment.GetEnvironmentVariable("HOOKS_ALLIED") == "1") HooksAllied();
         if (Environment.GetEnvironmentVariable("HOOKS_ENEMY") == "1") HooksEnemy();
+        if (Environment.GetEnvironmentVariable("HOOKS_ENEMY2") == "1") HooksEnemy2();
+        if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("PRUNE"))) Prune(Environment.GetEnvironmentVariable("PRUNE").Split(','));
         var strFile = Environment.GetEnvironmentVariable("STRINGS");
         if (!string.IsNullOrEmpty(strFile)) Strings(strFile);
 
@@ -579,6 +581,45 @@ static class P
             Retarget(m, r, ins[0]);
         }
         m.Body.OptimizeMacros(); log.Add("HOOK " + what + " (" + rets.Count + " returns)");
+    }
+
+
+    // 0.31.2: CheckAirfieldLaunchFighterAirSupport first line: if (ModEnemyCampaign.AirSupport(ml, mmo)) return ModEnemyCampaign.AirSupportResult();
+    static void HooksEnemy2()
+    {
+        FirstLineReturn("CampaignAI", "CheckAirfieldLaunchFighterAirSupport", 2, "ModEnemyCampaign", "AirSupport", new[] { 1, 2 }, Instruction.Create(OpCodes.Call, E("ModEnemyCampaign", "AirSupportResult", 0)));
+    }
+
+    // drop members of these mod types that the patch no longer has and nothing references any more
+    static void Prune(string[] types)
+    {
+        int before;
+        do { before = log.Count; PruneOnce(types); } while (log.Count != before);
+    }
+    static void PruneOnce(string[] types)
+    {
+        var refs = new HashSet<string>();
+        foreach (var ty in A.GetTypes()) foreach (var me in ty.Methods.Where(x => x.HasBody))
+            foreach (var i in me.Body.Instructions) if (i.Operand is MemberReference mr) refs.Add(mr.FullName);
+        foreach (var tn in types)
+        {
+            var d = T(tn); var s = Pm.Types.First(x => x.FullName == tn);
+            PruneType(d, s, refs);
+        }
+    }
+    static void PruneType(TypeDefinition d, TypeDefinition s, HashSet<string> refs)
+    {
+        foreach (var m in d.Methods.ToList())
+            if (!s.Methods.Any(x => x.Name == m.Name && x.Parameters.Count == m.Parameters.Count) && !refs.Contains(m.FullName)) { d.Methods.Remove(m); log.Add("PRUNE method " + m.FullName); }
+        foreach (var f in d.Fields.ToList())
+            if (!s.Fields.Any(x => x.Name == f.Name) && !refs.Contains(f.FullName)) { d.Fields.Remove(f); log.Add("PRUNE field " + f.FullName); }
+        foreach (var n in d.NestedTypes.ToList())
+        {
+            if (n.Name.StartsWith("<")) continue;
+            var sn = s.NestedTypes.FirstOrDefault(x => x.Name == n.Name);
+            if (sn != null) PruneType(n, sn, refs);
+            else if (!refs.Any(r => r.Contains(n.FullName))) { d.NestedTypes.Remove(n); log.Add("PRUNE type " + n.FullName); }
+        }
     }
 
     static void HooksEnemy()

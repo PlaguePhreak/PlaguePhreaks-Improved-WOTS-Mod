@@ -1,10 +1,16 @@
-# Enemy AI numbers for 0.31. Put this file in Wars on the Sea_Data\StreamingAssets\override\ModAssets\enemy_ai.txt
+# Enemy AI numbers for 0.31.2. Put this file in Wars on the Sea_Data\StreamingAssets\override\ModAssets\enemy_ai.txt
 # Each line: name = Very Easy, Easy, Balanced, Hard, Elite. Lines starting with # are ignored.
 # Campaign numbers follow Campaign Difficulty, battle numbers follow Combat Difficulty.
 # Delete a line (or the whole file) to use the built-in value. Values below are the built-in ones.
 
-# scout planes sent out per day by each enemy air base that has a search plane
-ScoutSorties = 1, 2, 4, 6, 8
+# single scout planes each enemy airfield sends out per wave, in a fan
+ScoutLines = 2, 3, 4, 6, 8
+# scout waves a day, spread over the flying hours
+ScoutWaves = 1, 2, 2, 3, 3
+# width of each airfield's scout fan (degrees)
+ScoutArc = 60, 90, 120, 150, 180
+# most enemy scouts in the air at once
+ScoutMax = 8, 12, 20, 30, 40
 # how far a scout flies out (km)
 ScoutLegKm = 300, 350, 450, 550, 650
 # minutes before a scout's sighting reaches enemy HQ (scout must survive)
@@ -27,8 +33,20 @@ ChaseRatio = 0.75, 0.72, 0.68, 0.6, 0.5
 SpotMemory = 1.17, 1.33, 1.67, 2, 2.67
 # hours the enemy searches your last known position after losing you
 LastKnownHours = 0, 6, 12, 12, 18
-# most minutes a near base waits so all strike waves arrive together
-StrikeWaitMin = 10, 15, 20, 30, 30
+# strike groups gather this far (km) short of the target before going in
+RallyKm = 90, 100, 110, 120, 130
+# minutes the first group at the rally point waits for the rest
+RallyWaitMin = 15, 20, 30, 40, 45
+# strike planes per ship point (DD 1, CL 2, CA 3, CVL 4, CV/BC 5, BB 6, merchant 1, oiler 1.5)
+PlanesPerPoint = 2, 2.5, 3, 3.5, 4
+# smallest airfield strike
+StrikeMinPlanes = 2, 2, 3, 3, 3
+# fighter escort as a share of the strike planes (2 at least)
+EscortShare = 0.5, 0.5, 0.6, 0.7, 0.75
+# enemy groups worth at least this many ship points get fighter cover
+CapMinValue = 8, 6, 4, 3, 2
+# cover fighters per ship point of the covered group (2 at least)
+CapPerPoint = 0.5, 0.75, 1, 1.25, 1.5
 # battle: seconds between enemy retreat/target rethinks (stock 120)
 RethinkSec = 110, 100, 90, 70, 50
 # battle: a ship retreats when its speed drops below this share (stock 0.55)

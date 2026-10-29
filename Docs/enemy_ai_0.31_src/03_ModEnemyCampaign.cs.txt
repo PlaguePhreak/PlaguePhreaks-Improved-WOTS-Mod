@@ -5,18 +5,25 @@ using UnityEngine;
 using WorldMapStrategyKit;
 
 // 0.31 enemy campaign map AI: the planner's numbers by Campaign difficulty, the reaction to a sighting
-// (coordinated strikes timed to arrive together), last known position searches, and the Elite follow-up.
+// (strike packages that gather at a rally point and go in together, sized to the target), last known position searches, and the Elite follow-up.
 public static class ModEnemyCampaign
 {
-	public class Strike
+	// a strike package: groups from the far launchers gather at the rally point, near launchers wait at home
+	public class Package
 	{
-		public MapLocation airfield;
-
-		public MobileMapObject carrier;
-
 		public MobileMapObject target;
 
-		public DateTime due;
+		public Vector2 rally;
+
+		public List<GameObjectAnimator> members = new List<GameObjectAnimator>();
+
+		public List<MapLocation> heldAirfields = new List<MapLocation>();
+
+		public List<MobileMapObject> heldCarriers = new List<MobileMapObject>();
+
+		public DateTime created;
+
+		public DateTime firstIn = DateTime.MinValue;
 	}
 
 	public class LastSeen
@@ -28,7 +35,7 @@ public static class ModEnemyCampaign
 		public DateTime until;
 	}
 
-	public static List<Strike> strikes = new List<Strike>();
+	public static List<Package> packages = new List<Package>();
 
 	public static List<LastSeen> lastKnown = new List<LastSeen>();
 
@@ -38,18 +45,17 @@ public static class ModEnemyCampaign
 
 	private static MethodInfo groupStrike;
 
-	private const float StrikeKmPerMin = 5f;
-
 	private static int lastHour = -1;
 
 	private static DateTime Now => CampaignInterface.instance.dateTime;
 
 	public static void Reset()
 	{
-		strikes.Clear();
+		packages.Clear();
 		lastKnown.Clear();
 		seen.Clear();
 		hunters.Clear();
+		caps.Clear();
 	}
 
 	// ---- number hooks (each returns the stock value when the rework is off) ----
@@ -136,74 +142,158 @@ public static class ModEnemyCampaign
 		{
 			return;
 		}
-		List<MapLocation> airfieldsInRange = CampaignAI.instance.GetAirfieldsInRange(mmo.gameObjectAnimator, instance.campaignData.enemyAirfieldStrikeRange);
-		List<MobileMapObject> carriersInRange = CampaignAI.instance.GetCarriersInRange(mmo.gameObjectAnimator, instance.campaignData.enemyCarrierStrikeRange);
-		List<float> list = new List<float>();
-		float num = 0f;
-		for (int i = 0; i < airfieldsInRange.Count; i++)
+		for (int i = 0; i < packages.Count; i++)
 		{
-			float num2 = instance.GetDistanceInMetresBetweenMapObjects(airfieldsInRange[i].gameObjectAnimator.currentMap2DLocation, mmo.gameObjectAnimator.currentMap2DLocation) / 1000f;
-			list.Add(num2);
-			num = Mathf.Max(num, num2);
-		}
-		List<float> list2 = new List<float>();
-		for (int j = 0; j < carriersInRange.Count; j++)
-		{
-			float num3 = instance.GetDistanceInMetresBetweenMapObjects(carriersInRange[j].gameObjectAnimator.currentMap2DLocation, mmo.gameObjectAnimator.currentMap2DLocation) / 1000f;
-			list2.Add(num3);
-			num = Mathf.Max(num, num3);
-		}
-		float num4 = ModEnemyAI.C(ModEnemyAI.StrikeWaitMin);
-		int num5 = 0;
-		int num6 = 0;
-		for (int k = 0; k < airfieldsInRange.Count; k++)
-		{
-			float num7 = Mathf.Min(num4, (num - list[k]) / StrikeKmPerMin);
-			Queue(airfieldsInRange[k], null, mmo, num7);
-			if (num7 >= 1f)
-			{
-				num6++;
-			}
-			num5++;
-		}
-		for (int l = 0; l < carriersInRange.Count; l++)
-		{
-			float num8 = Mathf.Min(num4, (num - list2[l]) / StrikeKmPerMin);
-			Queue(null, carriersInRange[l], mmo, num8);
-			if (num8 >= 1f)
-			{
-				num6++;
-			}
-			num5++;
-		}
-		if (num5 > 0)
-		{
-			ModEnemyAI.Log("strike on " + mmo.mobileName + ": " + num5 + " launchers, " + num6 + " wait so the waves arrive together (max " + num4 + " min)");
-		}
-		Launch();
-	}
-
-	private static void Queue(MapLocation ml, MobileMapObject carrier, MobileMapObject target, float waitMin)
-	{
-		for (int i = 0; i < strikes.Count; i++)
-		{
-			if (strikes[i].target == target && strikes[i].airfield == ml && strikes[i].carrier == carrier)
+			if (packages[i].target == mmo)
 			{
 				return;
 			}
 		}
-		Strike strike = new Strike();
-		strike.airfield = ml;
-		strike.carrier = carrier;
-		strike.target = target;
-		strike.due = Now.AddMinutes(Mathf.Max(0f, waitMin));
-		strikes.Add(strike);
+		Vector2 currentMap2DLocation = mmo.gameObjectAnimator.currentMap2DLocation;
+		List<MapLocation> airfieldsInRange = CampaignAI.instance.GetAirfieldsInRange(mmo.gameObjectAnimator, instance.campaignData.enemyAirfieldStrikeRange);
+		List<MobileMapObject> carriersInRange = CampaignAI.instance.GetCarriersInRange(mmo.gameObjectAnimator, instance.campaignData.enemyCarrierStrikeRange);
+		airfieldsInRange.RemoveAll((MapLocation a) => a.aircraftCooldown > 0f);
+		int num = airfieldsInRange.Count + carriersInRange.Count;
+		if (num == 0)
+		{
+			return;
+		}
+		float num2 = ModEnemyAI.C(ModEnemyAI.RallyKm);
+		if (mmo.type != 0 || num < 2)
+		{
+			// one launcher or an air target: no time to gather, go straight in
+			for (int j = 0; j < airfieldsInRange.Count; j++)
+			{
+				CampaignAI.instance.CheckAirfieldLaunchAirstrikeOnMobile(airfieldsInRange[j], mmo);
+			}
+			for (int k = 0; k < carriersInRange.Count; k++)
+			{
+				CampaignAI.instance.CheckCarrierLaunchAirstrikeOnMobile(carriersInRange[k], mmo);
+			}
+			return;
+		}
+		// launchers further than the rally point fly there first; the near ones wait at home and launch on the go signal
+		Package package = new Package();
+		package.target = mmo;
+		package.created = Now;
+		List<Vector2> list = new List<Vector2>();
+		for (int l = 0; l < airfieldsInRange.Count; l++)
+		{
+			Vector2 currentMap2DLocation2 = airfieldsInRange[l].gameObjectAnimator.currentMap2DLocation;
+			if (instance.GetDistanceInMetresBetweenMapObjects(currentMap2DLocation2, currentMap2DLocation) / 1000f > num2 + 30f)
+			{
+				list.Add(currentMap2DLocation2);
+			}
+			else
+			{
+				package.heldAirfields.Add(airfieldsInRange[l]);
+			}
+		}
+		for (int m = 0; m < carriersInRange.Count; m++)
+		{
+			Vector2 currentMap2DLocation3 = carriersInRange[m].gameObjectAnimator.currentMap2DLocation;
+			if (instance.GetDistanceInMetresBetweenMapObjects(currentMap2DLocation3, currentMap2DLocation) / 1000f > num2 + 30f)
+			{
+				list.Add(currentMap2DLocation3);
+			}
+			else
+			{
+				package.heldCarriers.Add(carriersInRange[m]);
+			}
+		}
+		if (list.Count == 0)
+		{
+			// everyone is close: launch together now
+			package.created = Now;
+			Release(package, "all launchers close");
+			return;
+		}
+		Vector2 val = Vector2.zero;
+		for (int n = 0; n < list.Count; n++)
+		{
+			val += list[n];
+		}
+		val /= (float)list.Count;
+		Vector2 val2 = val - currentMap2DLocation;
+		if (val2.sqrMagnitude < 1E-10f)
+		{
+			val2 = new Vector2(1f, 0f);
+		}
+		package.rally = currentMap2DLocation + ModEnemyScouts.Offset(currentMap2DLocation, val2.normalized, num2);
+		for (int num3 = 0; num3 < airfieldsInRange.Count; num3++)
+		{
+			if (!package.heldAirfields.Contains(airfieldsInRange[num3]))
+			{
+				LaunchInto(package, airfieldsInRange[num3], null);
+			}
+		}
+		for (int num4 = 0; num4 < carriersInRange.Count; num4++)
+		{
+			if (!package.heldCarriers.Contains(carriersInRange[num4]))
+			{
+				LaunchInto(package, null, carriersInRange[num4]);
+			}
+		}
+		if (package.members.Count == 0)
+		{
+			Release(package, "nothing to gather");
+			return;
+		}
+		for (int num5 = 0; num5 < package.members.Count; num5++)
+		{
+			CampaignAI.instance.MoveAIMobile(package.members[num5], package.rally, direct: true);
+		}
+		packages.Add(package);
+		ModEnemyAI.Log("strike on " + mmo.mobileName + ": " + package.members.Count + " groups gathering " + Mathf.RoundToInt(num2) + " km out, " + (package.heldAirfields.Count + package.heldCarriers.Count) + " near launchers wait for the go signal");
+	}
+
+	// launch one base or carrier and collect the new groups it put in the air
+	private static void LaunchInto(Package p, MapLocation ml, MobileMapObject carrier)
+	{
+		CampaignManager instance = CampaignManager.instance;
+		HashSet<GameObjectAnimator> hashSet = new HashSet<GameObjectAnimator>(instance.otherMobile);
+		try
+		{
+			if ((UnityEngine.Object)(object)ml != (UnityEngine.Object)null)
+			{
+				CampaignAI.instance.CheckAirfieldLaunchAirstrikeOnMobile(ml, p.target);
+			}
+			else
+			{
+				CampaignAI.instance.CheckCarrierLaunchAirstrikeOnMobile(carrier, p.target);
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError((object)("[EAI] strike launch failed: " + ex.Message));
+		}
+		for (int i = 0; i < instance.otherMobile.Count; i++)
+		{
+			GameObjectAnimator gameObjectAnimator = instance.otherMobile[i];
+			if ((UnityEngine.Object)(object)gameObjectAnimator != (UnityEngine.Object)null && !hashSet.Contains(gameObjectAnimator) && (UnityEngine.Object)(object)gameObjectAnimator.mobileMapObject != (UnityEngine.Object)null && gameObjectAnimator.mobileMapObject.type == 1 && !ModEnemyScouts.IsScout(gameObjectAnimator))
+			{
+				p.members.Add(gameObjectAnimator);
+			}
+		}
+	}
+
+	// hook (through ModEnemyScouts.SkipSpottedWaypoint): gathering groups ignore the stock chase until the go signal
+	public static bool Gathering(GameObjectAnimator goa)
+	{
+		for (int i = 0; i < packages.Count; i++)
+		{
+			if (packages[i].members.Contains(goa))
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	// called each campaign minute from ModEnemyScouts.Tick
 	public static void Tick()
 	{
-		Launch();
+		Gather();
 		int num = Now.Hour + Now.DayOfYear * 24;
 		if (num != lastHour)
 		{
@@ -212,45 +302,180 @@ public static class ModEnemyCampaign
 		}
 	}
 
-	private static void Launch()
+	private static void Gather()
 	{
 		CampaignManager instance = CampaignManager.instance;
-		for (int num = strikes.Count - 1; num >= 0; num--)
+		float num = ModEnemyAI.C(ModEnemyAI.RallyWaitMin);
+		for (int num2 = packages.Count - 1; num2 >= 0; num2--)
 		{
-			Strike strike = strikes[num];
-			if (Now < strike.due)
+			Package package = packages[num2];
+			package.members.RemoveAll((GameObjectAnimator g) => (UnityEngine.Object)(object)g == (UnityEngine.Object)null || (UnityEngine.Object)(object)g.mobileMapObject == (UnityEngine.Object)null || !instance.otherMobile.Contains(g) || g.mobileMapObject.currentCampaignAction == 1);
+			MobileMapObject target = package.target;
+			if ((UnityEngine.Object)(object)target == (UnityEngine.Object)null || (UnityEngine.Object)(object)target.gameObjectAnimator == (UnityEngine.Object)null || !instance.playerMobile.Contains(target.gameObjectAnimator))
 			{
+				packages.RemoveAt(num2);
+				ModEnemyAI.Log("strike called off, the target is gone; " + package.members.Count + " groups head home");
+				for (int i = 0; i < package.members.Count; i++)
+				{
+					instance.AirReturnToBase(package.members[i]);
+				}
 				continue;
 			}
-			strikes.RemoveAt(num);
-			MobileMapObject target = strike.target;
-			if ((UnityEngine.Object)(object)target == (UnityEngine.Object)null || (UnityEngine.Object)(object)target.gameObjectAnimator == (UnityEngine.Object)null || !instance.playerMobile.Contains(target.gameObjectAnimator) || !instance.campaignData.airOpHours[Now.Hour])
+			if (package.members.Count == 0)
 			{
+				packages.RemoveAt(num2);
+				Release(package, "the gathering groups were lost");
 				continue;
 			}
-			try
+			int num3 = 0;
+			for (int j = 0; j < package.members.Count; j++)
 			{
-				if ((UnityEngine.Object)(object)strike.airfield != (UnityEngine.Object)null)
+				GameObjectAnimator gameObjectAnimator = package.members[j];
+				if (instance.GetDistanceInMetresBetweenMapObjects(gameObjectAnimator.currentMap2DLocation, package.rally) < 20000f)
 				{
-					if (strike.airfield.currentFaction == 1 && strike.airfield.aircraftCooldown <= 0f)
-					{
-						CampaignAI.instance.CheckAirfieldLaunchAirstrikeOnMobile(strike.airfield, target);
-					}
+					num3++;
 				}
-				else if ((UnityEngine.Object)(object)strike.carrier != (UnityEngine.Object)null && (UnityEngine.Object)(object)strike.carrier.gameObjectAnimator != (UnityEngine.Object)null && instance.otherMobile.Contains(strike.carrier.gameObjectAnimator))
+				else if (!gameObjectAnimator.isMoving || instance.GetDistanceInMetresBetweenMapObjects(gameObjectAnimator.endingMap2DLocation, package.rally) > 5000f)
 				{
-					CampaignAI.instance.CheckCarrierLaunchAirstrikeOnMobile(strike.carrier, target);
+					CampaignAI.instance.MoveAIMobile(gameObjectAnimator, package.rally, direct: true);
 				}
 			}
-			catch (Exception ex)
+			if (num3 > 0 && package.firstIn == DateTime.MinValue)
 			{
-				Debug.LogError((object)("[EAI] strike launch failed: " + ex.Message));
+				package.firstIn = Now;
+			}
+			string text = null;
+			if (num3 >= package.members.Count)
+			{
+				text = "all " + num3 + " groups at the rally point";
+			}
+			else if (package.firstIn != DateTime.MinValue && Now > package.firstIn.AddMinutes(num))
+			{
+				text = num3 + " of " + package.members.Count + " groups at the rally point, waited " + Mathf.RoundToInt(num) + " min";
+			}
+			else if (Now > package.created.AddMinutes(num + 120f))
+			{
+				text = "gathering took too long";
+			}
+			else if (instance.GetDistanceInMetresBetweenMapObjects(target.gameObjectAnimator.currentMap2DLocation, package.rally) < 50000f)
+			{
+				text = "the target ran into the rally point";
+			}
+			else if (!instance.campaignData.airOpHours[Now.Hour])
+			{
+				text = "end of flying hours";
+			}
+			if (text != null)
+			{
+				packages.RemoveAt(num2);
+				Release(package, text);
 			}
 		}
 	}
 
+	// the go signal: gathered groups turn for the target and the near launchers take off
+	private static void Release(Package p, string why)
+	{
+		MobileMapObject target = p.target;
+		if ((UnityEngine.Object)(object)target == (UnityEngine.Object)null || (UnityEngine.Object)(object)target.gameObjectAnimator == (UnityEngine.Object)null)
+		{
+			return;
+		}
+		Vector2 currentMap2DLocation = target.gameObjectAnimator.currentMap2DLocation;
+		for (int i = 0; i < p.members.Count; i++)
+		{
+			CampaignAI.instance.MoveAIMobile(p.members[i], currentMap2DLocation, direct: true);
+		}
+		int num = 0;
+		bool flag = CampaignManager.instance.campaignData.airOpHours[Now.Hour];
+		for (int j = 0; j < p.heldAirfields.Count && flag; j++)
+		{
+			MapLocation mapLocation = p.heldAirfields[j];
+			if (mapLocation.currentFaction == 1 && mapLocation.aircraftCooldown <= 0f)
+			{
+				CampaignAI.instance.CheckAirfieldLaunchAirstrikeOnMobile(mapLocation, target);
+				num++;
+			}
+		}
+		for (int k = 0; k < p.heldCarriers.Count && flag; k++)
+		{
+			MobileMapObject mobileMapObject = p.heldCarriers[k];
+			if ((UnityEngine.Object)(object)mobileMapObject != (UnityEngine.Object)null && (UnityEngine.Object)(object)mobileMapObject.gameObjectAnimator != (UnityEngine.Object)null && CampaignManager.instance.otherMobile.Contains(mobileMapObject.gameObjectAnimator))
+			{
+				CampaignAI.instance.CheckCarrierLaunchAirstrikeOnMobile(mobileMapObject, target);
+				num++;
+			}
+		}
+		ModEnemyAI.Log("strike on " + target.mobileName + " goes in (" + why + "): " + p.members.Count + " gathered groups, " + num + " near launchers");
+	}
+
+	// ship points for sizing a strike
+	public static float Value(MobileMapObject mmo)
+	{
+		float num = 0f;
+		for (int i = 0; i < mmo.unitPrefabs.Count; i++)
+		{
+			UnitData value;
+			if (!EngagementManager.instance.unitDataDictionary.TryGetValue(mmo.unitPrefabs[i], out value))
+			{
+				num += 1f;
+				continue;
+			}
+			switch (value.unitSubtype)
+			{
+			case UnitSubType.Submarine:
+				num += 0.5f;
+				break;
+			case UnitSubType.Destroyer_Escort:
+				num += 0.7f;
+				break;
+			case UnitSubType.Light_Cruiser:
+				num += 2f;
+				break;
+			case UnitSubType.Heavy_Cruiser:
+				num += 3f;
+				break;
+			case UnitSubType.Light_Carrier:
+				num += 4f;
+				break;
+			case UnitSubType.Aircraft_Carrier:
+			case UnitSubType.Battlecruiser:
+				num += 5f;
+				break;
+			case UnitSubType.Battleship:
+				num += 6f;
+				break;
+			case UnitSubType.Oiler:
+				num += 1.5f;
+				break;
+			default:
+				num += 1f;
+				break;
+			}
+		}
+		return num;
+	}
+
+	private static int Pref(UnitSubType t)
+	{
+		switch (t)
+		{
+		case UnitSubType.Torpedo_Bomber:
+			return 0;
+		case UnitSubType.Dive_Bomber:
+			return 1;
+		case UnitSubType.Medium_Bomber:
+			return 2;
+		case UnitSubType.Heavy_Bomber:
+			return 3;
+		default:
+			return 4;
+		}
+	}
+
 	// ---- hook: CampaignAI.CheckAirfieldLaunchAirstrikeOnMobile first line ----
-	// Same as the stock method, but search planes stay home.
+	// Sized to the target: a few planes for a destroyer group, the whole wing for a battle line.
+	// Search planes stay home, fighters fly as escort.
 	public static bool AirfieldStrike(MapLocation ml, MobileMapObject mmoTarget)
 	{
 		if (!ModEnemyAI.On)
@@ -264,9 +489,7 @@ public static class ModEnemyCampaign
 				return true;
 			}
 			CampaignManager instance = CampaignManager.instance;
-			int num = ml.airfieldLevel - 1;
 			List<string> airTypesAtLocation = instance.GetAirTypesAtLocation(ml);
-			List<int> airNumbersAtLocation = instance.GetAirNumbersAtLocation(ml);
 			List<GameObjectAnimator> list = new List<GameObjectAnimator>();
 			if (ml.destroyedAir == null || ml.destroyedAir.Count != airTypesAtLocation.Count)
 			{
@@ -280,25 +503,64 @@ public static class ModEnemyCampaign
 			{
 				ml.inTheAir = instance.GetAircraftInTheAir(ml);
 			}
-			int count = airTypesAtLocation.Count;
+			Vector2 currentMap2DLocation = mmoTarget.gameObjectAnimator.currentMap2DLocation;
+			int num = Mathf.RoundToInt(ModEnemyAI.C(ModEnemyAI.StrikeMinPlanes));
+			List<int> list2 = new List<int>();
+			List<int> list3 = new List<int>();
+			for (int j = 0; j < airTypesAtLocation.Count; j++)
+			{
+				UnitData value;
+				if (!ModEnemyAI.IsSearchType(airTypesAtLocation[j]) && EngagementManager.instance.unitDataDictionary.TryGetValue(airTypesAtLocation[j], out value) && ModEnemyScouts.OnGround(ml, j) > 0)
+				{
+					if (value.unitSubtype == UnitSubType.Fighter)
+					{
+						list3.Add(j);
+					}
+					else
+					{
+						list2.Add(j);
+					}
+				}
+			}
+			string text;
 			if (mmoTarget.type == 1)
 			{
-				if (ml.inTheAir[0] == 0 && airNumbersAtLocation[num * count] > 0)
+				// air target: fighters, about 1.5 for each plane coming in
+				int num2 = Mathf.Max(4, Mathf.CeilToInt((float)mmoTarget.unitPrefabs.Count * 1.5f));
+				for (int k = 0; k < list3.Count && num2 > 0; k++)
 				{
-					list.Add(CampaignAI.instance.CreateAIMobileAir(ml.gameObjectAnimator, airTypesAtLocation[0], airNumbersAtLocation[num * count] - ml.destroyedAir[0], mmoTarget.gameObjectAnimator.currentMap2DLocation));
-					ml.inTheAir[0] = airNumbersAtLocation[num * count] - ml.destroyedAir[0];
+					int num3 = Mathf.Min(num2, ModEnemyScouts.OnGround(ml, list3[k]));
+					list.Add(CampaignAI.instance.CreateAIMobileAir(ml.gameObjectAnimator, airTypesAtLocation[list3[k]], num3, currentMap2DLocation));
+					num2 -= num3;
 				}
+				text = "fighters";
 			}
 			else
 			{
-				for (int num2 = count - 1; num2 > 0; num2--)
+				float num4 = Value(mmoTarget);
+				int num5 = Mathf.Max(num, Mathf.CeilToInt(num4 * ModEnemyAI.C(ModEnemyAI.PlanesPerPoint)));
+				list2.Sort((int a, int b) => Pref(EngagementManager.instance.unitDataDictionary[airTypesAtLocation[a]].unitSubtype).CompareTo(Pref(EngagementManager.instance.unitDataDictionary[airTypesAtLocation[b]].unitSubtype)));
+				int num6 = 0;
+				int num7 = num5;
+				for (int l = 0; l < list2.Count && num7 > 0; l++)
 				{
-					if (!ModEnemyAI.IsSearchType(airTypesAtLocation[num2]) && ml.inTheAir[num2] == 0 && airNumbersAtLocation[num * count + num2] > 0)
-					{
-						list.Add(CampaignAI.instance.CreateAIMobileAir(ml.gameObjectAnimator, airTypesAtLocation[num2], airNumbersAtLocation[num * count + num2] - ml.destroyedAir[num2], mmoTarget.gameObjectAnimator.currentMap2DLocation));
-						ml.inTheAir[num2] = airNumbersAtLocation[num * count + num2] - ml.destroyedAir[num2];
-					}
+					int num8 = Mathf.Min(num7, ModEnemyScouts.OnGround(ml, list2[l]));
+					list.Add(CampaignAI.instance.CreateAIMobileAir(ml.gameObjectAnimator, airTypesAtLocation[list2[l]], num8, currentMap2DLocation));
+					num7 -= num8;
+					num6 += num8;
 				}
+				// fighters escort the strike, or fly it themselves when no bombers are left
+				int num9 = ((num6 > 0) ? Mathf.CeilToInt((float)num6 * ModEnemyAI.C(ModEnemyAI.EscortShare)) : num5);
+				num9 = Mathf.Max(num9, (num6 > 0) ? 2 : num);
+				int num10 = 0;
+				for (int m = 0; m < list3.Count && num9 > 0; m++)
+				{
+					int num11 = Mathf.Min(num9, ModEnemyScouts.OnGround(ml, list3[m]));
+					list.Add(CampaignAI.instance.CreateAIMobileAir(ml.gameObjectAnimator, airTypesAtLocation[list3[m]], num11, currentMap2DLocation));
+					num9 -= num11;
+					num10 += num11;
+				}
+				text = num6 + " strike planes and " + num10 + " fighters (target worth " + num4.ToString("0.#") + " points, wanted " + num5 + ")";
 			}
 			list.RemoveAll((GameObjectAnimator g) => (UnityEngine.Object)(object)g == (UnityEngine.Object)null);
 			if (list.Count > 0)
@@ -308,7 +570,7 @@ public static class ModEnemyCampaign
 					groupStrike = typeof(CampaignAI).GetMethod("GroupAIAirStrike", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
 				}
 				groupStrike.Invoke(CampaignAI.instance, new object[1] { list });
-				ModEnemyAI.Log(ml.locationName + " launches " + list.Count + " groups at " + mmoTarget.mobileName);
+				ModEnemyAI.Log(ml.locationName + " launches " + text + " at " + mmoTarget.mobileName);
 			}
 			return true;
 		}
@@ -319,9 +581,153 @@ public static class ModEnemyCampaign
 		}
 	}
 
+	// ---- fighter cover (CAP) over our own ships, sized to what the group is worth ----
+	private static Dictionary<MobileMapObject, List<GameObjectAnimator>> caps = new Dictionary<MobileMapObject, List<GameObjectAnimator>>();
+
+	private static bool airSupportResult;
+
+	public static bool AirSupportResult()
+	{
+		return airSupportResult;
+	}
+
+	private static bool Covered(MobileMapObject mmo)
+	{
+		if (!caps.TryGetValue(mmo, out var value))
+		{
+			return false;
+		}
+		CampaignManager instance = CampaignManager.instance;
+		value.RemoveAll((GameObjectAnimator g) => (UnityEngine.Object)(object)g == (UnityEngine.Object)null || (UnityEngine.Object)(object)g.mobileMapObject == (UnityEngine.Object)null || !instance.otherMobile.Contains(g) || g.mobileMapObject.currentCampaignAction == 1 || g.mobileMapObject.escortingThisGOA != mmo.gameObjectAnimator);
+		return value.Count > 0;
+	}
+
+	// hook: CampaignAI.CheckAirfieldLaunchFighterAirSupport first line. true = handled here, the answer is AirSupportResult().
+	public static bool AirSupport(MapLocation ml, MobileMapObject mmo)
+	{
+		airSupportResult = false;
+		if (!ModEnemyAI.On)
+		{
+			return false;
+		}
+		try
+		{
+			if (Covered(mmo))
+			{
+				airSupportResult = true;
+				return true;
+			}
+			airSupportResult = LaunchCap(ml, mmo);
+			return true;
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError((object)("[EAI] air cover failed, stock used: " + ex.Message));
+			return false;
+		}
+	}
+
+	private static bool LaunchCap(MapLocation ml, MobileMapObject mmo)
+	{
+		if (ml.aircraftCooldown > 0f || ml.airfieldLevel < 1 || (UnityEngine.Object)(object)mmo.gameObjectAnimator == (UnityEngine.Object)null)
+		{
+			return false;
+		}
+		CampaignManager instance = CampaignManager.instance;
+		List<string> airTypesAtLocation = instance.GetAirTypesAtLocation(ml);
+		if (ml.destroyedAir == null || ml.destroyedAir.Count != airTypesAtLocation.Count)
+		{
+			ml.destroyedAir = new List<int>();
+			for (int i = 0; i < airTypesAtLocation.Count; i++)
+			{
+				ml.destroyedAir.Add(0);
+			}
+		}
+		if (ml.inTheAir == null || ml.inTheAir.Count != airTypesAtLocation.Count)
+		{
+			ml.inTheAir = instance.GetAircraftInTheAir(ml);
+		}
+		float num = Value(mmo);
+		int num2 = Mathf.Max(2, Mathf.CeilToInt(num * ModEnemyAI.C(ModEnemyAI.CapPerPoint)));
+		int num3 = num2;
+		float aircraftCooldown = ml.aircraftCooldown;
+		List<GameObjectAnimator> list = new List<GameObjectAnimator>();
+		for (int j = 0; j < airTypesAtLocation.Count && num3 > 0; j++)
+		{
+			UnitData value;
+			if (!EngagementManager.instance.unitDataDictionary.TryGetValue(airTypesAtLocation[j], out value) || value.unitSubtype != UnitSubType.Fighter)
+			{
+				continue;
+			}
+			int num4 = Mathf.Min(num3, ModEnemyScouts.OnGround(ml, j));
+			if (num4 > 0)
+			{
+				GameObjectAnimator gameObjectAnimator = CampaignAI.instance.CreateAIMobileAir(ml.gameObjectAnimator, airTypesAtLocation[j], num4, mmo.gameObjectAnimator.currentMap2DLocation);
+				if ((UnityEngine.Object)(object)gameObjectAnimator != (UnityEngine.Object)null)
+				{
+					gameObjectAnimator.mobileMapObject.escortingThisGOA = mmo.gameObjectAnimator;
+					list.Add(gameObjectAnimator);
+					num3 -= num4;
+				}
+			}
+		}
+		// a cover patrol does not use up the base's strike turn
+		ml.aircraftCooldown = aircraftCooldown;
+		if (list.Count == 0)
+		{
+			return false;
+		}
+		if (!caps.TryGetValue(mmo, out var value2))
+		{
+			value2 = new List<GameObjectAnimator>();
+			caps[mmo] = value2;
+		}
+		value2.AddRange(list);
+		ModEnemyAI.Log(ml.locationName + " sends " + (num2 - num3) + " fighters to cover " + mmo.mobileName + " (worth " + num.ToString("0.#") + " points)");
+		return true;
+	}
+
+	// hourly: put cover over the groups worth it
+	private static void CoverPatrols()
+	{
+		CampaignManager instance = CampaignManager.instance;
+		if (!instance.campaignData.airOpHours[Now.Hour])
+		{
+			return;
+		}
+		float num = ModEnemyAI.C(ModEnemyAI.CapMinValue);
+		List<MobileMapObject> list = new List<MobileMapObject>(caps.Keys);
+		for (int i = 0; i < list.Count; i++)
+		{
+			if ((UnityEngine.Object)(object)list[i] == (UnityEngine.Object)null || !Covered(list[i]))
+			{
+				caps.Remove(list[i]);
+			}
+		}
+		for (int j = 0; j < instance.otherMobile.Count; j++)
+		{
+			GameObjectAnimator gameObjectAnimator = instance.otherMobile[j];
+			if ((UnityEngine.Object)(object)gameObjectAnimator == (UnityEngine.Object)null || gameObjectAnimator.type != 0 || (UnityEngine.Object)(object)gameObjectAnimator.mobileMapObject == (UnityEngine.Object)null || gameObjectAnimator.mobileMapObject.currentFaction != 1)
+			{
+				continue;
+			}
+			MobileMapObject mobileMapObject = gameObjectAnimator.mobileMapObject;
+			if (instance.IsMobileSubOnly(mobileMapObject) || Covered(mobileMapObject) || Value(mobileMapObject) < num)
+			{
+				continue;
+			}
+			List<MapLocation> airfieldsInRange = CampaignAI.instance.GetAirfieldsInRange(gameObjectAnimator, instance.campaignData.enemyAirCoverRange);
+			airfieldsInRange.Sort((MapLocation a, MapLocation b) => instance.GetDistanceInMetresBetweenMapObjects(a.gameObjectAnimator.currentMap2DLocation, gameObjectAnimator.currentMap2DLocation).CompareTo(instance.GetDistanceInMetresBetweenMapObjects(b.gameObjectAnimator.currentMap2DLocation, gameObjectAnimator.currentMap2DLocation)));
+			for (int k = 0; k < airfieldsInRange.Count && !LaunchCap(airfieldsInRange[k], mobileMapObject); k++)
+			{
+			}
+		}
+	}
+
 	// ---- hourly: last known position searches ----
 	private static void Hour()
 	{
+		CoverPatrols();
 		CampaignManager instance = CampaignManager.instance;
 		float num = ModEnemyAI.C(ModEnemyAI.LastKnownHours);
 		List<MobileMapObject> list = new List<MobileMapObject>(seen.Keys);

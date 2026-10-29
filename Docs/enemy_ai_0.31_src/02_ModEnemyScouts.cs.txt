@@ -4,8 +4,8 @@ using UnityEngine;
 using WorldMapStrategyKit;
 
 // 0.31 enemy scout patrols on the campaign map.
-// Two waves a day (first air ops hour and midday) of single search planes from enemy airfields.
-// Each flies a wedge: out on a bearing, a 15 degree cross leg, then home. A sighting is held for the report delay;
+// Waves spread over the flying hours; in each, every enemy airfield fans out single planes on evenly spaced bearings
+// (search planes first, then bombers, then fighters). Each flies out, crosses to the next bearing, then home. A sighting is held for the report delay;
 // if the scout is shot down first, the report never reaches the enemy. On harder steps the scout shadows its find.
 public static class ModEnemyScouts
 {
@@ -14,6 +14,10 @@ public static class ModEnemyScouts
 		public GameObjectAnimator goa;
 
 		public string baseName;
+
+		public MapLocation home;
+
+		public int typeIndex = -1;
 
 		public List<Vector2> legs = new List<Vector2>();
 
@@ -66,6 +70,7 @@ public static class ModEnemyScouts
 				lastLocations = instance.landMapLocations;
 				scouts.Clear();
 				reports.Clear();
+				lastPopup.Clear();
 				ModEnemyCampaign.Reset();
 				lastWave = -1;
 				ModEnemyAI.Log("campaign map started, Campaign difficulty " + ModEnemyAI.StepNames[ModEnemyAI.CampaignStep()]);
@@ -118,7 +123,7 @@ public static class ModEnemyScouts
 	// hook: CampaignAI.GetNewSpottedWaypoint first line. Our scouts fly their own legs.
 	public static bool SkipSpottedWaypoint(GameObjectAnimator goa)
 	{
-		return ModEnemyAI.On && IsScout(goa);
+		return ModEnemyAI.On && (IsScout(goa) || ModEnemyCampaign.Gathering(goa));
 	}
 
 	// hook: CampaignManager.CheckMobileEncounters, the 0.009 chance an enemy ship launches its floatplane
@@ -144,7 +149,7 @@ public static class ModEnemyScouts
 		{
 			Scout scout = Find(observer);
 			float num = ModEnemyAI.C(ModEnemyAI.ShadowMin);
-			if (scout != null && num > 0f && scout.shadowing == null)
+			if (scout != null && num > 0f && scout.shadowing == null && !Shadowed(lastContact))
 			{
 				scout.shadowing = lastContact;
 				scout.shadowUntil = Now.AddMinutes(num);
@@ -167,6 +172,21 @@ public static class ModEnemyScouts
 	}
 
 	private static MobileMapObject lastContact;
+
+	private static Dictionary<MobileMapObject, DateTime> lastPopup = new Dictionary<MobileMapObject, DateTime>();
+
+	// one scout shadows a group at a time; the others carry on with their search
+	private static bool Shadowed(MobileMapObject contact)
+	{
+		for (int i = 0; i < scouts.Count; i++)
+		{
+			if (scouts[i].shadowing == contact && Alive(scouts[i].goa))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
 
 	// hook: CampaignManager.SpotContact first line, remembers which of our groups is being looked at
 	public static void Contact(MobileMapObject contact)
@@ -207,6 +227,12 @@ public static class ModEnemyScouts
 			{
 				return;
 			}
+			// with many scouts up, say it once per group per 2 hours
+			if (lastPopup.TryGetValue(contact, out var value) && Now < value.AddHours(2.0))
+			{
+				return;
+			}
+			lastPopup[contact] = Now;
 			ErrorPanel.instance.messages[PopupKey] = "<0> has been spotted by an enemy scout plane";
 			if (!ErrorPanel.instance.audioReferences.ContainsKey(PopupKey) && ErrorPanel.instance.audioReferences.ContainsKey("SpottedAir"))
 			{
@@ -322,6 +348,7 @@ public static class ModEnemyScouts
 		return new Vector2(dir.x * num3 / num, dir.y * num3 / num2);
 	}
 
+	// waves are spread evenly over the air operations hours: wave k flies at the k-th slot
 	private static void Waves()
 	{
 		CampaignData campaignData = CampaignManager.instance.campaignData;
@@ -330,27 +357,26 @@ public static class ModEnemyScouts
 		{
 			return;
 		}
-		int num = -1;
+		List<int> list = new List<int>();
 		for (int i = 0; i < 24; i++)
 		{
 			if (campaignData.airOpHours[i])
 			{
-				num = i;
-				break;
+				list.Add(i);
 			}
 		}
-		int num2;
-		if (hour == num)
+		int num = Mathf.Clamp(Mathf.RoundToInt(ModEnemyAI.C(ModEnemyAI.ScoutWaves)), 1, Mathf.Max(1, list.Count));
+		int num2 = -1;
+		for (int j = 0; j < num; j++)
 		{
-			num2 = 0;
-		}
-		else
-		{
-			if (hour != 12)
+			if (list[j * list.Count / num] == hour)
 			{
-				return;
+				num2 = j;
 			}
-			num2 = 1;
+		}
+		if (num2 < 0)
+		{
+			return;
 		}
 		int num3 = Now.DayOfYear * 10 + num2 + Now.Year * 10000;
 		if (num3 == lastWave)
@@ -358,55 +384,109 @@ public static class ModEnemyScouts
 			return;
 		}
 		lastWave = num3;
-		int num4 = Mathf.RoundToInt(ModEnemyAI.C(ModEnemyAI.ScoutSorties));
-		int num5 = (num2 == 0) ? ((num4 + 1) / 2) : (num4 / 2);
+		int num4 = Mathf.RoundToInt(ModEnemyAI.C(ModEnemyAI.ScoutLines));
+		int num5 = Mathf.RoundToInt(ModEnemyAI.C(ModEnemyAI.ScoutMax)) - scouts.Count;
+		List<MapLocation> list2 = Bases();
 		int num6 = 0;
-		List<MapLocation> list = Bases();
-		for (int j = 0; j < num5 && list.Count > 0; j++)
+		int num7 = 0;
+		while (list2.Count > 0 && num5 > 0)
 		{
-			int index = UnityEngine.Random.Range(0, list.Count);
-			if (Launch(list[index]))
+			int index = UnityEngine.Random.Range(0, list2.Count);
+			int num8 = Fan(list2[index], Mathf.Min(num4, num5));
+			num5 -= num8;
+			num6 += num8;
+			if (num8 > 0)
 			{
-				num6++;
+				num7++;
 			}
-			list.RemoveAt(index);
+			list2.RemoveAt(index);
 		}
-		ModEnemyAI.Log("scout wave " + (num2 + 1) + ": " + num6 + " of " + num5 + " sorties launched");
+		ModEnemyAI.Log("scout wave " + (num2 + 1) + " of " + num + ": " + num6 + " scouts from " + num7 + " airfields, " + scouts.Count + " in the air");
 	}
 
-	private static string SearchTypeAt(MapLocation ml, out int index)
+	// planes of this base and type already out as scouts
+	public static int ScoutsOut(MapLocation ml, int typeIndex)
 	{
-		index = -1;
+		int num = 0;
+		for (int i = 0; i < scouts.Count; i++)
+		{
+			if (scouts[i].home == ml && scouts[i].typeIndex == typeIndex && Alive(scouts[i].goa))
+			{
+				num++;
+			}
+		}
+		return num;
+	}
+
+	// planes of one type sitting at a base (not in the air, not destroyed, not out scouting)
+	public static int OnGround(MapLocation ml, int i)
+	{
 		CampaignManager instance = CampaignManager.instance;
 		List<string> airTypesAtLocation = instance.GetAirTypesAtLocation(ml);
 		List<int> airNumbersAtLocation = instance.GetAirNumbersAtLocation(ml);
-		if (ml.airfieldLevel < 1 || airTypesAtLocation == null)
+		if (ml.airfieldLevel < 1 || airTypesAtLocation == null || airNumbersAtLocation == null)
 		{
-			return null;
+			return 0;
 		}
-		int num = (ml.airfieldLevel - 1) * airTypesAtLocation.Count;
+		int num = (ml.airfieldLevel - 1) * airTypesAtLocation.Count + i;
+		if (i >= airTypesAtLocation.Count || num >= airNumbersAtLocation.Count)
+		{
+			return 0;
+		}
+		int num2 = airNumbersAtLocation[num];
+		if (ml.inTheAir != null && i < ml.inTheAir.Count)
+		{
+			num2 -= ml.inTheAir[i];
+		}
+		if (ml.destroyedAir != null && i < ml.destroyedAir.Count)
+		{
+			num2 -= ml.destroyedAir[i];
+		}
+		return Mathf.Max(0, num2 - ScoutsOut(ml, i));
+	}
+
+	// best scout type: search planes first, then bombers (keeping one at home), then fighters (keeping two)
+	private static int ScoutTypeAt(MapLocation ml)
+	{
+		List<string> airTypesAtLocation = CampaignManager.instance.GetAirTypesAtLocation(ml);
+		if (airTypesAtLocation == null)
+		{
+			return -1;
+		}
 		for (int i = 0; i < airTypesAtLocation.Count; i++)
 		{
-			if (!ModEnemyAI.IsSearchType(airTypesAtLocation[i]) || num + i >= airNumbersAtLocation.Count)
+			if (ModEnemyAI.IsSearchType(airTypesAtLocation[i]) && OnGround(ml, i) > 0)
 			{
-				continue;
-			}
-			int num2 = airNumbersAtLocation[num + i];
-			if (ml.inTheAir != null && i < ml.inTheAir.Count)
-			{
-				num2 -= ml.inTheAir[i];
-			}
-			if (ml.destroyedAir != null && i < ml.destroyedAir.Count)
-			{
-				num2 -= ml.destroyedAir[i];
-			}
-			if (num2 > 0)
-			{
-				index = i;
-				return airTypesAtLocation[i];
+				return i;
 			}
 		}
-		return null;
+		int num = -1;
+		int num2 = 1;
+		for (int j = 0; j < airTypesAtLocation.Count; j++)
+		{
+			UnitData value;
+			if (!ModEnemyAI.IsSearchType(airTypesAtLocation[j]) && EngagementManager.instance.unitDataDictionary.TryGetValue(airTypesAtLocation[j], out value) && value.unitSubtype != UnitSubType.Fighter)
+			{
+				int num3 = OnGround(ml, j);
+				if (num3 > num2)
+				{
+					num2 = num3;
+					num = j;
+				}
+			}
+		}
+		if (num >= 0)
+		{
+			return num;
+		}
+		for (int k = 0; k < airTypesAtLocation.Count; k++)
+		{
+			if (OnGround(ml, k) > 2)
+			{
+				return k;
+			}
+		}
+		return -1;
 	}
 
 	private static List<MapLocation> Bases()
@@ -417,7 +497,7 @@ public static class ModEnemyScouts
 		for (int i = 0; i < instance.landMapLocations.Count; i++)
 		{
 			MapLocation mapLocation = instance.landMapLocations[i];
-			if (mapLocation.currentFaction != 1 || mapLocation.airfieldLevel < 1 || SearchTypeAt(mapLocation, out var _) == null)
+			if (mapLocation.currentFaction != 1 || mapLocation.airfieldLevel < 1 || (UnityEngine.Object)(object)mapLocation.gameObjectAnimator == (UnityEngine.Object)null || ScoutTypeAt(mapLocation) < 0)
 			{
 				continue;
 			}
@@ -440,35 +520,73 @@ public static class ModEnemyScouts
 		return list;
 	}
 
-	private static bool Launch(MapLocation ml)
+	private static Vector2 Turn(Vector2 v, float deg)
 	{
-		int index;
-		string text = SearchTypeAt(ml, out index);
-		if (text == null)
+		float num = deg * ((float)Math.PI / 180f);
+		return new Vector2(v.x * Mathf.Cos(num) - v.y * Mathf.Sin(num), v.x * Mathf.Sin(num) + v.y * Mathf.Cos(num));
+	}
+
+	// a fan search: 'lines' single planes on evenly spaced bearings around the search direction.
+	// Each flies out, crosses to the next bearing at the same range, then comes home.
+	private static int Fan(MapLocation ml, int lines)
+	{
+		if (lines <= 0)
+		{
+			return 0;
+		}
+		Vector2 currentMap2DLocation = ml.gameObjectAnimator.currentMap2DLocation;
+		Vector2 v = Bearing(currentMap2DLocation);
+		float num = ModEnemyAI.C(ModEnemyAI.ScoutArc);
+		float num2 = num / (float)lines;
+		float num3 = ModEnemyAI.C(ModEnemyAI.ScoutLegKm) * UnityEngine.Random.Range(0.85f, 1.1f);
+		int num4 = 0;
+		for (int i = 0; i < lines; i++)
+		{
+			float num5 = (0f - num) / 2f + num2 * ((float)i + 0.5f);
+			if (!Launch(ml, Turn(v, num5), Turn(v, num5 + num2), num3))
+			{
+				break;
+			}
+			num4++;
+		}
+		if (num4 > 0)
+		{
+			ModEnemyAI.Log(ml.locationName + " sends " + num4 + " scouts in a " + Mathf.RoundToInt(num) + " degree fan, " + Mathf.RoundToInt(num3) + " km out");
+		}
+		return num4;
+	}
+
+	private static bool Launch(MapLocation ml, Vector2 dirOut, Vector2 dirCross, float km)
+	{
+		int num = ScoutTypeAt(ml);
+		if (num < 0)
 		{
 			return false;
 		}
+		string text = CampaignManager.instance.GetAirTypesAtLocation(ml)[num];
 		Vector2 currentMap2DLocation = ml.gameObjectAnimator.currentMap2DLocation;
-		Vector2 val = Bearing(currentMap2DLocation);
-		float num = ModEnemyAI.C(ModEnemyAI.ScoutLegKm);
-		float num2 = ((UnityEngine.Random.value < 0.5f) ? 15f : (-15f)) * ((float)Math.PI / 180f);
-		Vector2 dir = new Vector2(val.x * Mathf.Cos(num2) - val.y * Mathf.Sin(num2), val.x * Mathf.Sin(num2) + val.y * Mathf.Cos(num2));
-		Vector2 val2 = currentMap2DLocation + Offset(currentMap2DLocation, val, num);
-		Vector2 item = currentMap2DLocation + Offset(currentMap2DLocation, dir, num);
+		Vector2 val = currentMap2DLocation + Offset(currentMap2DLocation, dirOut, km);
+		Vector2 item = currentMap2DLocation + Offset(currentMap2DLocation, dirCross, km);
 		float aircraftCooldown = ml.aircraftCooldown;
-		GameObjectAnimator gameObjectAnimator = CampaignAI.instance.CreateAIMobileAir(ml.gameObjectAnimator, text, 1, val2);
+		GameObjectAnimator gameObjectAnimator = CampaignAI.instance.CreateAIMobileAir(ml.gameObjectAnimator, text, 1, val);
 		ml.aircraftCooldown = aircraftCooldown;
 		if ((UnityEngine.Object)(object)gameObjectAnimator == (UnityEngine.Object)null)
 		{
 			return false;
 		}
+		// scouts are counted by this class, not in inTheAir, so they never hold back a strike of that type
+		if (ml.inTheAir != null && num < ml.inTheAir.Count && ml.inTheAir[num] > 0)
+		{
+			ml.inTheAir[num]--;
+		}
 		Scout scout = new Scout();
 		scout.goa = gameObjectAnimator;
 		scout.baseName = ml.locationName;
-		scout.legs.Add(val2);
+		scout.home = ml;
+		scout.typeIndex = num;
+		scout.legs.Add(val);
 		scout.legs.Add(item);
 		scouts.Add(scout);
-		ModEnemyAI.Log(ml.locationName + " launches a " + text + " search, " + num + " km leg");
 		return true;
 	}
 

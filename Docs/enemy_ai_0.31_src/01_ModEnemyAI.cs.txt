@@ -12,7 +12,11 @@ public static class ModEnemyAI
 	public static readonly string[] StepNames = new string[5] { "Very Easy", "Easy", "Balanced", "Hard", "Elite" };
 
 	// ---- campaign map (Campaign difficulty) ----
-	public static float[] ScoutSorties = new float[5] { 1f, 2f, 4f, 6f, 8f };
+	// scout fan: every enemy airfield sends ScoutLines single planes per wave, ScoutWaves waves a day, spread over ScoutArc degrees
+	public static float[] ScoutLines = new float[5] { 2f, 3f, 4f, 6f, 8f };
+	public static float[] ScoutWaves = new float[5] { 1f, 2f, 2f, 3f, 3f };
+	public static float[] ScoutArc = new float[5] { 60f, 90f, 120f, 150f, 180f };
+	public static float[] ScoutMax = new float[5] { 8f, 12f, 20f, 30f, 40f };
 	public static float[] ScoutLegKm = new float[5] { 300f, 350f, 450f, 550f, 650f };
 	public static float[] ReportDelayMin = new float[5] { 60f, 45f, 30f, 20f, 10f };
 	public static float[] ShadowMin = new float[5] { 0f, 10f, 30f, 30f, 45f };
@@ -24,7 +28,17 @@ public static class ModEnemyAI
 	public static float[] ChaseRatio = new float[5] { 0.75f, 0.72f, 0.68f, 0.6f, 0.5f };
 	public static float[] SpotMemory = new float[5] { 1.17f, 1.33f, 1.67f, 2f, 2.67f };
 	public static float[] LastKnownHours = new float[5] { 0f, 6f, 12f, 12f, 18f };
-	public static float[] StrikeWaitMin = new float[5] { 10f, 15f, 20f, 30f, 30f };
+	// strikes gather RallyKm short of the target and wait up to RallyWaitMin for the rest, then go in together
+	public static float[] RallyKm = new float[5] { 90f, 100f, 110f, 120f, 130f };
+	public static float[] RallyWaitMin = new float[5] { 15f, 20f, 30f, 40f, 45f };
+	// airfield strike size by target: ship points (DD 1, CL 2, CA 3, CVL 4, CV 5, BC 5, BB 6, merchant 1) x PlanesPerPoint
+	// strike planes, plus EscortShare of that in fighters. A lone destroyer draws about 3 bombers and 2 fighters on Balanced.
+	public static float[] PlanesPerPoint = new float[5] { 2f, 2.5f, 3f, 3.5f, 4f };
+	public static float[] StrikeMinPlanes = new float[5] { 2f, 2f, 3f, 3f, 3f };
+	public static float[] EscortShare = new float[5] { 0.5f, 0.5f, 0.6f, 0.7f, 0.75f };
+	// fighter cover over enemy ships: groups worth at least CapMinValue points get CapPerPoint fighters per point (2 at least)
+	public static float[] CapMinValue = new float[5] { 8f, 6f, 4f, 3f, 2f };
+	public static float[] CapPerPoint = new float[5] { 0.5f, 0.75f, 1f, 1.25f, 1.5f };
 
 	// ---- battle (Combat difficulty) ----
 	public static float[] RethinkSec = new float[5] { 110f, 100f, 90f, 70f, 50f };
@@ -159,7 +173,10 @@ public static class ModEnemyAI
 	private static Dictionary<string, float[]> Knobs()
 	{
 		Dictionary<string, float[]> dictionary = new Dictionary<string, float[]>();
-		dictionary["ScoutSorties"] = ScoutSorties;
+		dictionary["ScoutLines"] = ScoutLines;
+		dictionary["ScoutWaves"] = ScoutWaves;
+		dictionary["ScoutArc"] = ScoutArc;
+		dictionary["ScoutMax"] = ScoutMax;
 		dictionary["ScoutLegKm"] = ScoutLegKm;
 		dictionary["ReportDelayMin"] = ReportDelayMin;
 		dictionary["ShadowMin"] = ShadowMin;
@@ -171,7 +188,13 @@ public static class ModEnemyAI
 		dictionary["ChaseRatio"] = ChaseRatio;
 		dictionary["SpotMemory"] = SpotMemory;
 		dictionary["LastKnownHours"] = LastKnownHours;
-		dictionary["StrikeWaitMin"] = StrikeWaitMin;
+		dictionary["RallyKm"] = RallyKm;
+		dictionary["RallyWaitMin"] = RallyWaitMin;
+		dictionary["PlanesPerPoint"] = PlanesPerPoint;
+		dictionary["StrikeMinPlanes"] = StrikeMinPlanes;
+		dictionary["EscortShare"] = EscortShare;
+		dictionary["CapMinValue"] = CapMinValue;
+		dictionary["CapPerPoint"] = CapPerPoint;
 		dictionary["RethinkSec"] = RethinkSec;
 		dictionary["RunSpeed"] = RunSpeed;
 		dictionary["RunOnCell"] = RunOnCell;
