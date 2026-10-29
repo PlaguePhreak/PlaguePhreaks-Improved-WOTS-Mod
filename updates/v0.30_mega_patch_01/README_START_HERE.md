@@ -1,6 +1,6 @@
 # Plague's Better WOTS mod 0.30 "Mega Patch 01": tester release
 
-Built on 0.31.14, the newest build, so it has everything up to there. Only text changed in the DLL: the version label, the main menu Change Log and the in-game logbook. All the code is the same as 0.31.14.
+Built on 0.31.14, the newest build, plus the fire hotfix (0.31.15: fires stay on fixed spots on the ship). Apart from that hotfix, only text changed in the DLL: the version label, the main menu Change Log and the in-game logbook.
 The main menu says **Version 0.30 Mega Patch 01**. Built for War on the Sea v1.09a.
 
 The tester keys are still in (F9, F4, F3). The CTM ship pack is not included.

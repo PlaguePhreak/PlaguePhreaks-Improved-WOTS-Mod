@@ -22,6 +22,7 @@ BAIL-OUTS AND RESCUES
 
 FIRES
 - Real 3D animated ship fires that grow with every burning compartment, light up the sea and send up black smoke.
+- Fires stay on fixed spots on the ship and move with it, sized to the ship.
 - Shell and bomb hits burst in 3D fire and sparks.
 
 BREAK-UP AND SINKING
