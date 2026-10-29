@@ -1,0 +1,15 @@
+ModVersion
+0.32.2
+---
+0.32.3
+===
+~ModVersion
+Version 0.32.2 globe test 2
+---
+Version 0.32.3 globe test 3
+===
+~ModVersion
+<b>0.32.2</b></color> globe, phase 2 (test build):
+---
+<b>0.32.3</b></color> globe, phase 2 (test build 3):\n- Fixed: the far side of the globe showed through above a line
+===

@@ -1,0 +1,955 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using Mono.Cecil;
+using Mono.Cecil.Cil;
+using Mono.Cecil.Rocks;
+
+// Merges the types of patch.dll (compiled against the game DLL) into Assembly-CSharp.dll, like dnSpy's Add Class / Edit Class,
+// then injects the one-line hooks. Usage: Patcher <game.dll> <patch.dll> <managedDir> <out.dll>
+static class P
+{
+    static ModuleDefinition A, Pm;
+    static Dictionary<TypeDefinition, TypeDefinition> tmap = new();
+    static Dictionary<MethodDefinition, MethodDefinition> mmap = new();
+    static Dictionary<FieldDefinition, FieldDefinition> fmap = new();
+    static List<string> log = new();
+    static string implName = "<PrivateImplementationDetails><" + Guid.NewGuid() + "_netmodule>";
+
+    static int Main(string[] args)
+    {
+        if (args[0] == "scope") { foreach (var tr in ModuleDefinition.ReadModule(args[1]).GetTypeReferences().Where(t => t.Namespace == args[2])) Console.WriteLine(tr.FullName + " <- " + tr.Scope); return 0; }
+        if (args[0] == "refs") { foreach (var r in ModuleDefinition.ReadModule(args[1]).AssemblyReferences) Console.WriteLine(r.FullName); return 0; }
+        var res = new DefaultAssemblyResolver();
+        res.AddSearchDirectory(args[2]);
+        var rp = new ReaderParameters { AssemblyResolver = res, ReadingMode = ReadingMode.Immediate };
+        A = ModuleDefinition.ReadModule(args[0], rp);
+        Pm = ModuleDefinition.ReadModule(args[1], rp);
+
+        var top = Pm.Types.Where(t => t.Name != "<Module>").ToList();
+        foreach (var t in top) Shell(t, null);
+        foreach (var t in tmap.Keys.ToList()) Members(t);
+        foreach (var t in tmap.Keys.ToList()) Sigs(t);
+        foreach (var m in mmap.Keys.ToList()) Body(m, mmap[m]);
+
+        if (Environment.GetEnvironmentVariable("NOHOOKS") != "1") Hooks(); else log.Add("hooks skipped (already in the DLL)");
+        if (Environment.GetEnvironmentVariable("HOOK_TORPEDOHIT") == "1") HookTorpedoHit();
+        if (Environment.GetEnvironmentVariable("HOOKS_ALLIED") == "1") HooksAllied();
+        if (Environment.GetEnvironmentVariable("HOOKS_ENEMY") == "1") HooksEnemy();
+        if (Environment.GetEnvironmentVariable("HOOKS_ENEMY2") == "1") HooksEnemy2();
+        if (Environment.GetEnvironmentVariable("HOOKS_FIRE") == "1") HooksFire();
+        if (Environment.GetEnvironmentVariable("HOOKS_GEO") == "1") HooksGeo();
+        if (Environment.GetEnvironmentVariable("HOOKS_GLOBE") == "1") HooksGlobe();
+        if (Environment.GetEnvironmentVariable("HOOKS_BATTLE") == "1") HooksBattle();
+        if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("PRUNE"))) Prune(Environment.GetEnvironmentVariable("PRUNE").Split(','));
+        var strFile = Environment.GetEnvironmentVariable("STRINGS");
+        if (!string.IsNullOrEmpty(strFile)) Strings(strFile);
+
+        foreach (var l in log) Console.WriteLine(l);
+        A.Write(args[3]);
+        Console.WriteLine("written " + args[3]);
+        return 0;
+    }
+
+    // ---------- type shells ----------
+    static void Shell(TypeDefinition s, TypeDefinition dstOwner)
+    {
+        TypeDefinition d = null;
+        bool gen = s.Name.StartsWith("<");
+        string name = s.Name == "<PrivateImplementationDetails>" ? implName : s.Name;
+        if (!gen)
+            d = dstOwner == null ? A.Types.FirstOrDefault(x => x.FullName == s.FullName) : dstOwner.NestedTypes.FirstOrDefault(x => x.Name == s.Name);
+        if (d == null)
+        {
+            if (gen && dstOwner != null) while (dstOwner.NestedTypes.Any(x => x.Name == name)) name = name + "_v29";
+            d = new TypeDefinition(dstOwner == null ? s.Namespace : "", name, s.Attributes);
+            d.ClassSize = s.ClassSize; d.PackingSize = s.PackingSize;
+            if (dstOwner == null) A.Types.Add(d); else dstOwner.NestedTypes.Add(d);
+            foreach (var gp in s.GenericParameters) d.GenericParameters.Add(new GenericParameter(gp.Name, d) { Attributes = gp.Attributes });
+            log.Add("ADD type " + d.FullName);
+        }
+        else
+        {
+            log.Add("MERGE type " + d.FullName);
+            if (d.Attributes != s.Attributes) { log.Add("  attrs " + d.Attributes + " -> " + s.Attributes); d.Attributes = s.Attributes; }
+        }
+        tmap[s] = d;
+        foreach (var n in s.NestedTypes) Shell(n, d);
+    }
+
+    static bool SameSig(MethodDefinition a, MethodDefinition b)
+    {
+        if (a.Name != b.Name || a.Parameters.Count != b.Parameters.Count || a.GenericParameters.Count != b.GenericParameters.Count || a.IsStatic != b.IsStatic) return false;
+        for (int i = 0; i < a.Parameters.Count; i++)
+            if (a.Parameters[i].ParameterType.FullName != b.Parameters[i].ParameterType.FullName) return false;
+        return a.ReturnType.FullName == b.ReturnType.FullName;
+    }
+
+    static void Members(TypeDefinition s)
+    {
+        var d = tmap[s];
+        foreach (var f in s.Fields)
+        {
+            var df = d.Fields.FirstOrDefault(x => x.Name == f.Name);
+            if (df == null) { df = new FieldDefinition(f.Name, f.Attributes, A.TypeSystem.Object); d.Fields.Add(df); }
+            else if (df.FieldType.FullName != f.FieldType.FullName) log.Add("  field type change " + d.Name + "." + f.Name + ": " + df.FieldType.FullName + " -> " + f.FieldType.FullName);
+            df.Attributes = f.Attributes;
+            fmap[f] = df;
+        }
+        foreach (var m in s.Methods)
+        {
+            var dm = d.Methods.FirstOrDefault(x => SameSig(x, m));
+            if (dm == null)
+            {
+                dm = new MethodDefinition(m.Name, m.Attributes, A.TypeSystem.Void);
+                d.Methods.Add(dm);
+                foreach (var gp in m.GenericParameters) dm.GenericParameters.Add(new GenericParameter(gp.Name, dm) { Attributes = gp.Attributes });
+                if (!s.Name.StartsWith("<") && !d.Name.StartsWith("<")) log.Add("  new method " + d.Name + "." + m.Name);
+            }
+            else
+            {
+                dm.Attributes = m.Attributes;
+                dm.Parameters.Clear();
+            }
+            dm.ImplAttributes = m.ImplAttributes;
+            mmap[m] = dm;
+        }
+        // members of a merged type that the new source no longer has: kept (nothing may still call them), reported
+        foreach (var x in d.Methods.Where(x => !mmap.ContainsValue(x))) log.Add("  old method kept " + d.Name + "." + x.Name);
+        foreach (var x in d.Fields.Where(x => !fmap.ContainsValue(x))) log.Add("  old field kept " + d.Name + "." + x.Name);
+        // properties: rebuild the ones the source has
+        foreach (var p in s.Properties) { var o = d.Properties.FirstOrDefault(x => x.Name == p.Name); if (o != null) d.Properties.Remove(o); }
+    }
+
+    static void Sigs(TypeDefinition s)
+    {
+        var d = tmap[s];
+        d.BaseType = s.BaseType == null ? null : MapType(s.BaseType);
+        d.Interfaces.Clear();
+        foreach (var i in s.Interfaces) d.Interfaces.Add(new InterfaceImplementation(MapType(i.InterfaceType)));
+        for (int i = 0; i < s.GenericParameters.Count; i++) foreach (var c in s.GenericParameters[i].Constraints) d.GenericParameters[i].Constraints.Add(new GenericParameterConstraint(MapType(c.ConstraintType)));
+        CopyAttrs(s, d, true);
+        foreach (var f in s.Fields)
+        {
+            var df = fmap[f];
+            df.FieldType = MapType(f.FieldType);
+            if (f.HasConstant) df.Constant = f.Constant; else df.HasConstant = false;
+            if (f.InitialValue != null && f.InitialValue.Length > 0) df.InitialValue = f.InitialValue;
+            CopyAttrs(f, df, false);
+        }
+        foreach (var m in s.Methods)
+        {
+            var dm = mmap[m];
+            dm.ReturnType = MapType(m.ReturnType);
+            foreach (var p in m.Parameters)
+            {
+                var dp = new ParameterDefinition(p.Name, p.Attributes, MapType(p.ParameterType));
+                if (p.HasConstant) dp.Constant = p.Constant;
+                CopyAttrs(p, dp, false);
+                dm.Parameters.Add(dp);
+            }
+            dm.Overrides.Clear();
+            foreach (var o in m.Overrides) dm.Overrides.Add(MapMethod(o));
+            CopyAttrs(m, dm, false);
+        }
+        foreach (var p in s.Properties)
+        {
+            var dp = new PropertyDefinition(p.Name, p.Attributes, MapType(p.PropertyType));
+            if (p.GetMethod != null) dp.GetMethod = mmap[p.GetMethod];
+            if (p.SetMethod != null) dp.SetMethod = mmap[p.SetMethod];
+            d.Properties.Add(dp);
+        }
+        if (s.Events.Count > 0) throw new Exception("events not supported " + s.FullName);
+    }
+
+    static void CopyAttrs(ICustomAttributeProvider s, ICustomAttributeProvider d, bool merge)
+    {
+        if (!merge) d.CustomAttributes.Clear();
+        foreach (var ca in s.CustomAttributes)
+        {
+            if (merge && d.CustomAttributes.Any(x => x.AttributeType.FullName == ca.AttributeType.FullName)) continue;
+            var n = new CustomAttribute(MapMethod(ca.Constructor));
+            foreach (var a in ca.ConstructorArguments) n.ConstructorArguments.Add(MapArg(a));
+            foreach (var a in ca.Fields) n.Fields.Add(new CustomAttributeNamedArgument(a.Name, MapArg(a.Argument)));
+            foreach (var a in ca.Properties) n.Properties.Add(new CustomAttributeNamedArgument(a.Name, MapArg(a.Argument)));
+            d.CustomAttributes.Add(n);
+        }
+    }
+
+    static CustomAttributeArgument MapArg(CustomAttributeArgument a)
+    {
+        object v = a.Value is TypeReference tr ? MapType(tr) : a.Value;
+        return new CustomAttributeArgument(MapType(a.Type), v);
+    }
+
+    // ---------- reference mapping ----------
+    static bool IsGameAsm(IMetadataScope sc) => sc is AssemblyNameReference an && an.Name == "Assembly-CSharp";
+
+    static TypeDefinition FindInA(TypeReference t)
+    {
+        if (t.DeclaringType != null)
+        {
+            var o = FindInA(t.DeclaringType);
+            return o?.NestedTypes.FirstOrDefault(x => x.Name == t.Name);
+        }
+        return A.Types.FirstOrDefault(x => x.Namespace == t.Namespace && x.Name == t.Name);
+    }
+
+    static TypeReference MapType(TypeReference t)
+    {
+        if (t == null) return null;
+        switch (t)
+        {
+            case GenericInstanceType g:
+                var ng = new GenericInstanceType(MapType(g.ElementType));
+                foreach (var a in g.GenericArguments) ng.GenericArguments.Add(MapType(a));
+                return ng;
+            case ArrayType at:
+                if (at.Rank == 1) return new ArrayType(MapType(at.ElementType));
+                { var na = new ArrayType(MapType(at.ElementType)); na.Dimensions.Clear(); foreach (var d in at.Dimensions) na.Dimensions.Add(new ArrayDimension(d.LowerBound, d.UpperBound)); return na; }
+            case ByReferenceType br: return new ByReferenceType(MapType(br.ElementType));
+            case PointerType pt: return new PointerType(MapType(pt.ElementType));
+            case PinnedType pn: return new PinnedType(MapType(pn.ElementType));
+            case RequiredModifierType rm: return new RequiredModifierType(MapType(rm.ModifierType), MapType(rm.ElementType));
+            case OptionalModifierType om: return new OptionalModifierType(MapType(om.ModifierType), MapType(om.ElementType));
+            case GenericParameter gp:
+                if (gp.Owner is TypeDefinition otd && tmap.TryGetValue(otd, out var dtd)) return dtd.GenericParameters[gp.Position];
+                if (gp.Owner is MethodDefinition omd && mmap.TryGetValue(omd, out var dmd)) return dmd.GenericParameters[gp.Position];
+                return gp; // external VAR/MVAR: only position is written
+            case TypeSpecification ts: throw new Exception("unhandled typespec " + ts.GetType());
+        }
+        if (t is TypeDefinition td)
+        {
+            if (tmap.TryGetValue(td, out var m)) return m;
+            throw new Exception("unmapped typedef " + td.FullName);
+        }
+        if (IsGameAsm(t.Scope) || (t.DeclaringType != null && IsGameAsm(t.DeclaringType.Scope)))
+        {
+            var f = FindInA(t) ?? throw new Exception("game type not found " + t.FullName);
+            return f;
+        }
+        return A.ImportReference(t);
+    }
+
+    static bool SameRefSig(MethodDefinition cand, MethodReference r)
+    {
+        if (cand.Name != r.Name || cand.Parameters.Count != r.Parameters.Count || cand.GenericParameters.Count != r.GenericParameters.Count || cand.HasThis != r.HasThis) return false;
+        for (int i = 0; i < r.Parameters.Count; i++)
+            if (cand.Parameters[i].ParameterType.FullName != r.Parameters[i].ParameterType.FullName) return false;
+        return cand.ReturnType.FullName == r.ReturnType.FullName;
+    }
+
+    static MethodReference MapMethod(MethodReference r)
+    {
+        if (r is MethodDefinition md)
+        {
+            if (mmap.TryGetValue(md, out var x)) return x;
+            throw new Exception("unmapped methoddef " + md.FullName);
+        }
+        if (r is GenericInstanceMethod gim)
+        {
+            var n = new GenericInstanceMethod(MapMethod(gim.ElementMethod));
+            foreach (var a in gim.GenericArguments) n.GenericArguments.Add(MapType(a));
+            return n;
+        }
+        var dt = MapType(r.DeclaringType);
+        if (dt is TypeDefinition dtd && dtd.Module == A)
+        {
+            var c = dtd.Methods.FirstOrDefault(x => SameRefSig(x, r));
+            if (c == null) throw new Exception("game method not found " + r.FullName);
+            return c;
+        }
+        var nr = new MethodReference(r.Name, A.TypeSystem.Void, dt) { HasThis = r.HasThis, ExplicitThis = r.ExplicitThis, CallingConvention = r.CallingConvention };
+        foreach (var gp in r.GenericParameters) nr.GenericParameters.Add(new GenericParameter(gp.Name, nr));
+        nr.ReturnType = MapType(r.ReturnType);
+        foreach (var p in r.Parameters) nr.Parameters.Add(new ParameterDefinition(MapType(p.ParameterType)));
+        return nr;
+    }
+
+    static FieldReference MapField(FieldReference r)
+    {
+        if (r is FieldDefinition fd)
+        {
+            if (fmap.TryGetValue(fd, out var x)) return x;
+            throw new Exception("unmapped fielddef " + fd.FullName);
+        }
+        var dt = MapType(r.DeclaringType);
+        if (dt is TypeDefinition dtd && dtd.Module == A)
+            return dtd.Fields.FirstOrDefault(x => x.Name == r.Name) ?? throw new Exception("game field not found " + r.FullName);
+        return new FieldReference(r.Name, MapType(r.FieldType), dt);
+    }
+
+    // ---------- bodies ----------
+    static void Body(MethodDefinition s, MethodDefinition d)
+    {
+        var keep = (Environment.GetEnvironmentVariable("KEEP") ?? "").Split(',');
+        if (d.HasBody && keep.Contains(d.DeclaringType.Name + "." + d.Name)) { log.Add("  body kept " + d.DeclaringType.Name + "." + d.Name); return; }
+        if (!s.HasBody) { d.Body = null; return; }
+        var sb = s.Body;
+        var nb = new MethodBody(d) { InitLocals = sb.InitLocals, MaxStackSize = sb.MaxStackSize };
+        d.Body = nb;
+        foreach (var v in sb.Variables) nb.Variables.Add(new VariableDefinition(MapType(v.VariableType)));
+        var im = new Dictionary<Instruction, Instruction>();
+        foreach (var i in sb.Instructions)
+        {
+            var n = Instruction.Create(OpCodes.Nop);
+            n.OpCode = i.OpCode;
+            n.Offset = i.Offset;
+            im[i] = n;
+            nb.Instructions.Add(n);
+        }
+        foreach (var i in sb.Instructions)
+        {
+            var n = im[i];
+            object o = i.Operand;
+            switch (o)
+            {
+                case null: break;
+                case Instruction ti: o = im[ti]; break;
+                case Instruction[] ta: o = ta.Select(x => im[x]).ToArray(); break;
+                case VariableDefinition vd: o = nb.Variables[vd.Index]; break;
+                case ParameterDefinition pd: o = pd == sb.ThisParameter ? nb.ThisParameter : d.Parameters[pd.Index]; break;
+                case TypeReference tr: o = MapType(tr); break;
+                case MethodReference mr: o = MapMethod(mr); break;
+                case FieldReference fr: o = MapField(fr); break;
+                case CallSite: throw new Exception("calli not supported in " + s.FullName);
+                default: break; // string, numbers
+            }
+            n.Operand = o;
+        }
+        foreach (var h in sb.ExceptionHandlers)
+        {
+            nb.ExceptionHandlers.Add(new ExceptionHandler(h.HandlerType)
+            {
+                TryStart = Get(im, h.TryStart), TryEnd = Get(im, h.TryEnd),
+                HandlerStart = Get(im, h.HandlerStart), HandlerEnd = Get(im, h.HandlerEnd),
+                FilterStart = Get(im, h.FilterStart),
+                CatchType = h.CatchType == null ? null : MapType(h.CatchType)
+            });
+        }
+    }
+    static Instruction Get(Dictionary<Instruction, Instruction> m, Instruction i) => i == null ? null : m[i];
+
+    // ---------- ldstr replacements: file of blocks "type\n<old>\n---\n<new>\n===" (\n in text = newline) ----------
+    static void Strings(string file)
+    {
+        foreach (var blk in File.ReadAllText(file).Replace("\r", "").Split(new[] { "\n===\n" }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var lines = blk.Split('\n');
+            var type = lines[0];
+            var parts = string.Join("\n", lines.Skip(1)).Split(new[] { "\n---\n" }, StringSplitOptions.None);
+            string oldS = parts[0].Replace("\\n", "\n"), newS = parts[1].TrimEnd('\n').Replace("\\n", "\n");
+            bool sub = type.StartsWith("~"); if (sub) type = type.Substring(1);   // "~Type" = replace inside strings
+            int n = 0;
+            foreach (var m in T(type).Methods.Where(x => x.HasBody))
+                foreach (var i in m.Body.Instructions)
+                    if (i.OpCode == OpCodes.Ldstr && (sub ? ((string)i.Operand).Contains(oldS) : (string)i.Operand == oldS)) { i.Operand = sub ? ((string)i.Operand).Replace(oldS, newS) : newS; n++; }
+            foreach (var f in T(type).Fields.Where(x => x.HasConstant && x.Constant is string cs && (sub ? cs.Contains(oldS) : cs == oldS))) { f.Constant = sub ? ((string)f.Constant).Replace(oldS, newS) : newS; n++; }
+            if (n == 0) throw new Exception("string not found in " + type + ": " + oldS);
+            log.Add("STRING " + type + " x" + n);
+        }
+    }
+
+    // ---------- hooks ----------
+    static TypeDefinition T(string n) => A.Types.First(x => x.FullName == n);
+    static MethodDefinition M(string t, string n, int pc) => T(t).Methods.Single(x => x.Name == n && x.Parameters.Count == pc);
+
+    static void Hooks()
+    {
+        var begin = M("ModSinking", "Begin", 1);
+        var after = M("ModSinking", "AfterMagazine", 2);
+        var breakBack = M("ModSinking", "TorpedoBreakBack", 2);
+        var skip = M("ModShipHelm", "Skip", 2);
+
+        // A) DamageableSea.SinkShip: ModSinking.Begin(this) as the last line (after the submarine block), i.e. before the
+        //    ret that closes the "not a submarine" if and before the final ret. The early isDestroyed return stays as is.
+        {
+            var m = M("DamageableSea", "SinkShip", 0);
+            if (m.Body.Instructions.Any(i => i.Operand is MethodReference x && x.Name == "Begin" && x.DeclaringType.Name == "ModSinking")) throw new Exception("SinkShip already hooked");
+            m.Body.SimplifyMacros();
+            var il = m.Body.GetILProcessor();
+            var rets = m.Body.Instructions.Where(i => i.OpCode == OpCodes.Ret).ToList();
+            if (rets.Count != 3) throw new Exception("SinkShip rets " + rets.Count);
+            var subRet = rets[1];
+            var prev = subRet.Previous;
+            if (!(prev.OpCode == OpCodes.Brtrue && prev.Previous.Operand is FieldReference fr && fr.Name == "unitSubtype")) throw new Exception("SinkShip pattern");
+            foreach (var r in new[] { subRet, rets[2] })
+            {
+                var a = il.Create(OpCodes.Ldarg_0);
+                il.InsertBefore(r, a);
+                il.InsertBefore(r, il.Create(OpCodes.Call, begin));
+                Retarget(m, r, a);
+            }
+            m.Body.OptimizeMacros();
+            log.Add("HOOK SinkShip x2");
+        }
+        // B) DamageableSea.ApplyMagazineExplosion: last line ModSinking.AfterMagazine(this, cv)
+        {
+            var m = M("DamageableSea", "ApplyMagazineExplosion", 1);
+            m.Body.SimplifyMacros();
+            var il = m.Body.GetILProcessor();
+            var rets = m.Body.Instructions.Where(i => i.OpCode == OpCodes.Ret).ToList();
+            if (rets.Count != 1) throw new Exception("AME rets");
+            var r = rets[0];
+            if (!(r.Previous.Operand is MethodReference sm && sm.Name == "SendMessageToLog")) throw new Exception("AME pattern");
+            var a = il.Create(OpCodes.Ldarg_0);
+            il.InsertBefore(r, a);
+            il.InsertBefore(r, il.Create(OpCodes.Ldarg, m.Parameters[0]));
+            il.InsertBefore(r, il.Create(OpCodes.Call, after));
+            Retarget(m, r, a);
+            m.Body.OptimizeMacros();
+            log.Add("HOOK ApplyMagazineExplosion");
+        }
+        // C) DamageableSea.ApplyDamage: after the 2nd ApplyMagazineDamage of the torpedo break-back block
+        {
+            var m = M("DamageableSea", "ApplyDamage", 3);
+            m.Body.SimplifyMacros();
+            var il = m.Body.GetILProcessor();
+            var ins = m.Body.Instructions.ToList();
+            var bb = ins.FindIndex(i => i.OpCode == OpCodes.Ldfld && i.Operand is FieldReference f && f.Name == "torpBreakBackValues");
+            if (bb < 0) throw new Exception("no torpBreakBackValues");
+            var dg = ins.Select((i, k) => (i, k)).First(x => x.k > bb && x.i.Operand is MethodReference mr && mr.Name == "diagonalsPattern");
+            var textLoad = ins[dg.k - 4];
+            if (!(ins[dg.k - 3].Operand is MethodReference gc && gc.Name == "GetCompartmentIntArray") || textLoad.OpCode != OpCodes.Ldloc) throw new Exception("ApplyDamage pattern 1 " + textLoad);
+            var call2 = ins[dg.k + 4];
+            if (!(call2.Operand is MethodReference amd && amd.Name == "ApplyMagazineDamage")) throw new Exception("ApplyDamage pattern 2");
+            var c1 = il.Create(OpCodes.Ldarg_0);
+            var c2 = il.Create(OpCodes.Ldloc, (VariableDefinition)textLoad.Operand);
+            var c3 = il.Create(OpCodes.Call, breakBack);
+            il.InsertAfter(call2, c1); il.InsertAfter(c1, c2); il.InsertAfter(c2, c3);
+            m.Body.OptimizeMacros();
+            log.Add("HOOK ApplyDamage (text = V_" + ((VariableDefinition)textLoad.Operand).Index + ")");
+        }
+        // D) ModAAEvade.Apply: "|| ModPlayerOverride.OnHelm(parentUnit)" -> "... || ModShipHelm.Skip(ai, parentUnit)"
+        {
+            var m = M("ModAAEvade", "Apply", 1);
+            m.Body.SimplifyMacros();
+            var il = m.Body.GetILProcessor();
+            var oh = m.Body.Instructions.First(i => i.Operand is MethodReference mr && mr.Name == "OnHelm" && mr.DeclaringType.Name == "ModPlayerOverride");
+            var br = oh.Next;
+            if (br.OpCode != OpCodes.Brfalse) throw new Exception("AAEvade pattern " + br.OpCode);
+            var leaveIns = br.Next;
+            if (leaveIns.OpCode != OpCodes.Leave) throw new Exception("AAEvade pattern leave " + leaveIns.OpCode);
+            var cont = (Instruction)br.Operand;
+            var unitLoad = oh.Previous;
+            if (unitLoad.OpCode != OpCodes.Ldloc) throw new Exception("AAEvade unit load " + unitLoad.OpCode);
+            br.OpCode = OpCodes.Brtrue; br.Operand = leaveIns;
+            var a1 = il.Create(OpCodes.Ldarg_0);
+            var a2 = il.Create(OpCodes.Ldloc, (VariableDefinition)unitLoad.Operand);
+            var a3 = il.Create(OpCodes.Call, skip);
+            var a4 = il.Create(OpCodes.Brfalse, cont);
+            il.InsertAfter(br, a1); il.InsertAfter(a1, a2); il.InsertAfter(a2, a3); il.InsertAfter(a3, a4);
+            m.Body.OptimizeMacros();
+            log.Add("HOOK ModAAEvade.Apply");
+        }
+    }
+
+    // E) 0.29.4: DamageableSea.ApplyDamage: ModSinking.TorpedoHit(this, ammunitionDamage, collision) right after ModHitLog.BeginHit(...)
+    static void HookTorpedoHit()
+    {
+        var hit = M("ModSinking", "TorpedoHit", 3);
+        var m = M("DamageableSea", "ApplyDamage", 3);
+        if (m.Body.Instructions.Any(i => i.Operand is MethodReference x && x.Name == "TorpedoHit")) throw new Exception("ApplyDamage already has TorpedoHit");
+        m.Body.SimplifyMacros();
+        var il = m.Body.GetILProcessor();
+        var bh = m.Body.Instructions.First(i => i.Operand is MethodReference mr && mr.Name == "BeginHit" && mr.DeclaringType.Name == "ModHitLog");
+        if (m.Body.Instructions.IndexOf(bh) > 6) throw new Exception("BeginHit is not at the start of ApplyDamage");
+        var c1 = il.Create(OpCodes.Ldarg_0);
+        var c2 = il.Create(OpCodes.Ldarg, m.Parameters[0]);
+        var c3 = il.Create(OpCodes.Ldarg, m.Parameters[1]);
+        var c4 = il.Create(OpCodes.Call, hit);
+        il.InsertAfter(bh, c1); il.InsertAfter(c1, c2); il.InsertAfter(c2, c3); il.InsertAfter(c3, c4);
+        m.Body.OptimizeMacros();
+        log.Add("HOOK ApplyDamage start: TorpedoHit");
+    }
+
+    // ---------- 0.30 Allied AI: six one-line hooks ----------
+    static Instruction CallTo(MethodDefinition m, string type, string name) =>
+        m.Body.Instructions.Single(i => (i.OpCode == OpCodes.Call || i.OpCode == OpCodes.Callvirt) && i.Operand is MethodReference r && r.Name == name && r.DeclaringType.Name == type);
+    static void NotYet(MethodDefinition m) { if (m.Body.Instructions.Any(i => i.Operand is MethodReference r && r.DeclaringType.Name == "ModAllied")) throw new Exception(m.FullName + " already has a ModAllied hook"); }
+
+    static void HooksAllied()
+    {
+        // 1) CampaignManager.CheckDaily: ModAllied.Daily(); right after ModConvoy.Daily();
+        {
+            var m = M("CampaignManager", "CheckDaily", 0); NotYet(m);
+            m.Body.SimplifyMacros();
+            var at = CallTo(m, "ModConvoy", "Daily");
+            m.Body.GetILProcessor().InsertAfter(at, Instruction.Create(OpCodes.Call, M("ModAllied", "Daily", 0)));
+            m.Body.OptimizeMacros(); log.Add("HOOK CheckDaily: ModAllied.Daily");
+        }
+        // 2) CampaignManager.Check1Min: ModAllied.Tick(); right after ModConvoy.Tick();
+        {
+            var m = M("CampaignManager", "Check1Min", 0); NotYet(m);
+            m.Body.SimplifyMacros();
+            var at = CallTo(m, "ModConvoy", "Tick");
+            m.Body.GetILProcessor().InsertAfter(at, Instruction.Create(OpCodes.Call, M("ModAllied", "Tick", 0)));
+            m.Body.OptimizeMacros(); log.Add("HOOK Check1Min: ModAllied.Tick");
+        }
+        // 3) CampaignInterface.SelectMapObject first line: if (ModAllied.Blocks(obj)) return;
+        {
+            var m = M("CampaignInterface", "SelectMapObject", 1); NotYet(m);
+            m.Body.SimplifyMacros();
+            var il = m.Body.GetILProcessor();
+            var first = m.Body.Instructions[0];
+            il.InsertBefore(first, il.Create(OpCodes.Ldarg, m.Parameters[0]));
+            il.InsertBefore(first, il.Create(OpCodes.Call, M("ModAllied", "Blocks", 1)));
+            il.InsertBefore(first, il.Create(OpCodes.Brfalse, first));
+            il.InsertBefore(first, il.Create(OpCodes.Ret));
+            m.Body.OptimizeMacros(); log.Add("HOOK SelectMapObject first line: ModAllied.Blocks");
+        }
+        // 4) CampaignManager.CheckMobileEncounters:
+        //    campaignData.canAutoResolve = ModAirResolve.CanResolve(a, b) | ModAllied.CanResolve(a, b);
+        {
+            var m = M("CampaignManager", "CheckMobileEncounters", 3); NotYet(m);
+            m.Body.SimplifyMacros();
+            var il = m.Body.GetILProcessor();
+            var c = CallTo(m, "ModAirResolve", "CanResolve");
+            var b = c.Previous; var a = b.Previous;
+            if (a.OpCode != OpCodes.Ldloc || b.OpCode != OpCodes.Ldloc || !(c.Next.Operand is FieldReference f && f.Name == "canAutoResolve")) throw new Exception("CheckMobileEncounters pattern");
+            var x1 = il.Create(OpCodes.Ldloc, (VariableDefinition)a.Operand);
+            var x2 = il.Create(OpCodes.Ldloc, (VariableDefinition)b.Operand);
+            var x3 = il.Create(OpCodes.Call, M("ModAllied", "CanResolve", 2));
+            var x4 = il.Create(OpCodes.Or);
+            il.InsertAfter(c, x1); il.InsertAfter(x1, x2); il.InsertAfter(x2, x3); il.InsertAfter(x3, x4);
+            var what = "HOOK CheckMobileEncounters: | ModAllied.CanResolve (V_" + ((VariableDefinition)a.Operand).Index + ", V_" + ((VariableDefinition)b.Operand).Index + ")";
+            m.Body.OptimizeMacros(); log.Add(what);
+        }
+        // 5) EngagementPanel.AutoResolve first line: if (ModAllied.AutoResolve()) return;  (before the ModAirResolve.Open line)
+        {
+            var m = M("EngagementPanel", "AutoResolve", 0); NotYet(m);
+            m.Body.SimplifyMacros();
+            var il = m.Body.GetILProcessor();
+            var first = m.Body.Instructions[0];
+            if (!(first.Operand is MethodReference r && r.Name == "Open" && r.DeclaringType.Name == "ModAirResolve")) throw new Exception("AutoResolve pattern");
+            il.InsertBefore(first, il.Create(OpCodes.Call, M("ModAllied", "AutoResolve", 0)));
+            il.InsertBefore(first, il.Create(OpCodes.Brfalse, first));
+            il.InsertBefore(first, il.Create(OpCodes.Ret));
+            m.Body.OptimizeMacros(); log.Add("HOOK EngagementPanel.AutoResolve first line: ModAllied.AutoResolve");
+        }
+        // 6) ActionReport.CreateActionReport: after the 2nd DisplayData(...): if (ModAllied.InBattle()) pointsGained = 0;
+        {
+            var m = M("ActionReport", "CreateActionReport", 0); NotYet(m);
+            m.Body.SimplifyMacros();
+            var il = m.Body.GetILProcessor();
+            var dd = m.Body.Instructions.Where(i => i.Operand is MethodReference r && r.Name == "DisplayData").ToList();
+            if (dd.Count != 2) throw new Exception("CreateActionReport DisplayData x" + dd.Count);
+            var next = dd[1].Next;
+            var pg = T("ActionReport").Fields.Single(f => f.Name == "pointsGained");
+            var y1 = il.Create(OpCodes.Call, M("ModAllied", "InBattle", 0));
+            var y2 = il.Create(OpCodes.Brfalse, next);
+            var y3 = il.Create(OpCodes.Ldarg_0);
+            var y4 = il.Create(OpCodes.Ldc_I4_0);
+            var y5 = il.Create(OpCodes.Stfld, pg);
+            il.InsertAfter(dd[1], y1); il.InsertAfter(y1, y2); il.InsertAfter(y2, y3); il.InsertAfter(y3, y4); il.InsertAfter(y4, y5);
+            m.Body.OptimizeMacros(); log.Add("HOOK CreateActionReport: ModAllied.InBattle -> pointsGained = 0");
+        }
+    }
+
+
+    // ================= 0.31 enemy AI hooks =================
+    static void NotEnemy(MethodDefinition m) { if (m.Body.Instructions.Any(i => i.Operand is MethodReference r && r.DeclaringType.Name.StartsWith("ModEnemy"))) throw new Exception(m.FullName + " already has a ModEnemy hook"); }
+    static MethodDefinition E(string t, string n, int pc) => M(t, n, pc);
+
+    // insert "call filter" right after the only ldc.r4 with this value
+    static void FilterFloat(string type, string method, int pc, float value, string ftype, string fname)
+    {
+        var m = M(type, method, pc); NotEnemy(m); m.Body.SimplifyMacros();
+        var hits = m.Body.Instructions.Where(i => i.OpCode == OpCodes.Ldc_R4 && Math.Abs((float)i.Operand - value) < 1e-6f).ToList();
+        if (hits.Count != 1) throw new Exception(type + "." + method + ": ldc.r4 " + value + " x" + hits.Count);
+        m.Body.GetILProcessor().InsertAfter(hits[0], Instruction.Create(OpCodes.Call, E(ftype, fname, 1)));
+        m.Body.OptimizeMacros(); log.Add("HOOK " + type + "." + method + ": " + value + " -> " + ftype + "." + fname);
+    }
+
+    // "if (Mod(args)) return [retval];" as the first line
+    static void FirstLineReturn(string type, string method, int pc, string ftype, string fname, int[] args, Instruction retval)
+    {
+        var m = M(type, method, pc); NotEnemy(m); m.Body.SimplifyMacros();
+        var il = m.Body.GetILProcessor(); var first = m.Body.Instructions[0];
+        foreach (var a in args) il.InsertBefore(first, il.Create(OpCodes.Ldarg, m.Body.ThisParameter != null && a == 0 ? m.Body.ThisParameter : m.Parameters[a - (m.HasThis ? 1 : 0)]));
+        il.InsertBefore(first, il.Create(OpCodes.Call, E(ftype, fname, args.Length)));
+        il.InsertBefore(first, il.Create(OpCodes.Brfalse, first));
+        if (retval != null) il.InsertBefore(first, retval);
+        il.InsertBefore(first, il.Create(OpCodes.Ret));
+        m.Body.OptimizeMacros(); log.Add("HOOK " + type + "." + method + " first line: if (" + ftype + "." + fname + ") return");
+    }
+
+    // before every ret: push the args and call filter(retvalue, args...) / call void Mod(args...)
+    static void BeforeRets(MethodDefinition m, Func<ILProcessor, Instruction[]> make, string what)
+    {
+        NotEnemy(m); m.Body.SimplifyMacros(); var il = m.Body.GetILProcessor();
+        var rets = m.Body.Instructions.Where(i => i.OpCode == OpCodes.Ret).ToList();
+        foreach (var r in rets)
+        {
+            var ins = make(il);
+            foreach (var x in ins) il.InsertBefore(r, x);
+            Retarget(m, r, ins[0]);
+        }
+        m.Body.OptimizeMacros(); log.Add("HOOK " + what + " (" + rets.Count + " returns)");
+    }
+
+
+    // 0.31.2: CheckAirfieldLaunchFighterAirSupport first line: if (ModEnemyCampaign.AirSupport(ml, mmo)) return ModEnemyCampaign.AirSupportResult();
+    static void HooksEnemy2()
+    {
+        FirstLineReturn("CampaignAI", "CheckAirfieldLaunchFighterAirSupport", 2, "ModEnemyCampaign", "AirSupport", new[] { 1, 2 }, Instruction.Create(OpCodes.Call, E("ModEnemyCampaign", "AirSupportResult", 0)));
+    }
+
+    // drop members of these mod types that the patch no longer has and nothing references any more
+    static void Prune(string[] types)
+    {
+        int before;
+        do { before = log.Count; PruneOnce(types); } while (log.Count != before);
+    }
+    static void PruneOnce(string[] types)
+    {
+        var refs = new HashSet<string>();
+        foreach (var ty in A.GetTypes()) foreach (var me in ty.Methods.Where(x => x.HasBody))
+            foreach (var i in me.Body.Instructions) if (i.Operand is MemberReference mr) refs.Add(mr.FullName);
+        foreach (var tn in types)
+        {
+            var d = T(tn); var s = Pm.Types.First(x => x.FullName == tn);
+            PruneType(d, s, refs);
+        }
+    }
+    static void PruneType(TypeDefinition d, TypeDefinition s, HashSet<string> refs)
+    {
+        foreach (var m in d.Methods.ToList())
+            if (!s.Methods.Any(x => x.Name == m.Name && x.Parameters.Count == m.Parameters.Count) && !refs.Contains(m.FullName)) { d.Methods.Remove(m); log.Add("PRUNE method " + m.FullName); }
+        foreach (var f in d.Fields.ToList())
+            if (!s.Fields.Any(x => x.Name == f.Name) && !refs.Contains(f.FullName)) { d.Fields.Remove(f); log.Add("PRUNE field " + f.FullName); }
+        foreach (var n in d.NestedTypes.ToList())
+        {
+            if (n.Name.StartsWith("<")) continue;
+            var sn = s.NestedTypes.FirstOrDefault(x => x.Name == n.Name);
+            if (sn != null) PruneType(n, sn, refs);
+            else if (!refs.Any(r => r.Contains(n.FullName))) { d.NestedTypes.Remove(n); log.Add("PRUNE type " + n.FullName); }
+        }
+    }
+
+    static void HooksEnemy()
+    {
+        // 1) CampaignManager.Check1Min: ModEnemyScouts.Tick(); right after ModAllied.Tick();
+        {
+            var m = M("CampaignManager", "Check1Min", 0); NotEnemy(m); m.Body.SimplifyMacros();
+            var at = CallTo(m, "ModAllied", "Tick");
+            m.Body.GetILProcessor().InsertAfter(at, Instruction.Create(OpCodes.Call, E("ModEnemyScouts", "Tick", 0)));
+            m.Body.OptimizeMacros(); log.Add("HOOK Check1Min: ModEnemyScouts.Tick after ModAllied.Tick");
+        }
+        // 2-6, 8) number filters
+        FilterFloat("CampaignAI", "MakeStrategicDecision", 0, 0.8f, "ModEnemyCampaign", "InterceptChance");
+        FilterFloat("CampaignManager", "CheckAISeaIntercept", 0, 200000f, "ModEnemyCampaign", "ChaseRange");
+        FilterFloat("CampaignAI", "ShouldChaseSpotted", 2, 0.75f, "ModEnemyCampaign", "ChaseRatio");
+        FilterFloat("CampaignManager", "CheckMobileEncounters", 3, 0.009f, "ModEnemyScouts", "ShipScoutChance");
+        {
+            var m = M("CampaignAI", "GetIncerceptForceMission", 2); NotEnemy(m); m.Body.SimplifyMacros();
+            var f = m.Body.Instructions.Single(i => i.OpCode == OpCodes.Ldfld && ((FieldReference)i.Operand).Name == "cpThresholdsForGroupSize");
+            var el = f.Next.Next; if (el.OpCode != OpCodes.Ldelem_I4) throw new Exception("GetIncerceptForceMission pattern " + el.OpCode);
+            m.Body.GetILProcessor().InsertAfter(el, Instruction.Create(OpCodes.Call, E("ModEnemyCampaign", "InterceptCP", 1)));
+            m.Body.OptimizeMacros(); log.Add("HOOK GetIncerceptForceMission: cpThresholdsForGroupSize[2] -> ModEnemyCampaign.InterceptCP");
+        }
+        // 4) CampaignAI.AddAIDecisionDelay first line: days = ModEnemyCampaign.ScaleDelay(days);
+        {
+            var m = M("CampaignAI", "AddAIDecisionDelay", 1); NotEnemy(m); m.Body.SimplifyMacros();
+            var il = m.Body.GetILProcessor(); var first = m.Body.Instructions[0];
+            il.InsertBefore(first, il.Create(OpCodes.Ldarg, m.Parameters[0]));
+            il.InsertBefore(first, il.Create(OpCodes.Call, E("ModEnemyCampaign", "ScaleDelay", 1)));
+            il.InsertBefore(first, il.Create(OpCodes.Starg, m.Parameters[0]));
+            m.Body.OptimizeMacros(); log.Add("HOOK AddAIDecisionDelay first line: days = ModEnemyCampaign.ScaleDelay(days)");
+        }
+        // 7) Utilities.GetMaxSpotTime: return ModEnemyCampaign.SpotTime(result, mmo)
+        {
+            var m = M("Utilities", "GetMaxSpotTime", 1);
+            BeforeRets(m, il => new[] { il.Create(OpCodes.Ldarg, m.Parameters[0]), il.Create(OpCodes.Call, E("ModEnemyCampaign", "SpotTime", 2)) }, "Utilities.GetMaxSpotTime: ModEnemyCampaign.SpotTime");
+        }
+        // 9) CampaignAI.OnPlayerSpotted first line: if (ModEnemyCampaign.OnSpotted(mmoPlayer)) return;
+        FirstLineReturn("CampaignAI", "OnPlayerSpotted", 1, "ModEnemyCampaign", "OnSpotted", new[] { 1 }, null);
+        // 10) CampaignManager.SpotContact: first line ModEnemyScouts.Contact(mmoContact); AirReturnToBase(observer) -> ModEnemyScouts.ReturnOrShadow(this, observer)
+        {
+            var m = M("CampaignManager", "SpotContact", 4); NotEnemy(m); m.Body.SimplifyMacros();
+            var il = m.Body.GetILProcessor();
+            var c = CallTo(m, "CampaignManager", "AirReturnToBase");
+            c.OpCode = OpCodes.Call; c.Operand = E("ModEnemyScouts", "ReturnOrShadow", 2);
+            var first = m.Body.Instructions[0];
+            il.InsertBefore(first, il.Create(OpCodes.Ldarg, m.Parameters[0]));
+            il.InsertBefore(first, il.Create(OpCodes.Call, E("ModEnemyScouts", "Contact", 1)));
+            m.Body.OptimizeMacros(); log.Add("HOOK SpotContact: first line ModEnemyScouts.Contact, AirReturnToBase -> ModEnemyScouts.ReturnOrShadow");
+        }
+        // 11) CampaignAI.GetNewSpottedWaypoint first line: if (ModEnemyScouts.SkipSpottedWaypoint(goa)) return -1;
+        {
+            var m = M("CampaignAI", "GetNewSpottedWaypoint", 2);
+            FirstLineReturn("CampaignAI", "GetNewSpottedWaypoint", 2, "ModEnemyScouts", "SkipSpottedWaypoint", new[] { 1 }, Instruction.Create(OpCodes.Ldc_I4_M1));
+        }
+        // 12) CampaignAI.CheckAirfieldLaunchAirstrikeOnMobile first line: if (ModEnemyCampaign.AirfieldStrike(ml, target)) return;
+        FirstLineReturn("CampaignAI", "CheckAirfieldLaunchAirstrikeOnMobile", 2, "ModEnemyCampaign", "AirfieldStrike", new[] { 1, 2 }, null);
+        // 13) CampaignData.InitialiseCampaignData last line: ModEnemyAI.AfterInit(this, filePath);
+        {
+            var m = M("CampaignData", "InitialiseCampaignData", 1);
+            BeforeRets(m, il => new[] { il.Create(OpCodes.Ldarg_0), il.Create(OpCodes.Ldarg, m.Parameters[0]), il.Create(OpCodes.Call, E("ModEnemyAI", "AfterInit", 2)) }, "CampaignData.InitialiseCampaignData last line: ModEnemyAI.AfterInit");
+        }
+        // 14) EngagementAI.InitialiseEngagementAI last line: ModEnemyBattle.Begin();
+        {
+            var m = M("EngagementAI", "InitialiseEngagementAI", 0);
+            BeforeRets(m, il => new[] { il.Create(OpCodes.Call, E("ModEnemyBattle", "Begin", 0)) }, "EngagementAI.InitialiseEngagementAI last line: ModEnemyBattle.Begin");
+        }
+        // 15) EngagementAI.Update first line: ModEnemyBattle.Tick();
+        {
+            var m = M("EngagementAI", "Update", 0); NotEnemy(m); m.Body.SimplifyMacros();
+            var il = m.Body.GetILProcessor();
+            il.InsertBefore(m.Body.Instructions[0], il.Create(OpCodes.Call, E("ModEnemyBattle", "Tick", 0)));
+            m.Body.OptimizeMacros(); log.Add("HOOK EngagementAI.Update first line: ModEnemyBattle.Tick");
+        }
+        // 16) EngagementAI.CheckDefensiveConditions: after the globalRetreat block: if (ModEnemyBattle.Defensive()) return;
+        {
+            var m = M("EngagementAI", "CheckDefensiveConditions", 0); NotEnemy(m); m.Body.SimplifyMacros();
+            var il = m.Body.GetILProcessor();
+            var ped = m.Body.Instructions.First(i => i.OpCode == OpCodes.Ldfld && ((FieldReference)i.Operand).Name == "playerEverDetected");
+            var start = ped.Previous.Previous;
+            if (!(start.OpCode == OpCodes.Ldsfld && ((FieldReference)start.Operand).Name == "instance" && ped.Previous.OpCode == OpCodes.Ldfld && ((FieldReference)ped.Previous.Operand).Name == "engagementData")) throw new Exception("CheckDefensiveConditions pattern");
+            var h = il.Create(OpCodes.Call, E("ModEnemyBattle", "Defensive", 0));
+            il.InsertBefore(start, h);
+            il.InsertBefore(start, il.Create(OpCodes.Brfalse, start));
+            il.InsertBefore(start, il.Create(OpCodes.Ret));
+            Retarget(m, start, h);
+            // the brfalse we just added must still point at start
+            foreach (var i in m.Body.Instructions) if (i.OpCode == OpCodes.Brfalse && i.Previous == h) i.Operand = start;
+            m.Body.OptimizeMacros(); log.Add("HOOK CheckDefensiveConditions after the global retreat block: if (ModEnemyBattle.Defensive()) return");
+        }
+        // 17) EngagementAI.OnDetectUnit: MultipleUnitsAttackTarget(otherSea, detectedUnit) -> ModEnemyBattle.SplitFire(this, otherSea, detectedUnit)
+        {
+            var m = M("EngagementAI", "OnDetectUnit", 2); NotEnemy(m); m.Body.SimplifyMacros();
+            var calls = m.Body.Instructions.Where(i => i.Operand is MethodReference r && r.Name == "MultipleUnitsAttackTarget" && i.Previous.OpCode == OpCodes.Ldarg && i.Previous.Previous.OpCode == OpCodes.Ldfld && ((FieldReference)i.Previous.Previous.Operand).Name == "otherSea").ToList();
+            if (calls.Count != 1) throw new Exception("OnDetectUnit MultipleUnitsAttackTarget(otherSea, ...) x" + calls.Count);
+            calls[0].OpCode = OpCodes.Call; calls[0].Operand = E("ModEnemyBattle", "SplitFire", 3);
+            m.Body.OptimizeMacros(); log.Add("HOOK OnDetectUnit: MultipleUnitsAttackTarget(otherSea, detectedUnit) -> ModEnemyBattle.SplitFire");
+        }
+        // 18) EngagementAI.GetBestPrimaryGunTarget first line: Unit u = ModEnemyBattle.PickGunTarget(attacker); if (u != null) return u;
+        {
+            var m = M("EngagementAI", "GetBestPrimaryGunTarget", 1); NotEnemy(m); m.Body.SimplifyMacros();
+            var il = m.Body.GetILProcessor(); var first = m.Body.Instructions[0];
+            var pop = il.Create(OpCodes.Pop);
+            il.InsertBefore(first, il.Create(OpCodes.Ldarg, m.Parameters[0]));
+            il.InsertBefore(first, il.Create(OpCodes.Call, E("ModEnemyBattle", "PickGunTarget", 1)));
+            il.InsertBefore(first, il.Create(OpCodes.Dup));
+            il.InsertBefore(first, il.Create(OpCodes.Brfalse, pop));
+            il.InsertBefore(first, il.Create(OpCodes.Ret));
+            il.InsertBefore(first, pop);
+            m.Body.OptimizeMacros(); log.Add("HOOK GetBestPrimaryGunTarget first line: ModEnemyBattle.PickGunTarget");
+        }
+        // 19) ModFlight.Rank: every return -> ModEnemyBattle.ShiftRank(rank, u)
+        {
+            var m = M("ModFlight", "Rank", 1);
+            BeforeRets(m, il => new[] { il.Create(OpCodes.Ldarg, m.Parameters[0]), il.Create(OpCodes.Call, E("ModEnemyBattle", "ShiftRank", 2)) }, "ModFlight.Rank: ModEnemyBattle.ShiftRank on every return");
+        }
+    }
+
+    // branches / handlers that pointed at old now point at nw (the first inserted instruction)
+    static void Retarget(MethodDefinition m, Instruction old, Instruction nw)
+    {
+        foreach (var i in m.Body.Instructions)
+        {
+            if (i.Operand == old && i != nw) i.Operand = nw;
+            if (i.Operand is Instruction[] arr) for (int k = 0; k < arr.Length; k++) if (arr[k] == old) arr[k] = nw;
+        }
+        foreach (var h in m.Body.ExceptionHandlers)
+        {
+            if (h.TryEnd == old) h.TryEnd = nw;
+            if (h.HandlerEnd == old) h.HandlerEnd = nw;
+        }
+    }
+
+    // ---------- 0.31.3 3D fire and hit blasts: three hooks ----------
+    static void NoFire(MethodDefinition m) { if (m.Body.Instructions.Any(i => i.Operand is MethodReference r && r.DeclaringType.Name == "ModFireArt")) throw new Exception(m.FullName + " already has a ModFireArt hook"); }
+    static Instruction FirstPooled(MethodDefinition m) =>
+        m.Body.Instructions.First(i => i.OpCode == OpCodes.Call && i.Operand is MethodReference r && r.Name == "CreatePooled" && r.DeclaringType.Name == "ObjectPoolManager");
+
+    static void HooksFire()
+    {
+        // 1) DamageableSea.SetFire: ModFireArt.Fires(this); as the last line (before every return)
+        {
+            var m = M("DamageableSea", "SetFire", 2); NoFire(m);
+            m.Body.SimplifyMacros();
+            var il = m.Body.GetILProcessor();
+            var call = M("ModFireArt", "Fires", 1);
+            int n = 0;
+            foreach (var ret in m.Body.Instructions.Where(i => i.OpCode == OpCodes.Ret).ToList())
+            {
+                // the old ret becomes "ldarg.0", so every jump to it now runs the hook first
+                ret.OpCode = OpCodes.Ldarg_0; ret.Operand = null;
+                var c = il.Create(OpCodes.Call, call);
+                il.InsertAfter(ret, c);
+                il.InsertAfter(c, il.Create(OpCodes.Ret));
+                n++;
+            }
+            m.Body.OptimizeMacros(); log.Add("HOOK SetFire end: ModFireArt.Fires (" + n + " returns)");
+        }
+        // 2) DamageableSea.CheckForExplosions: CreatePooled(explosionSecondary, ...) -> ModFireArt.CellPooled(..., this)
+        {
+            var m = M("DamageableSea", "CheckForExplosions", 3); NoFire(m);
+            m.Body.SimplifyMacros();
+            var il = m.Body.GetILProcessor();
+            var at = FirstPooled(m);
+            int ai = m.Body.Instructions.IndexOf(at);
+            if (!m.Body.Instructions.Skip(ai - 10).Take(10).Any(x => x.Operand is string str && str == "explosionSecondary")) throw new Exception("CheckForExplosions: CreatePooled is not the explosionSecondary one");
+            il.InsertBefore(at, il.Create(OpCodes.Ldarg_0));
+            at.Operand = M("ModFireArt", "CellPooled", 4);
+            m.Body.OptimizeMacros(); log.Add("HOOK CheckForExplosions: ModFireArt.CellPooled");
+        }
+        // 3) Ammunition.ExplodeAmmunition: CreatePooled(particleFX, pos, identity) -> ModFireArt.HitPooled(..., this, u)
+        {
+            var m = M("Ammunition", "ExplodeAmmunition", 4); NoFire(m);
+            m.Body.SimplifyMacros();
+            var il = m.Body.GetILProcessor();
+            var at = FirstPooled(m);
+            var first = m.Body.Instructions[m.Body.Instructions.IndexOf(at) - 5];
+            if (first.OpCode != OpCodes.Ldarg || ((ParameterDefinition)first.Operand).Index != 0) throw new Exception("ExplodeAmmunition: CreatePooled does not take particleFX");
+            il.InsertBefore(at, il.Create(OpCodes.Ldarg_0));
+            il.InsertBefore(at, il.Create(OpCodes.Ldarg, m.Parameters[3]));
+            at.Operand = M("ModFireArt", "HitPooled", 5);
+            m.Body.OptimizeMacros(); log.Add("HOOK ExplodeAmmunition: ModFireArt.HitPooled");
+        }
+    }
+
+    // ---------- 0.32.1 Globe phase 1: true distances (ModGeo), five hooks ----------
+    static void NoGeo(MethodDefinition m) { if (m.Body.Instructions.Any(i => i.Operand is MethodReference r && r.DeclaringType.Name == "ModGeo")) throw new Exception(m.FullName + " already has a ModGeo hook"); }
+
+
+    static void HooksBattle()
+    {
+        // 1) CampaignManager.GetValidNeighbouringMobiles: 50000f -> ModGeo.JoinRadiusMetres
+        {
+            var m = M("CampaignManager", "GetValidNeighbouringMobiles", 2);
+            var hits = m.Body.Instructions.Where(i => i.OpCode == OpCodes.Ldc_R4 && Math.Abs((float)i.Operand - 50000f) < 0.5f).ToList();
+            if (hits.Count != 1) throw new Exception("GetValidNeighbouringMobiles: expected one 50000f, found " + hits.Count);
+            hits[0].OpCode = OpCodes.Ldsfld; hits[0].Operand = T("ModGeo").Fields.Single(f => f.Name == "JoinRadiusMetres");
+            log.Add("HOOK GetValidNeighbouringMobiles: 50000f -> ModGeo.JoinRadiusMetres");
+        }
+        // 2) EngagementAI.CheckUnitsOutOfZone: 5000f -> ModGeo.ZoneRadiusUnits
+        {
+            var m = M("EngagementAI", "CheckUnitsOutOfZone", 1);
+            var hits = m.Body.Instructions.Where(i => i.OpCode == OpCodes.Ldc_R4 && Math.Abs((float)i.Operand - 5000f) < 0.5f).ToList();
+            if (hits.Count != 1) throw new Exception("CheckUnitsOutOfZone: expected one 5000f, found " + hits.Count);
+            hits[0].OpCode = OpCodes.Ldsfld; hits[0].Operand = T("ModGeo").Fields.Single(f => f.Name == "ZoneRadiusUnits");
+            log.Add("HOOK CheckUnitsOutOfZone: 5000f -> ModGeo.ZoneRadiusUnits");
+        }
+        // 3) TerrainTiles.InitialiseTerrain: ModBattleMap.Apply(); before every return
+        {
+            var m = M("TerrainTiles", "InitialiseTerrain", 0);
+            m.Body.SimplifyMacros();
+            var il = m.Body.GetILProcessor();
+            int n = 0;
+            foreach (var ret in m.Body.Instructions.Where(i => i.OpCode == OpCodes.Ret).ToList())
+            {
+                ret.OpCode = OpCodes.Call; ret.Operand = M("ModBattleMap", "Apply", 0);
+                il.InsertAfter(ret, il.Create(OpCodes.Ret)); n++;
+            }
+            m.Body.OptimizeMacros(); log.Add("HOOK InitialiseTerrain end: ModBattleMap.Apply (" + n + " returns)");
+        }
+    }
+    static void HooksGeo()
+    {
+        // 1) CampaignManager.GetDistanceInMetresBetweenMapObjects(a, b): whole body -> return ModGeo.Metres(a, b);
+        {
+            var m = M("CampaignManager", "GetDistanceInMetresBetweenMapObjects", 2); NoGeo(m);
+            m.Body.Instructions.Clear(); m.Body.Variables.Clear(); m.Body.ExceptionHandlers.Clear();
+            var il = m.Body.GetILProcessor();
+            il.Append(il.Create(OpCodes.Ldarg_1));
+            il.Append(il.Create(OpCodes.Ldarg_2));
+            il.Append(il.Create(OpCodes.Call, M("ModGeo", "Metres", 2)));
+            il.Append(il.Create(OpCodes.Ret));
+            log.Add("HOOK GetDistanceInMetresBetweenMapObjects: return ModGeo.Metres(a, b)");
+        }
+        // 2+3) battle placement: (x - y) * campaignData.mapWidthMetres * 0.1f -> ModGeo.Battle(that, centre)
+        foreach (var (name, pc, arg) in new[] { ("GenerateCampaignEngagement", 4, 0), ("GetValidNeighbouringMobiles", 2, 1) })
+        {
+            var m = M("CampaignManager", name, pc); NoGeo(m);
+            m.Body.SimplifyMacros();
+            var il = m.Body.GetILProcessor();
+            var ins = m.Body.Instructions;
+            var hits = ins.Where(i => i.OpCode == OpCodes.Ldc_R4 && Math.Abs((float)i.Operand - 0.1f) < 1e-6
+                && i.Next.OpCode == OpCodes.Call && ((MethodReference)i.Next.Operand).Name == "op_Multiply"
+                && i.Previous.OpCode == OpCodes.Call && ((MethodReference)i.Previous.Operand).Name == "op_Multiply"
+                && i.Previous.Previous.OpCode == OpCodes.Ldfld && ((FieldReference)i.Previous.Previous.Operand).Name == "mapWidthMetres").ToList();
+            if (hits.Count != 1) throw new Exception(name + ": expected 1 mapWidthMetres*0.1 offset, found " + hits.Count);
+            var mul = hits[0].Next;
+            var ld = il.Create(OpCodes.Ldarg, m.Parameters[arg]);
+            il.InsertAfter(mul, ld);
+            il.InsertAfter(ld, il.Create(OpCodes.Call, M("ModGeo", "Battle", 2)));
+            m.Body.OptimizeMacros(); log.Add("HOOK " + name + ": battle offset -> ModGeo.Battle(..., " + m.Parameters[arg].Name + ")");
+        }
+        // 4) CampaignManager.GetXYPixelCoord: return obj2; -> return ModGeo.WrapPixel(obj2);
+        {
+            var m = M("CampaignManager", "GetXYPixelCoord", 1); NoGeo(m);
+            var il = m.Body.GetILProcessor();
+            var rets = m.Body.Instructions.Where(i => i.OpCode == OpCodes.Ret).ToList();
+            if (rets.Count != 1) throw new Exception("GetXYPixelCoord: expected 1 ret");
+            il.InsertBefore(rets[0], il.Create(OpCodes.Call, M("ModGeo", "WrapPixel", 1)));
+            log.Add("HOOK GetXYPixelCoord: return ModGeo.WrapPixel(...)");
+        }
+        // 5) TerrainTiles.GetDEMTile(x, y): first line x = ModGeo.WrapTile(x);
+        {
+            var m = M("TerrainTiles", "GetDEMTile", 2); NoGeo(m);
+            m.Body.SimplifyMacros();
+            var il = m.Body.GetILProcessor();
+            var first = m.Body.Instructions[0];
+            il.InsertBefore(first, il.Create(OpCodes.Ldarg, m.Parameters[0]));
+            il.InsertBefore(first, il.Create(OpCodes.Call, M("ModGeo", "WrapTile", 1)));
+            il.InsertBefore(first, il.Create(OpCodes.Starg, m.Parameters[0]));
+            m.Body.OptimizeMacros(); log.Add("HOOK GetDEMTile: x = ModGeo.WrapTile(x)");
+        }
+        // 6) MapRadii.SetMapRadii: ModGeo.Radii(); as the last line
+        {
+            var m = M("MapRadii", "SetMapRadii", 0); NoGeo(m);
+            m.Body.SimplifyMacros();
+            var il = m.Body.GetILProcessor();
+            int n = 0;
+            foreach (var ret in m.Body.Instructions.Where(i => i.OpCode == OpCodes.Ret).ToList())
+            {
+                ret.OpCode = OpCodes.Call; ret.Operand = M("ModGeo", "Radii", 0);
+                il.InsertAfter(ret, il.Create(OpCodes.Ret)); n++;
+            }
+            m.Body.OptimizeMacros(); log.Add("HOOK SetMapRadii end: ModGeo.Radii (" + n + " returns)");
+        }
+        // version text: prepend the new changelog entry to both changelog strings
+        {
+            string entry = "<color=#E0B030><b>0.32.1</b></color> globe, phase 1 (test build):\n- Distances on the campaign map are measured on a round Earth\n- East-west ranges, travel times and fuel are right away from the equator\n- Battles place far forces at their real distance\n- Base spotting circles stay round in real distance\n";
+            int n = 0;
+            foreach (var m in T("ModVersion").Methods.Where(x => x.HasBody))
+                foreach (var i in m.Body.Instructions)
+                    if (i.OpCode == OpCodes.Ldstr && i.Operand is string str && (str.StartsWith("<color=#E0B030><b>0.31.15</b>") || str.StartsWith("<color=#E0B030><b>0.30 Mega Patch 01")))
+                    { i.Operand = entry + (str.StartsWith("<color=#E0B030><b>0.30") ? "\n" : "") + str; n++; }
+            foreach (var f in T("ModVersion").Fields.Where(x => x.HasConstant && x.Constant is string cs && cs.StartsWith("<color=#E0B030><b>0.31.15</b>")))
+            { f.Constant = entry + (string)f.Constant; n++; }
+            log.Add("VERSION changelog entries x" + n);
+        }
+    }
+
+    // ---------- 0.32.2 Globe phase 2: one hook ----------
+    static void HooksGlobe()
+    {
+        // CampaignManager.StartCampaign: ModGlobe.Ensure(this); just before StartCoroutine(SetupCampaign(filepath))
+        {
+            var m = M("CampaignManager", "StartCampaign", 1);
+            if (m.Body.Instructions.Any(i => i.Operand is MethodReference r && r.DeclaringType.Name == "ModGlobe")) throw new Exception("StartCampaign already has a ModGlobe hook");
+            m.Body.SimplifyMacros();
+            var il = m.Body.GetILProcessor();
+            var sc = m.Body.Instructions.Single(i => (i.OpCode == OpCodes.Call || i.OpCode == OpCodes.Callvirt) && i.Operand is MethodReference r && r.Name == "StartCoroutine");
+            var at = sc;
+            while (!(at.OpCode == OpCodes.Ldarg && at.Operand == m.Body.ThisParameter)) at = at.Previous;
+            il.InsertBefore(at, il.Create(OpCodes.Ldarg, m.Body.ThisParameter));
+            il.InsertBefore(at, il.Create(OpCodes.Call, M("ModGlobe", "Ensure", 1)));
+            m.Body.OptimizeMacros(); log.Add("HOOK StartCampaign: ModGlobe.Ensure(this)");
+        }
+        {
+            string entry = "<color=#E0B030><b>0.32.2</b></color> globe, phase 2 (test build):\n- GLOBE button (top left) or F10: the campaign map as a spinning Earth\n- Day and night from the campaign clock, the theatre outlined in gold\n- Dots for bases, your task forces and spotted enemy forces\n- Drag to spin, wheel to zoom, arrows to turn; zoom right in to drop back onto the map\n";
+            int n = 0;
+            foreach (var mm in T("ModVersion").Methods.Where(x => x.HasBody))
+                foreach (var i in mm.Body.Instructions)
+                    if (i.OpCode == OpCodes.Ldstr && i.Operand is string str && str.StartsWith("<color=#E0B030><b>0.32.1</b>")) { i.Operand = entry + str; n++; }
+            foreach (var f in T("ModVersion").Fields.Where(x => x.HasConstant && x.Constant is string cs && cs.StartsWith("<color=#E0B030><b>0.32.1</b>")))
+            { f.Constant = entry + (string)f.Constant; n++; }
+            log.Add("VERSION changelog entries x" + n);
+        }
+    }
+}
