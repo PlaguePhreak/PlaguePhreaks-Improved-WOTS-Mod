@@ -543,7 +543,7 @@ def write_campaign(cid, cfg, waypoints, graph, maps_rel):
     Lb = []
     for t, lat, lon, size, it in LABELS:
         x, y = to_map(lat, lon)
-        Lb.append(json.dumps({"text": t, "size": size, "position": {"x": round(x, 4), "y": round(y, 4)}, "shadow": False,
+        Lb.append(json.dumps({"text": t, "size": round(size * 0.4, 3), "position": {"x": round(x, 4), "y": round(y, 4)}, "shadow": False,
                               "color": {"r": 255, "g": 255, "b": 255, "a": 160}, "italic": it}, separators=(',', ':')))
     open(os.path.join(lang, 'mapLabels.txt'), 'w').write('\n'.join(Lb))
     # objectives
