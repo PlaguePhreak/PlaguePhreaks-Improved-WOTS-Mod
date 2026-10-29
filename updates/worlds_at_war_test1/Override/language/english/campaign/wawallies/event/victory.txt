@@ -1,3 +1,1 @@
-Victory
-
-The Allied fleets hold every objective. The war at sea is won.
+{"nextAction": "SUMMARY", "header": "Victory", "imagePath": "", "content": "The Allied fleets hold every objective. The war at sea is won."}

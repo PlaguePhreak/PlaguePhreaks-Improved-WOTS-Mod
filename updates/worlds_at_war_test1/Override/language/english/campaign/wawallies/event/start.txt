@@ -1,5 +1,1 @@
-WORLDS AT WAR: THE ALLIES
-
-December 1941. The war is now truly a world war. Hold the sea lanes in every ocean, break the Axis fleets and carry the war to Truk, Taranto and Wilhelmshaven.
-
-This is a test build of the whole-world campaign. The Atlantic and Mediterranean are populated with placeholder ships until British, German and Italian units exist.
+{"nextAction": "modrules1", "header": "Worlds At War: The Allies", "imagePath": "", "content": "<size=18><b>DECEMBER 8TH 1941</b></size>\nDecember 1941. The war is now truly a world war. Hold the sea lanes in every ocean, break the Axis fleets and carry the war to Truk, Taranto and Wilhelmshaven.\n\nThis is a test build of the whole-world campaign. The Atlantic and Mediterranean are populated with placeholder ships until British, German and Italian units exist."}

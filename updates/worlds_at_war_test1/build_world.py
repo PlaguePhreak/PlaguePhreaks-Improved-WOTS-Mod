@@ -570,9 +570,14 @@ All of these must be held at the same time to win the campaign."""
         if f.startswith('modrules') or f.startswith('convoy') or f in ('shipsSunk.txt', 'defeatNoPort.txt', 'victoryNoPort.txt'):
             shutil.copy(os.path.join(pev, f), os.path.join(lang, 'event', f))
     side = "Allied" if player == 'A' else "Axis"
-    open(os.path.join(lang, 'event', 'start.txt'), 'w').write(f"{cfg['title']}\n\n{cfg['blurb']}\n\nThis is a test build of the whole-world campaign. The Atlantic and Mediterranean are populated with placeholder ships until British, German and Italian units exist.")
-    open(os.path.join(lang, 'event', 'victory.txt'), 'w').write(f"Victory\n\nThe {side} fleets hold every objective. The war at sea is won.")
-    open(os.path.join(lang, 'event', 'defeat.txt'), 'w').write(f"Defeat\n\nThe {side} fleets have lost control of the oceans.")
+    def ev(name, header, content, nxt):
+        json.dump({"nextAction": nxt, "header": header, "imagePath": "", "content": content},
+                  open(os.path.join(lang, 'event', name + '.txt'), 'w'), ensure_ascii=False)
+    ev('start', cfg['title'].title(),
+       f"<size=18><b>DECEMBER 8TH 1941</b></size>\n{cfg['blurb']}\n\nThis is a test build of the whole-world campaign. The Atlantic and Mediterranean are populated with placeholder ships until British, German and Italian units exist.",
+       'modrules1')
+    ev('victory', 'Victory', f"The {side} fleets hold every objective. The war at sea is won.", 'SUMMARY')
+    ev('defeat', 'Defeat', f"The {side} fleets have lost control of the oceans.", 'SUMMARY')
     # rules.txt: copied from the mod campaign001 if present
     rules = os.path.join(os.path.dirname(MODCAMP), '..', 'language', 'english', 'campaign', 'campaign001', 'rules.txt')
     if os.path.exists(rules): shutil.copy(rules, os.path.join(lang, 'rules.txt'))
