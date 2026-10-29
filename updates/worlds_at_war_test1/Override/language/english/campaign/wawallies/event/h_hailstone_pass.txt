@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "THE TRUK RAID TAKEN", "imagePath": "", "content": "<size=18><b>17 February 1944</b></size>\nCovered by our carriers, the landing force has taken <color=#caa809>TRUK</color>. <b>+150 command points.</b>\n\n<i>Operation Hailstone struck Truk on 17 and 18 February 1944, sinking some forty ships and ending its use as a fleet base.</i>"}

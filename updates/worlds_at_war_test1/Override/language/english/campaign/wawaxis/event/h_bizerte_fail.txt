@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "BIZERTE FALLEN", "imagePath": "", "content": "<size=18><b>7 May 1943</b></size>\nWith no warships to stop them, the enemy has landed at <color=#caa809>BIZERTE</color> and taken it. <b>-50 command points.</b>\n\n<i>Bizerte and Tunis fell on 7 May 1943; a quarter of a million Axis troops surrendered in Tunisia.</i>"}

@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "ORAN HELD", "imagePath": "", "content": "<size=18><b>8 November 1942</b></size>\nOur warships off <color=#caa809>ORAN</color> turned the enemy landing force back. <b>+150 command points.</b>\n\n<i>Oran was taken by the Centre Task Force on 10 November 1942 after the French battleships at Mers-el-Kebir had been silenced two years before.</i>"}

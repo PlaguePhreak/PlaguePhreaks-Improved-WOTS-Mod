@@ -4,6 +4,7 @@ Usage: python3 build_world.py <out Override dir> <maps dir from render_world.py>
 Map: whole world, 100W eastwards round to 100W, pole to pole. Map coords -0.5..0.5, +y = north. 240 px per degree.
 """
 import json, math, os, sys, shutil
+from history_events import write_history
 from PIL import Image
 
 OUT, MAPS, STOCK, MODCAMP, PAC = sys.argv[1:6]
@@ -574,10 +575,16 @@ All of these must be held at the same time to win the campaign."""
         json.dump({"nextAction": nxt, "header": header, "imagePath": "", "content": content},
                   open(os.path.join(lang, 'event', name + '.txt'), 'w'), ensure_ascii=False)
     ev('start', cfg['title'].title(),
-       f"<size=18><b>DECEMBER 8TH 1941</b></size>\n{cfg['blurb']}\n\nThis is a test build of the whole-world campaign. The Atlantic and Mediterranean are populated with placeholder ships until British, German and Italian units exist.",
+       f"<size=18><b>DECEMBER 8TH 1941</b></size>\n{cfg['blurb']}\n\n<i>British, German and Italian ships are stood in for by American and Japanese classes until their own models arrive.</i>",
        'modrules1')
     ev('victory', 'Victory', f"The {side} fleets hold every objective. The war at sea is won.", 'SUMMARY')
     ev('defeat', 'Defeat', f"The {side} fleets have lost control of the oceans.", 'SUMMARY')
+    # historical events (ModHistory): history.txt + h_* popups
+    owner_of = dict((l[0], l[4]) for l in L); names = dict((l[0], l[1]) for l in L)
+    def ev_json(nm, header, content):
+        json.dump({"nextAction": "", "header": header, "imagePath": "", "content": content},
+                  open(os.path.join(lang, 'event', nm + '.txt'), 'w'), ensure_ascii=False)
+    print(cid, 'historical events', write_history(camp, lang, player, owner_of, names, ev_json))
     # rules.txt: copied from the mod campaign001 if present
     rules = os.path.join(os.path.dirname(MODCAMP), '..', 'language', 'english', 'campaign', 'campaign001', 'rules.txt')
     if os.path.exists(rules): shutil.copy(rules, os.path.join(lang, 'rules.txt'))

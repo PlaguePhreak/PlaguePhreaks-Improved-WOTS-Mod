@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "RABAUL HELD", "imagePath": "", "content": "<size=18><b>23 January 1942</b></size>\nOur warships off <color=#caa809>RABAUL</color> turned the enemy landing force back. <b>+100 command points.</b>\n\n<i>The South Seas Force took Rabaul on 23 January 1942 and made it the great Japanese base of the South Pacific.</i>"}

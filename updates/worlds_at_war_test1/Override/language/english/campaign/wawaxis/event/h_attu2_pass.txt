@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "ATTU HELD", "imagePath": "", "content": "<size=18><b>11 May 1943</b></size>\nOur warships off <color=#caa809>ATTU</color> turned the enemy landing force back. <b>+100 command points.</b>\n\n<i>The 7th Infantry Division landed on Attu on 11 May 1943 and retook the island in three weeks.</i>"}

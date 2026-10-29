@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "OKINAWA FALLEN", "imagePath": "", "content": "<size=18><b>1 April 1945</b></size>\nWith no warships to stop them, the enemy has landed at <color=#caa809>OKINAWA</color> and taken it. <b>-150 command points.</b>\n\n<i>Operation Iceberg landed on Okinawa on 1 April 1945; the fleet fought off the kamikazes for three months.</i>"}

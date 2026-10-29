@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "SINGAPORE HELD", "imagePath": "", "content": "<size=18><b>15 February 1942</b></size>\nOur warships off <color=#caa809>SINGAPORE</color> turned the enemy landing force back. <b>+200 command points.</b>\n\n<i>The fortress surrendered on 15 February 1942 after Force Z had been lost and the Malayan campaign collapsed.</i>"}

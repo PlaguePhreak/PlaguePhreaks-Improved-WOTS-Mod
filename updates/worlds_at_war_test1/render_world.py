@@ -15,6 +15,7 @@ NE = '/tmp/claude-0/ne/'
 
 lon0 = float(sys.argv[1]); out = sys.argv[2]; prefix = sys.argv[3]
 qw = int(sys.argv[4]) if len(sys.argv) > 4 else 4096
+mw = int(sys.argv[5]) if len(sys.argv) > 5 else qw      # water mask width (kept at 4096 so navigation does not change)
 W, H = qw * 2, qw
 os.makedirs(out, exist_ok=True)
 PX = W / 360.0
@@ -77,9 +78,9 @@ boxes = [(0, 0), (qw, 0), (0, qw // 2), (qw, qw // 2)]
 for i, (x, y) in enumerate(boxes):
     img.crop((x, y, x + qw, y + qw // 2)).save(os.path.join(out, f'{prefix}{i}.png'))
 # water mask at quad size: alpha 255 = land
-small = np.array(img.resize((qw, qw // 2), Image.NEAREST))
+small = np.array(img.resize((mw, mw // 2), Image.NEAREST))
 land = small[:, :, 0] < 40
-mask = np.zeros((qw // 2, qw, 4), dtype=np.uint8)
+mask = np.zeros((mw // 2, mw, 4), dtype=np.uint8)
 mask[:, :, :3] = 255
 mask[:, :, 3] = np.where(land, 255, 0)
 Image.fromarray(mask, 'RGBA').save(os.path.join(out, f'{prefix}Watermask.png'))

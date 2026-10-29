@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "CASABLANCA: ONE WEEK", "imagePath": "", "content": "<size=18><b>8 November 1942</b></size>\nThe landing force for <color=#caa809>CASABLANCA</color> sails to arrive on 8 November 1942. It needs at least 6 warships within 600 km to cover it, or it will not go in."}

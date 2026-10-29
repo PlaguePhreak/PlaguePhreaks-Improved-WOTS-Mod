@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "PELELIU TAKEN", "imagePath": "", "content": "<size=18><b>15 September 1944</b></size>\nCovered by our warships, the landing force has taken <color=#caa809>PALAU</color>. <b>+150 command points.</b>\n\n<i>The 1st Marine Division landed on Peleliu on 15 September 1944.</i>"}

@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "IWO JIMA: LANDING CALLED OFF", "imagePath": "", "content": "<size=18><b>19 February 1945</b></size>\nWith fewer than 8 warships within 500 km of <color=#caa809>IWO JIMA</color>, the landing force turned back.\n\n<i>Three Marine divisions landed on Iwo Jima on 19 February 1945.</i>"}

@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "THE PHILIPPINES FALLEN", "imagePath": "", "content": "<size=18><b>20 October 1944</b></size>\nWith no carriers to stop them, the enemy has landed at <color=#caa809>MANILA</color> and taken it. <b>-150 command points.</b>\n\n<i>The landing at Leyte on 20 October 1944 brought on the largest naval battle ever fought.</i>"}

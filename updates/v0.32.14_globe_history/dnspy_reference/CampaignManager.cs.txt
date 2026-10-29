@@ -1,0 +1,4405 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using UnityEngine;
+using UnityEngine.UI;
+using WorldMapStrategyKit;
+
+public class CampaignManager : MonoBehaviour
+{
+	public static CampaignManager instance;
+
+	public string worldMapPath;
+
+	public string worldGradientMapPath;
+
+	public string[] mapSharderQuads;
+
+	public CampaignData campaignData;
+
+	public List<GameObjectAnimator> playerMobile = new List<GameObjectAnimator>();
+
+	public List<GameObjectAnimator> otherMobile = new List<GameObjectAnimator>();
+
+	public List<MobileMapObject> spottedContacts = new List<MobileMapObject>();
+
+	public List<MobileMapObject> retreatingContacts = new List<MobileMapObject>();
+
+	public Dictionary<string, int> seaNavigationIndexes;
+
+	public List<SeaNavigationWaypoint> seaNavigationPoints;
+
+	public Material mapMaterial;
+
+	public MeshRenderer mapRenderer;
+
+	public List<MapLocation> landMapLocations;
+
+	public bool wasUnitRefOpen;
+
+	public List<GameObjectAnimator> goasInBattle = new List<GameObjectAnimator>();
+
+	public bool[] seaPresent = new bool[2];
+
+	public int[] airNumbers = new int[2];
+
+	private float interval1Min;
+
+	private float interval5Min;
+
+	private float intervalHour;
+
+	private float intervalDay;
+
+	private float intervalWeek;
+
+	private string troopDebug;
+
+	public bool playerEncounters;
+
+	private void Awake()
+	{
+		instance = this;
+		interval1Min = 60f;
+		interval5Min = 300f;
+		intervalHour = 3600f;
+		intervalDay = 86400f;
+		intervalWeek = 604800f;
+		mapSharderQuads = new string[4] { "_TexTL", "_TexTR", "_TexBL", "_TexBR" };
+	}
+
+	private void Start()
+	{
+		base.gameObject.SetActive(value: false);
+	}
+
+	private void FixedUpdate()
+	{
+		if (CampaignInterface.instance.map.timeSpeed != 0f)
+		{
+			campaignData.timerWeather += Time.deltaTime * CampaignInterface.instance.map.timeSpeed;
+			int num = ModClock.Due(campaignData);
+			if (((uint)num & 0x10u) != 0)
+			{
+				CheckWeekly();
+			}
+			if (((uint)num & 8u) != 0)
+			{
+				CheckDaily();
+			}
+			if (((uint)num & 4u) != 0)
+			{
+				CheckHourly();
+			}
+			if (((uint)num & 2u) != 0)
+			{
+				Check5Min();
+			}
+			if (((uint)num & (true ? 1u : 0u)) != 0)
+			{
+				Check1Min();
+			}
+		}
+	}
+
+	private void CheckCargoRetreatTimers(List<GameObjectAnimator> goa)
+	{
+		for (int i = 0; i < goa.Count; i++)
+		{
+			if (goa[i].mobileMapObject.postEngagementTimer > 0f)
+			{
+				goa[i].mobileMapObject.postEngagementTimer -= interval5Min;
+				if (goa[i].mobileMapObject.postEngagementTimer <= 0f)
+				{
+					goa[i].mobileMapObject.postEngagementTimer = 0f;
+				}
+			}
+		}
+	}
+
+	public void CheckAISeaIntercept()
+	{
+		for (int i = 0; i < otherMobile.Count; i++)
+		{
+			if (otherMobile[i].type != 0)
+			{
+				continue;
+			}
+			if (CampaignAI.instance.seaMissions[otherMobile[i].mobileMapObject.missionIndex].aggressive)
+			{
+				CampaignAI.instance.GetNewSpottedWaypoint(otherMobile[i], ModEnemyCampaign.ChaseRange(200000f));
+			}
+			if (CampaignAI.instance.seaMissions[otherMobile[i].mobileMapObject.missionIndex].airCoverPriority > 0 && campaignData.airOpHours[CampaignInterface.instance.dateTime.Hour])
+			{
+				CampaignAI.instance.OnRequestAirCover(otherMobile[i].mobileMapObject);
+			}
+			if (otherMobile[i].mobileMapObject.patrolForHours <= 0 || !otherMobile[i].mobileMapObject.patrolZones.Contains(otherMobile[i].mobileMapObject.currentWaypoint))
+			{
+				continue;
+			}
+			otherMobile[i].mobileMapObject.patrolForHours--;
+			if (otherMobile[i].mobileMapObject.patrolForHours <= 0)
+			{
+				otherMobile[i].mobileMapObject.patrolForHours = -1;
+				CampaignAI.instance.ApplyNavDataToMobile(otherMobile[i], CampaignAI.instance.seaMissions[CampaignAI.instance.GetMissionByType(MissionType.Home)], string.Empty);
+				GetNextNavPosition(otherMobile[i]);
+				if (CampaignAI.instance.seaMissions[otherMobile[i].mobileMapObject.originalMissionIndex].autoRenew)
+				{
+					Debug.Log("Respawn Mission " + i);
+					campaignData.recreateMissions.Add(otherMobile[i].mobileMapObject.originalMissionIndex);
+				}
+			}
+		}
+	}
+
+	private bool IsOutsideAirOps()
+	{
+		return !campaignData.airOpHours[CampaignInterface.instance.dateTime.Hour];
+	}
+
+	private void CheckAirEndurance(List<GameObjectAnimator> goa, bool updateWaypoint = false)
+	{
+		for (int num = goa.Count - 1; num > -1; num--)
+		{
+			if (goa[num].mobileMapObject.type == 1 && goa[num].mobileMapObject.endurance > 0f)
+			{
+				goa[num].mobileMapObject.endurance -= interval5Min;
+				if (goa[num].mobileMapObject.endurance <= 0f || IsOutsideAirOps())
+				{
+					GameObjectAnimator gameObjectAnimator = goa[num];
+					gameObjectAnimator.mobileMapObject.endurance = 0f;
+					if (!AirAttemptLand(gameObjectAnimator))
+					{
+						AirReturnToBase(gameObjectAnimator);
+						if (goa.Contains(gameObjectAnimator) && goa[num].mobileMapObject.currentFaction == 0)
+						{
+							if (goa[num].mobileMapObject.currentCampaignAction != 1)
+							{
+								ErrorPanel.instance.SetErrorMessage("BingoFuel", playerMobile[num].mobileMapObject.mobileName, playerMobile[num].mobileMapObject.createdByDisplayName, string.Empty);
+								AutoPlayerManager.instance.ClearEscortData(goa[num]);
+							}
+							if (CampaignInterface.instance.enablePlotCourse)
+							{
+								CampaignInterface.instance.SetEnablePlotCourse(isOn: false);
+								CampaignInterface.instance.SetCampaignCursor();
+							}
+							CampaignInterface.instance.PlotMobileCourse();
+						}
+					}
+				}
+				else if (updateWaypoint)
+				{
+					if (goa[num].mobileMapObject.currentCampaignAction == 1)
+					{
+						AirReturnToBase(goa[num]);
+					}
+					else
+					{
+						CampaignAI.instance.GetNewSpottedWaypoint(goa[num], goa[num].mobileMapObject.endurance * goa[num].mobileMapObject.speed);
+					}
+				}
+				else if (goa[num].mobileMapObject.escortingThisGOA != null)
+				{
+					AutoPlayerManager.instance.MoveGoaToEscorted(goa[num]);
+				}
+			}
+		}
+	}
+
+	private void Check1Min()
+	{
+		ModConvoy.Tick();
+		ModAllied.Tick();
+		ModEnemyScouts.Tick();
+		playerEncounters = !playerEncounters;
+		if (playerEncounters)
+		{
+			CheckMobileEncounters(playerMobile, otherMobile);
+		}
+		else
+		{
+			CheckMobileEncounters(otherMobile, playerMobile, scoutAir: true);
+		}
+		if (!campaignData.airOpsFirstHourPaused && campaignData.airOpHours[CampaignInterface.instance.dateTime.Hour])
+		{
+			campaignData.airOpsFirstHourPaused = true;
+			ErrorPanel.instance.SetErrorMessage("AirOpsStart", string.Empty, string.Empty, string.Empty);
+			if (Config.instance.campaignPauseAtAirOpsStartHour)
+			{
+				CampaignInterface.instance.PauseCampaign();
+			}
+			ReplenishLostAircraft();
+			AutoPlayerManager.instance.LaunchAutoScouts();
+		}
+		else
+		{
+			campaignData.airOpsFirstHourPaused = campaignData.airOpHours[CampaignInterface.instance.dateTime.Hour];
+		}
+	}
+
+	private void ReplenishLostAircraft()
+	{
+		List<string> list = new List<string>();
+		for (int i = 0; i < landMapLocations.Count; i++)
+		{
+			if (Utilities.GetListSum(landMapLocations[i].destroyedAir) <= 0)
+			{
+				continue;
+			}
+			int[] airReplenishAtLocation = GetAirReplenishAtLocation(landMapLocations[i]);
+			int num = airReplenishAtLocation.Length;
+			if (!campaignData.usePortResourcesToResupplyAirfields)
+			{
+				if (!campaignData.replenishLimitAircraft)
+				{
+					landMapLocations[i].destroyedAir.Clear();
+					for (int j = 0; j < num; j++)
+					{
+						landMapLocations[i].destroyedAir.Add(0);
+					}
+				}
+				else
+				{
+					for (int k = 0; k < landMapLocations[i].destroyedAir.Count; k++)
+					{
+						landMapLocations[i].destroyedAir[k] -= airReplenishAtLocation[k];
+						if (landMapLocations[i].destroyedAir[k] < 0)
+						{
+							landMapLocations[i].destroyedAir[k] = 0;
+						}
+					}
+				}
+			}
+			else
+			{
+				List<string> airTypesAtLocation = GetAirTypesAtLocation(landMapLocations[i]);
+				int currentFaction = landMapLocations[i].currentFaction;
+				for (int l = 0; l < airTypesAtLocation.Count; l++)
+				{
+					int[] resourceCost = EngagementManager.instance.unitAirDictionary[airTypesAtLocation[l]].resourceCost;
+					int num2 = 0;
+					int num3 = landMapLocations[i].destroyedAir[l];
+					for (int m = 0; m < num3; m++)
+					{
+						if (landMapLocations[i].destroyedAir[l] <= 0)
+						{
+							continue;
+						}
+						if (landMapLocations[i].troops[currentFaction] >= resourceCost[0] && landMapLocations[i].supplies[currentFaction] >= resourceCost[1] && landMapLocations[i].engineering[currentFaction] >= resourceCost[2] && landMapLocations[i].fuel[currentFaction] >= resourceCost[3])
+						{
+							landMapLocations[i].troops[currentFaction] -= resourceCost[0];
+							landMapLocations[i].supplies[currentFaction] -= resourceCost[1];
+							landMapLocations[i].engineering[currentFaction] -= resourceCost[2];
+							landMapLocations[i].fuel[currentFaction] -= resourceCost[3];
+							landMapLocations[i].destroyedAir[l]--;
+							num2++;
+							if (campaignData.replenishLimitAircraft && num2 >= airReplenishAtLocation[l])
+							{
+								break;
+							}
+						}
+						else if (landMapLocations[i].currentFaction == 0 && !list.Contains(landMapLocations[i].locationName))
+						{
+							list.Add(landMapLocations[i].locationName);
+						}
+					}
+				}
+			}
+			if (landMapLocations[i].currentFaction == 0 && CampaignInterface.instance.currentMapObject == landMapLocations[i].GetComponent<GameObjectAnimator>() && CampaignInterface.instance.panelTabs[1].activeSelf && !CampaignInterface.instance.dataPanelText.transform.parent.gameObject.activeSelf)
+			{
+				CampaignInterface.instance.OpenCreateAirStrike();
+			}
+		}
+		if (list.Count <= 0)
+		{
+			return;
+		}
+		string text = string.Empty;
+		int num4 = 0;
+		for (int n = 0; n < list.Count; n++)
+		{
+			text = text + list[n] + "   ";
+			num4++;
+			if (num4 > 3)
+			{
+				text += "...";
+				break;
+			}
+		}
+		ErrorPanel.instance.SetErrorMessage("InsufficientAirbase", text, string.Empty, string.Empty);
+	}
+
+	private int[] RefreshDestroyedAir(int[] initialDestroyed, bool applyCost)
+	{
+		return initialDestroyed;
+	}
+
+	private void Check5Min()
+	{
+		for (int i = 0; i < playerMobile.Count; i++)
+		{
+			GameObjectAnimator gameObjectAnimator = playerMobile[i];
+			if (gameObjectAnimator == null || gameObjectAnimator.mobileMapObject == null || gameObjectAnimator.mobileMapObject.type != 0 || gameObjectAnimator.mobileMapObject.unitPrefabs.Count == 0)
+			{
+				continue;
+			}
+			MobileMapObject mobileMapObject = gameObjectAnimator.mobileMapObject;
+			float num = 10f;
+			float fuelUsedDays = mobileMapObject.fuelUsedDays;
+			if (gameObjectAnimator.isMoving)
+			{
+				mobileMapObject.fuelUsedDays += 0.0034722222f;
+			}
+			if (mobileMapObject.fuelUsedDays >= num)
+			{
+				mobileMapObject.fuelUsedDays = num;
+				float num2 = 2.057776f;
+				if (mobileMapObject.speed > num2 + 0.01f)
+				{
+					mobileMapObject.fuelSavedSpeed = mobileMapObject.speed;
+					mobileMapObject.speed = num2;
+					if (gameObjectAnimator.isMoving && mobileMapObject.mapWaypoints.Count > 0)
+					{
+						gameObjectAnimator.MoveTo(mobileMapObject.mapWaypoints[0], CampaignInterface.instance.GetMoveDuration(gameObjectAnimator.currentMap2DLocation, mobileMapObject.mapWaypoints[0], mobileMapObject.speed), DURATION_TYPE.Route);
+					}
+				}
+				if (fuelUsedDays < num)
+				{
+					ErrorPanel.instance.SetErrorMessage("OutOfFuel", mobileMapObject.mobileName, string.Empty, string.Empty);
+				}
+			}
+			else
+			{
+				if (mobileMapObject.fuelSavedSpeed > 0f)
+				{
+					mobileMapObject.speed = mobileMapObject.fuelSavedSpeed;
+					mobileMapObject.fuelSavedSpeed = 0f;
+					if (gameObjectAnimator.isMoving && mobileMapObject.mapWaypoints.Count > 0)
+					{
+						gameObjectAnimator.MoveTo(mobileMapObject.mapWaypoints[0], CampaignInterface.instance.GetMoveDuration(gameObjectAnimator.currentMap2DLocation, mobileMapObject.mapWaypoints[0], mobileMapObject.speed), DURATION_TYPE.Route);
+					}
+				}
+				if (fuelUsedDays < num - 3f && mobileMapObject.fuelUsedDays >= num - 3f)
+				{
+					ErrorPanel.instance.SetErrorMessage("LowFuel", mobileMapObject.mobileName, Mathf.CeilToInt(num - mobileMapObject.fuelUsedDays).ToString(), string.Empty);
+				}
+			}
+			if (CampaignInterface.instance.currentMapObject == gameObjectAnimator)
+			{
+				CampaignInterface.instance.mobileMapText.text = mobileMapObject.mobileName + "   (FUEL " + Mathf.Max(0f, num - mobileMapObject.fuelUsedDays).ToString("F1") + " DAYS)";
+			}
+		}
+		if (campaignData.revealAllContacts)
+		{
+			for (int j = 0; j < otherMobile.Count; j++)
+			{
+				if (otherMobile[j] != null && otherMobile[j].mobileMapObject != null && otherMobile[j].mobileMapObject.unitPrefabs.Count > 0)
+				{
+					CampaignInterface.instance.SetContactColor(otherMobile[j].mobileMapObject);
+				}
+			}
+		}
+		for (int num3 = spottedContacts.Count - 1; num3 > -1; num3--)
+		{
+			if (spottedContacts[num3] != null)
+			{
+				spottedContacts[num3].spottedTimer -= interval5Min;
+				CampaignInterface.instance.SetContactColor(spottedContacts[num3]);
+				if (spottedContacts[num3].spottedTimer <= 0f)
+				{
+					spottedContacts[num3].spottedTimer = 0f;
+					spottedContacts[num3].intelData.Clear();
+					spottedContacts.RemoveAt(num3);
+				}
+			}
+		}
+		for (int k = 0; k < otherMobile.Count; k++)
+		{
+			if (otherMobile[k].mobileMapObject.type == 0 && !otherMobile[k].isMoving)
+			{
+				GetNextNavPosition(otherMobile[k]);
+			}
+		}
+		for (int l = 0; l < playerMobile.Count; l++)
+		{
+			if (!playerMobile[l].isMoving && playerMobile[l].mobileMapObject.mapWaypoints.Count > 0)
+			{
+				playerMobile[l].MoveTo(playerMobile[l].mobileMapObject.mapWaypoints[0], CampaignInterface.instance.GetMoveDuration(playerMobile[l].currentMap2DLocation, playerMobile[l].mobileMapObject.mapWaypoints[0], playerMobile[l].mobileMapObject.speed), DURATION_TYPE.Route);
+			}
+		}
+		List<MapLocation> list = new List<MapLocation>();
+		List<MapLocation> list2 = new List<MapLocation>();
+		for (int m = 0; m < landMapLocations.Count; m++)
+		{
+			if (landMapLocations[m].currentFaction == 0)
+			{
+				list.Add(landMapLocations[m]);
+			}
+			else
+			{
+				list2.Add(landMapLocations[m]);
+			}
+		}
+		CheckLandSpotMobileObject(list, otherMobile);
+		CheckLandSpotMobileObject(list2, playerMobile);
+		CheckCargoRetreatTimers(playerMobile);
+		CheckCargoRetreatTimers(otherMobile);
+		CheckAirEndurance(playerMobile);
+		CheckAirEndurance(otherMobile, updateWaypoint: true);
+		CampaignAI.instance.CheckRecreateMissions();
+		if (CampaignInterface.instance.currentMapObject != null && CampaignInterface.instance.currentMapObject.GetComponent<MobileMapObject>() != null && CampaignInterface.instance.currentMapObject.mobileMapObject.type == 1 && CampaignInterface.instance.currentMapObject.mobileMapObject.currentFaction == 0)
+		{
+			RefreshAirData(CampaignInterface.instance.currentMapObject.mobileMapObject);
+		}
+		for (int n = 0; n < landMapLocations.Count; n++)
+		{
+			if (!(landMapLocations[n].aircraftCooldown > 0f))
+			{
+				continue;
+			}
+			landMapLocations[n].aircraftCooldown -= interval5Min;
+			if (!(landMapLocations[n].aircraftCooldown <= 0f))
+			{
+				continue;
+			}
+			landMapLocations[n].aircraftCooldown = 0f;
+			if (landMapLocations[n].currentFaction == 0 && campaignData.airOpHours[CampaignInterface.instance.dateTime.Hour])
+			{
+				ErrorPanel.instance.SetErrorMessage("AirReady", landMapLocations[n].locationName, string.Empty, string.Empty);
+				if (Config.instance.campaignPauseAirfieldReady)
+				{
+					CampaignInterface.instance.PauseCampaign();
+				}
+			}
+		}
+		for (int num4 = 0; num4 < playerMobile.Count; num4++)
+		{
+			for (int num5 = 0; num5 < playerMobile[num4].mobileMapObject.aircraftCooldown.Count; num5++)
+			{
+				if (!(playerMobile[num4].mobileMapObject.aircraftCooldown[num5] != string.Empty))
+				{
+					continue;
+				}
+				float num6 = float.Parse(playerMobile[num4].mobileMapObject.aircraftCooldown[num5].Split('|')[0]);
+				num6 -= interval5Min;
+				if (num6 <= 0f)
+				{
+					playerMobile[num4].mobileMapObject.aircraftCooldown[num5] = string.Empty;
+					if (campaignData.airOpHours[CampaignInterface.instance.dateTime.Hour])
+					{
+						ErrorPanel.instance.SetErrorMessage("AirReady", playerMobile[num4].mobileMapObject.unitDisplayNames[num5], string.Empty, string.Empty);
+						if (Config.instance.campaignPauseCarrierAirReady && Utilities.IsCarrier(playerMobile[num4].mobileMapObject.unitPrefabs[num5]))
+						{
+							CampaignInterface.instance.PauseCampaign();
+						}
+					}
+				}
+				else
+				{
+					playerMobile[num4].mobileMapObject.aircraftCooldown[num5] = num6.ToString();
+				}
+			}
+		}
+		for (int num7 = 0; num7 < otherMobile.Count; num7++)
+		{
+			for (int num8 = 0; num8 < otherMobile[num7].mobileMapObject.aircraftCooldown.Count; num8++)
+			{
+				if (otherMobile[num7].mobileMapObject.aircraftCooldown[num8] != string.Empty)
+				{
+					float num9 = float.Parse(otherMobile[num7].mobileMapObject.aircraftCooldown[num8].Split('|')[0]);
+					num9 -= interval5Min;
+					if (num9 <= 0f)
+					{
+						otherMobile[num7].mobileMapObject.aircraftCooldown[num8] = string.Empty;
+					}
+					else
+					{
+						otherMobile[num7].mobileMapObject.aircraftCooldown[num8] = num9.ToString();
+					}
+				}
+			}
+		}
+	}
+
+	private void CheckHourly()
+	{
+		ModCrew.CampaignHour();
+		if (base.gameObject.GetComponent<ModCampaignRescue>() == null)
+		{
+			base.gameObject.AddComponent<ModCampaignRescue>();
+		}
+		if (base.gameObject.GetComponent<ModTFOverlay>() == null)
+		{
+			base.gameObject.AddComponent<ModTFOverlay>();
+		}
+		CheckWinCondition();
+		CheckAISeaIntercept();
+		CampaignInterface.instance.SetLightMeter();
+		CampaignAI.instance.CheckStrategicBombing();
+	}
+
+	private void CheckDaily()
+	{
+		WeatherManager.instance.UpdateWeather();
+		CampaignAI.instance.MakeStrategicDecision();
+		CheckTroopEngagements();
+		ModSupply.Daily();
+		ModConvoy.Daily();
+		ModHistory.Daily();
+		ModAllied.Daily();
+		CheckRepairedShips();
+		string text = string.Empty;
+		int num = 0;
+		for (int num2 = campaignData.orderDaysRemaining.Count - 1; num2 > -1; num2--)
+		{
+			campaignData.orderDaysRemaining[num2] = campaignData.orderDaysRemaining[num2] - 1;
+			if (campaignData.orderDaysRemaining[num2] <= 0)
+			{
+				string text2 = campaignData.orderShipClasses[num2];
+				int num3 = campaignData.orderShipInstances[num2];
+				int indexInDoubleList = GetIndexInDoubleList(text2, num3, campaignData.unavailableShipClasses, campaignData.unavailableShipInstances);
+				if (indexInDoubleList != -1)
+				{
+					bool num4 = campaignData.unavailableShipInstanceNames.Count == campaignData.unavailableShipClasses.Count;
+					campaignData.unavailableShipClasses.RemoveAt(indexInDoubleList);
+					campaignData.unavailableShipInstances.RemoveAt(indexInDoubleList);
+					if (num4)
+					{
+						campaignData.unavailableShipInstanceNames.RemoveAt(indexInDoubleList);
+					}
+				}
+				string text3 = string.Empty;
+				if (campaignData.orderPortNames != null && num2 < campaignData.orderPortNames.Count)
+				{
+					text3 = campaignData.orderPortNames[num2];
+					campaignData.orderPortNames.RemoveAt(num2);
+				}
+				if (text3 != string.Empty)
+				{
+					MobileMapObject.SetHomePort(text2, num3, text3);
+				}
+				string shipDisplayName = Utilities.GetShipDisplayName(text2, string.Empty, num3);
+				if (num > 0)
+				{
+					text += ", ";
+				}
+				text += shipDisplayName;
+				num++;
+				campaignData.orderShipClasses.RemoveAt(num2);
+				campaignData.orderShipInstances.RemoveAt(num2);
+				campaignData.orderDaysRemaining.RemoveAt(num2);
+				if (UnitReference.instance.unitData != null && UnitReference.instance.unitData.unitType == UnitType.Sea)
+				{
+					UnitReference.instance.SetNamesInClassList(UnitReference.instance.namesInClassDropdown.value);
+				}
+			}
+		}
+		if (num == 1)
+		{
+			ErrorPanel.instance.SetErrorMessage("ShipDelivered", text, string.Empty, string.Empty);
+		}
+		else if (num > 1)
+		{
+			ErrorPanel.instance.SetErrorMessage("ShipsDelivered", text, string.Empty, string.Empty);
+		}
+	}
+
+	public List<int> GetPlayerReplenish()
+	{
+		List<int> list = new List<int>(campaignData.replenish0);
+		if (campaignData.campaignDominated)
+		{
+			for (int i = 0; i < list.Count; i++)
+			{
+				list[i] = Mathf.RoundToInt((float)list[i] * campaignData.winEnemyShipSunkSupplyIncrease);
+			}
+		}
+		return list;
+	}
+
+	private void CheckWeekly()
+	{
+		List<int> list = new List<int>();
+		List<int> list2 = new List<int>();
+		int[] array = new int[6];
+		for (int i = 0; i < landMapLocations.Count; i++)
+		{
+			if (IsHomePort(landMapLocations[i], 0) || IsHomePort(landMapLocations[i], 1))
+			{
+				int num = 0;
+				if (landMapLocations[i].currentFaction == 0)
+				{
+					list = GetPlayerReplenish();
+					list2 = campaignData.replenish0Max;
+				}
+				else
+				{
+					list = campaignData.replenish1;
+					list2 = campaignData.replenish1Max;
+					num = 1;
+					campaignData.aiTotalTroops += list[0];
+				}
+				landMapLocations[i].troops[num] = Mathf.Clamp(landMapLocations[i].troops[num] + list[0], 0, list2[0]);
+				landMapLocations[i].supplies[num] = Mathf.Clamp(landMapLocations[i].supplies[num] + list[1], 0, list2[1]);
+				landMapLocations[i].engineering[num] = Mathf.Clamp(landMapLocations[i].engineering[num] + list[2], 0, list2[2]);
+				landMapLocations[i].fuel[num] = Mathf.Clamp(landMapLocations[i].fuel[num] + list[3], 0, list2[3]);
+				if (CampaignInterface.instance.dataPanelText.transform.parent.gameObject.activeSelf)
+				{
+					GameObjectAnimator gameObjectAnimator = landMapLocations[i].gameObjectAnimator;
+					if (gameObjectAnimator != null && CampaignInterface.instance.currentMapObject == gameObjectAnimator)
+					{
+						CampaignInterface.instance.SetLocationPanelData(gameObjectAnimator);
+					}
+				}
+			}
+			if (landMapLocations[i].currentFaction == 0)
+			{
+				array[0]++;
+				array[1] += landMapLocations[i].portLevel;
+				array[2] += landMapLocations[i].airfieldLevel;
+			}
+			else if (landMapLocations[i].currentFaction == 1)
+			{
+				array[3]++;
+				array[4] += landMapLocations[i].portLevel;
+				array[5] += landMapLocations[i].airfieldLevel;
+			}
+		}
+		int num2 = campaignData.commandBonusPoints[0];
+		_ = campaignData.commandBonusPoints[1];
+		array[0] *= campaignData.commandPointsPerLocation[0] + (int)Utilities.GetCampaignDifficultyModifier(CampaignDifficulty.CPLocation, Faction.Player);
+		array[3] *= campaignData.commandPointsPerLocation[1] + (int)Utilities.GetCampaignDifficultyModifier(CampaignDifficulty.CPLocation, Faction.Enemy);
+		array[1] *= campaignData.commandPointsPerPortRank[0] + (int)Utilities.GetCampaignDifficultyModifier(CampaignDifficulty.CPPort, Faction.Player);
+		array[4] *= campaignData.commandPointsPerPortRank[1] + (int)Utilities.GetCampaignDifficultyModifier(CampaignDifficulty.CPPort, Faction.Enemy);
+		array[2] *= campaignData.commandPointsPerAirfieldRank[0] + (int)Utilities.GetCampaignDifficultyModifier(CampaignDifficulty.CPAirfield, Faction.Player);
+		array[5] *= campaignData.commandPointsPerAirfieldRank[1] + (int)Utilities.GetCampaignDifficultyModifier(CampaignDifficulty.CPAirfield, Faction.Enemy);
+		campaignData.commandBonusPoints[0] += Mathf.Max(75, campaignData.commandPointsPerWeek[0] + (int)Utilities.GetCampaignDifficultyModifier(CampaignDifficulty.CPWeek, Faction.Player));
+		campaignData.commandBonusPoints[0] += array[0];
+		campaignData.commandBonusPoints[0] += array[1];
+		campaignData.commandBonusPoints[0] += array[2];
+		if (!campaignData.enemyWeeklyCPDeficitOnly || instance.campaignData.commandPoints[0] + instance.campaignData.commandBonusPoints[0] - instance.campaignData.commandPointSpent[1] < 0)
+		{
+			campaignData.commandPointSpent[1] -= campaignData.commandPointsPerWeek[1] + (int)Utilities.GetCampaignDifficultyModifier(CampaignDifficulty.CPWeek, Faction.Enemy);
+			campaignData.commandPointSpent[1] -= array[3];
+			campaignData.commandPointSpent[1] -= array[4];
+			campaignData.commandPointSpent[1] -= array[5];
+		}
+		if (campaignData.commandBonusPoints[0] != num2)
+		{
+			ErrorPanel.instance.SetErrorMessage("AdditionalCommand", (campaignData.commandBonusPoints[0] - num2).ToString(), string.Empty, string.Empty);
+			CampaignInterface.instance.SetCommandTotal();
+		}
+	}
+
+	private void CheckRepairedShips()
+	{
+		int num = 0;
+		for (int num2 = campaignData.playerOwnedRepairDays.Count - 1; num2 > -1; num2--)
+		{
+			campaignData.playerOwnedRepairDays[num2]--;
+			if (campaignData.playerOwnedRepairDays[num2] == 0)
+			{
+				if (campaignData.refundPostRepair)
+				{
+					num += (int)((float)EngagementManager.instance.unitSeaDictionary[campaignData.playerOwnedShipClasses[num2]].cost * campaignData.releaseRefund);
+				}
+				campaignData.playerOwnedShipClasses.RemoveAt(num2);
+				campaignData.playerOwnedShipInstances.RemoveAt(num2);
+				campaignData.playerOwnedRepairDays.RemoveAt(num2);
+			}
+			if (UnitReference.instance.unitData != null && UnitReference.instance.unitData.unitType == UnitType.Sea)
+			{
+				UnitReference.instance.SetNamesInClassList(UnitReference.instance.namesInClassDropdown.value);
+			}
+		}
+		if (num > 0)
+		{
+			campaignData.commandPointSpent[0] -= num;
+			ErrorPanel.instance.SetErrorMessage("AdditionalCommandRR", num.ToString(), string.Empty, string.Empty);
+			CampaignInterface.instance.SetCommandTotal();
+		}
+		for (int num3 = campaignData.enemyOwnedRepairDays.Count - 1; num3 > -1; num3--)
+		{
+			campaignData.enemyOwnedRepairDays[num3]--;
+			if (campaignData.enemyOwnedRepairDays[num3] == 0)
+			{
+				ModifyShipInLists(isAdded: false, campaignData.enemyOwnedShipClasses[num3], campaignData.enemyOwnedShipInstances[num3], 0, campaignData.enemyOwnedShipClasses, campaignData.enemyOwnedShipInstances, campaignData.enemyOwnedRepairDays);
+			}
+		}
+	}
+
+	private void SpotContact(MobileMapObject mmoContact, MobileMapObject mmoObserver, MapLocation mlObserver, bool scoutOnly = false)
+	{
+		ModEnemyScouts.Contact(mmoContact);
+		if (Config.instance.hideStrategicMapSubs && mmoContact.currentFaction != 0 && IsMobileSubOnly(mmoContact))
+		{
+			return;
+		}
+		float maxSpotTime = Utilities.GetMaxSpotTime(mmoContact);
+		mmoContact.spottedTimer = maxSpotTime;
+		if (!spottedContacts.Contains(mmoContact))
+		{
+			spottedContacts.Add(mmoContact);
+			if (mmoContact.currentFaction != 0)
+			{
+				if (Config.instance.vagueCampaignIntel && mmoContact.type == 0)
+				{
+					mmoContact.intelData = GetIntelOnSeaGroup(mmoContact);
+				}
+				if (!mmoContact.ignoreByPlayer && !scoutOnly)
+				{
+					CampaignInterface.instance.PauseCampaign();
+					string empty = string.Empty;
+					empty = ((!(mlObserver != null)) ? mmoObserver.mobileName : mlObserver.locationName);
+					if (mmoContact.type == 0)
+					{
+						ErrorPanel.instance.SetErrorMessage("SpottedSea", empty, string.Empty, string.Empty);
+					}
+					else
+					{
+						ErrorPanel.instance.SetErrorMessage("SpottedAir", empty, string.Empty, string.Empty);
+					}
+				}
+			}
+		}
+		if (mmoContact.currentFaction != 0)
+		{
+			CampaignInterface.instance.SetContactColor(mmoContact);
+			return;
+		}
+		mmoContact.spottedTimer *= 2f;
+		if (mmoObserver != null && mmoObserver.type == 1 && mmoObserver.unitPrefabs.Count == 1)
+		{
+			ModEnemyScouts.ReturnOrShadow(this, mmoObserver.gameObjectAnimator);
+		}
+		CampaignAI.instance.OnPlayerSpotted(mmoContact);
+	}
+
+	private void CheckTroopEngagements()
+	{
+		for (int i = 0; i < landMapLocations.Count; i++)
+		{
+			MapLocation mapLocation = landMapLocations[i];
+			if ((mapLocation.troops[0] <= 0 || mapLocation.troops[1] <= 0) && (mapLocation.troops[0] <= 0 || mapLocation.currentFaction == 0) && (mapLocation.troops[1] <= 0 || mapLocation.currentFaction == 1))
+			{
+				continue;
+			}
+			float num = GetTroopStrength(mapLocation.troops[0], mapLocation.supplies[0]);
+			float num2 = GetTroopStrength(mapLocation.troops[1], mapLocation.supplies[1]);
+			float num3 = 1f + (float)(mapLocation.portLevel + mapLocation.airfieldLevel) * campaignData.groundBonusPerRank;
+			if (mapLocation.currentFaction == 0)
+			{
+				num *= num3;
+			}
+			else
+			{
+				num2 *= num3;
+			}
+			float num4 = num2 / num;
+			float num5 = Mathf.Min(mapLocation.troops[0], mapLocation.troops[1]);
+			num5 *= campaignData.maxTroopLoss;
+			bool flag = false;
+			if (num2 > num)
+			{
+				flag = true;
+				num4 = 1f / num4;
+			}
+			num4 = Mathf.Clamp(num4, 0.05f, 0.9f);
+			num5 *= 2f - 2f * num4;
+			float num6 = num5;
+			mapLocation.supplies[0] -= Mathf.CeilToInt((float)mapLocation.troops[0] * campaignData.suppliesUsedPerDayFighting);
+			mapLocation.supplies[1] -= Mathf.CeilToInt((float)mapLocation.troops[1] * campaignData.suppliesUsedPerDayFighting);
+			if (mapLocation.supplies[0] < 0)
+			{
+				mapLocation.supplies[0] = 0;
+			}
+			if (mapLocation.supplies[1] < 0)
+			{
+				mapLocation.supplies[1] = 0;
+			}
+			float num7 = num6 * UnityEngine.Random.Range(campaignData.troopLossRange[0], campaignData.troopLossRange[1]);
+			float num8 = num6 * num4 * UnityEngine.Random.Range(campaignData.troopLossRange[0], campaignData.troopLossRange[1]);
+			if (!flag)
+			{
+				if (num6 > (float)mapLocation.troops[1])
+				{
+					num6 = mapLocation.troops[1];
+				}
+				mapLocation.troops[1] = Mathf.FloorToInt((float)mapLocation.troops[1] - num7);
+				mapLocation.troops[0] = Mathf.FloorToInt((float)mapLocation.troops[0] - num8);
+			}
+			else
+			{
+				if (num6 > (float)mapLocation.troops[0])
+				{
+					num6 = mapLocation.troops[0];
+				}
+				mapLocation.troops[0] = Mathf.FloorToInt((float)mapLocation.troops[0] - num7);
+				mapLocation.troops[1] = Mathf.FloorToInt((float)mapLocation.troops[1] - num8);
+			}
+			if (campaignData.allowHomePortTakeOver || (!IsHomePort(mapLocation, 0) && !IsHomePort(mapLocation, 1)))
+			{
+				if (num5 < (float)campaignData.troopTakeOverAt)
+				{
+					TakeOverMapLocation(mapLocation, !flag);
+					troopDebug = string.Empty;
+				}
+				else if (num4 < 0.25f)
+				{
+					if (!flag && mapLocation.currentFaction != 0)
+					{
+						TakeOverMapLocation(mapLocation, !flag, clearLoser: false);
+						ErrorPanel.instance.SetErrorMessage("LocationGained", mapLocation.locationName, string.Empty, string.Empty);
+					}
+					else if (flag && mapLocation.currentFaction == 0)
+					{
+						TakeOverMapLocation(mapLocation, !flag, clearLoser: false);
+						ErrorPanel.instance.SetErrorMessage("LocationLost", mapLocation.locationName, string.Empty, string.Empty);
+					}
+				}
+			}
+			if (mapLocation.gameObjectAnimator == CampaignInterface.instance.currentMapObject)
+			{
+				CampaignInterface.instance.SelectMapObject(mapLocation.gameObjectAnimator);
+			}
+		}
+	}
+
+	private bool PlayerOwnsAllLocations(List<MapLocation> ml)
+	{
+		for (int i = 0; i < ml.Count; i++)
+		{
+			if (ml[i].currentFaction != 0)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private void TakeOverMapLocation(MapLocation ml, bool isPlayer, bool clearLoser = true)
+	{
+		CampaignInterface.instance.SetFireToLocation(ml, isOn: false);
+		if (isPlayer)
+		{
+			if (clearLoser)
+			{
+				if (ml.currentFaction == 2)
+				{
+					ErrorPanel.instance.SetErrorMessage("LocationGained", ml.locationName, string.Empty, string.Empty);
+				}
+				else if (ml.currentFaction == 0)
+				{
+					ErrorPanel.instance.SetErrorMessage("LocationDefended", ml.locationName, string.Empty, string.Empty);
+				}
+				else
+				{
+					ErrorPanel.instance.SetErrorMessage("LocationDefended", ml.locationName, string.Empty, string.Empty);
+				}
+				ml.troops[1] = 0;
+				ml.supplies[1] = 0;
+				ml.engineering[1] = 0;
+				ml.fuel[1] = 0;
+			}
+			CampaignInterface.instance.PauseCampaign();
+			SwitchMapLocationFaction(ml, 0);
+			MissionType missionType = MissionType.Home;
+			if (CampaignAI.instance.primaryTargets.Contains(ml))
+			{
+				missionType = MissionType.PrimaryLost;
+			}
+			for (int i = 0; i < otherMobile.Count; i++)
+			{
+				if (CampaignAI.instance.seaMissions[otherMobile[i].mobileMapObject.missionIndex].missionType == missionType)
+				{
+					return;
+				}
+			}
+			if (missionType != 0)
+			{
+				CampaignAI.instance.CreateAIMobileSea(CampaignAI.instance.GetMissionByType(missionType), string.Empty);
+			}
+			CampaignAI.instance.CheckUnsafeLocations(ml);
+		}
+		else
+		{
+			if (clearLoser)
+			{
+				if (ml.currentFaction == 1)
+				{
+					ErrorPanel.instance.SetErrorMessage("LocationFailed", ml.locationName, string.Empty, string.Empty);
+				}
+				else
+				{
+					ErrorPanel.instance.SetErrorMessage("LocationLost", ml.locationName, string.Empty, string.Empty);
+				}
+				ml.troops[0] = 0;
+				ml.supplies[0] = 0;
+				ml.engineering[0] = 0;
+				ml.fuel[0] = 0;
+			}
+			SwitchMapLocationFaction(ml, 1);
+		}
+		ml.GetComponentInChildren<SpriteRenderer>().color = CampaignInterface.instance.factionColours[ml.currentFaction];
+	}
+
+	public float GetTroopStrength(int troops, int supplies)
+	{
+		if (supplies >= troops)
+		{
+			return troops;
+		}
+		float num = (float)supplies / (float)troops;
+		return (float)troops * (campaignData.troopSupplies[0] + num * campaignData.troopSupplies[1]);
+	}
+
+	public void RefreshAirData(MobileMapObject mmo)
+	{
+		string empty = string.Empty;
+		empty = empty + mmo.unitPrefabs.Count + "\n";
+		empty = empty + mmo.createdByDisplayName + "\n";
+		empty = empty + Utilities.GetMeasurementString(mmo.endurance * mmo.speed / 1000f, MeasurementUnit.kilometre) + "\n\n";
+		string text = string.Empty;
+		for (int i = 0; i < mmo.payload.Count; i++)
+		{
+			text = EngagementManager.instance.unitAirDictionary[mmo.unitPrefabs[0]].payloadDisplayNames[mmo.payload[i]];
+			empty = empty + text + "\n";
+		}
+		int numberWithPayload = GetNumberWithPayload(mmo, text);
+		if (numberWithPayload > 0)
+		{
+			empty += numberWithPayload;
+		}
+		CampaignInterface.instance.airGroupDataText.text = empty;
+	}
+
+	private int GetNumberWithPayload(MobileMapObject mmo, string payload)
+	{
+		int num = 0;
+		if (payload != string.Empty)
+		{
+			if (mmo.ammunitionRemaining.Count == 0)
+			{
+				num = mmo.unitPrefabs.Count;
+			}
+			else
+			{
+				for (int i = 0; i < mmo.ammunitionRemaining.Count; i++)
+				{
+					if (mmo.ammunitionRemaining[i] == string.Empty)
+					{
+						num++;
+						continue;
+					}
+					string[] array = mmo.ammunitionRemaining[i].Split('|');
+					if (array.Length > 2 && array[2] == "0")
+					{
+						num++;
+					}
+				}
+			}
+		}
+		return num;
+	}
+
+	private void CheckLandSpotMobileObject(List<MapLocation> locations, List<GameObjectAnimator> goas)
+	{
+		for (int i = 0; i < locations.Count; i++)
+		{
+			if (locations[i].currentFaction == 2)
+			{
+				continue;
+			}
+			WeatherCell weatherCell = WeatherManager.instance.weatherCells[WeatherManager.instance.GetMapObjectWeatherCellIndex(locations[i].locationPosition)];
+			float num = Utilities.GetCampaignVisibility(CampaignInterface.instance.dateTime.Hour, weatherCell.seaState, weatherCell.cloudLevel);
+			float num2 = Config.instance.seaStateRadarModifier[weatherCell.seaState];
+			float num3 = locations[i].airfieldLevel;
+			if (!campaignData.airOpHours[CampaignInterface.instance.dateTime.Hour])
+			{
+				num3 = 0f;
+			}
+			float num4 = campaignData.campaignLocationBaseSpotDist + (float)locations[i].portLevel * campaignData.campaignLocationPortFactor + num3 * campaignData.campaignLocationAirfieldFactor;
+			if (weatherCell.isRaining || weatherCell.isSnowing || weatherCell.isStorm)
+			{
+				num *= Config.instance.rainVisibilityMaxPenalty;
+				num2 *= Config.instance.rainRadarMaxPenalty;
+			}
+			for (int j = 0; j < goas.Count; j++)
+			{
+				if (locations[i].currentFaction != goas[j].mobileMapObject.currentFaction && goas[j].mobileMapObject.postEngagementTimer <= 0f)
+				{
+					float num5 = GetDistanceInMetresBetweenMapObjects(locations[i].locationPosition, goas[j].currentMap2DLocation) / 1000f;
+					if (num5 < num4 * num || num5 < num4 * num2 * Config.instance.radarExtensionFactor)
+					{
+						SpotContact(goas[j].mobileMapObject, null, locations[i], IsMobileAircraftScoutOnly(goas[j].mobileMapObject));
+					}
+				}
+			}
+		}
+	}
+
+	private bool CheckMobileEncounters(List<GameObjectAnimator> observers, List<GameObjectAnimator> contacts, bool scoutAir = false)
+	{
+		if (campaignData.playerObjectEngaged != -1)
+		{
+			return false;
+		}
+		bool flag = campaignData.airOpHours[CampaignInterface.instance.dateTime.Hour];
+		if (Config.instance.airEncountersOutsideHours)
+		{
+			flag = true;
+		}
+		for (int i = 0; i < observers.Count; i++)
+		{
+			if ((observers[i].mobileMapObject.currentFaction != 0 && observers[i].mobileMapObject.currentCampaignAction == 1) || (!flag && observers[i].mobileMapObject.type == 1))
+			{
+				continue;
+			}
+			MobileMapObject mobileMapObject = observers[i].mobileMapObject;
+			int mapObjectWeatherCellIndex = WeatherManager.instance.GetMapObjectWeatherCellIndex(mobileMapObject.gameObjectAnimator.currentMap2DLocation);
+			if (mapObjectWeatherCellIndex < 0 || mapObjectWeatherCellIndex >= WeatherManager.instance.weatherCells.Count)
+			{
+				continue;
+			}
+			WeatherCell weatherCell = WeatherManager.instance.weatherCells[WeatherManager.instance.GetMapObjectWeatherCellIndex(mobileMapObject.gameObjectAnimator.currentMap2DLocation)];
+			float num = Utilities.GetCampaignVisibility(CampaignInterface.instance.dateTime.Hour, weatherCell.seaState, weatherCell.cloudLevel);
+			float num2 = Config.instance.seaStateRadarModifier[weatherCell.seaState];
+			float num3 = Config.instance.seaStateSonarModifier[weatherCell.seaState];
+			if (weatherCell.isRaining || weatherCell.isSnowing || weatherCell.isStorm)
+			{
+				num *= Config.instance.rainVisibilityMaxPenalty;
+				num2 *= Config.instance.rainRadarMaxPenalty;
+				num3 *= Config.instance.rainSonarModifier;
+			}
+			for (int j = 0; j < contacts.Count; j++)
+			{
+				if (!flag && contacts[j].mobileMapObject.type == 1)
+				{
+					continue;
+				}
+				List<float> list = new List<float>();
+				MobileMapObject mobileMapObject2 = contacts[j].mobileMapObject;
+				float num4 = GetDistanceInMetresBetweenMapObjects(mobileMapObject.gameObjectAnimator.currentMap2DLocation, mobileMapObject2.gameObjectAnimator.currentMap2DLocation) / 1000f;
+				if (Config.instance.hideStrategicMapSubs && ((mobileMapObject.type == 1 && IsMobileSubOnly(mobileMapObject2)) || (mobileMapObject2.type == 1 && IsMobileSubOnly(mobileMapObject))))
+				{
+					continue;
+				}
+				if (campaignData.airOpHours[CampaignInterface.instance.dateTime.Hour] && num4 > campaignData.maxCampaignDetectionRange && mobileMapObject.currentFaction != 0 && mobileMapObject.type == 0)
+				{
+					float num5 = campaignData.autoScoutThreshold;
+					if (campaignData.applyScoutDetectionModifier)
+					{
+						num5 = campaignData.autoScoutThreshold * num;
+					}
+					if (num4 < num5)
+					{
+						float num6 = ModEnemyScouts.ShipScoutChance(0.009f);
+						if (spottedContacts.Contains(mobileMapObject2))
+						{
+							num6 = -1f;
+						}
+						else if (IsMobileSubOnly(mobileMapObject2))
+						{
+							num6 *= 0.1f;
+						}
+						if (UnityEngine.Random.value < num6)
+						{
+							int num7 = 0;
+							int index = -1;
+							int num8 = -1;
+							int num9 = 0;
+							for (int k = 0; k < mobileMapObject.currentAircraft.Count; k++)
+							{
+								if (!(mobileMapObject.currentAircraft[k] != string.Empty))
+								{
+									continue;
+								}
+								List<int> intListFromString = GetIntListFromString(mobileMapObject.currentAircraft[k]);
+								for (int l = 0; l < intListFromString.Count; l++)
+								{
+									num7 += intListFromString[l];
+									if (num8 == -1 && intListFromString[l] > 0)
+									{
+										num8 = k;
+										index = l;
+										num9 = Mathf.Clamp(intListFromString[l], 1, 1);
+									}
+								}
+							}
+							if (num8 != -1)
+							{
+								CampaignAI.instance.CreateAIMobileAir(mobileMapObject.gameObjectAnimator, EngagementManager.instance.unitDataDictionary[mobileMapObject.unitPrefabs[num8]].aircraftOnBoard[index], num9, mobileMapObject2.gameObjectAnimator.currentMap2DLocation, num8);
+								List<int> intListFromString2 = GetIntListFromString(mobileMapObject.currentAircraft[num8]);
+								intListFromString2[index] -= num9;
+								mobileMapObject.currentAircraft[num8] = SetIntListToString(intListFromString2);
+							}
+						}
+					}
+				}
+				if (!(num4 <= campaignData.maxCampaignDetectionRange) || !(num4 >= campaignData.minCampaignDetectionRange) || (!(num4 <= Config.instance.nightEncounterMaxRange) && !(Config.instance.visibilityByHour[CampaignInterface.instance.dateTime.Hour] >= 0.65f)) || !(contacts[j].mobileMapObject.postEngagementTimer <= 0f))
+				{
+					continue;
+				}
+				bool num10 = IsMobileSubOnly(mobileMapObject);
+				bool flag2 = IsMobileSubOnly(mobileMapObject2);
+				if (num10 && flag2)
+				{
+					continue;
+				}
+				if (mobileMapObject.type == 0 && mobileMapObject2.type == 0)
+				{
+					list.Add((mobileMapObject.visualBaseRange + mobileMapObject2.visualBaseRange) * num);
+					if (mobileMapObject.usingRadar)
+					{
+						list.Add(Mathf.Max(mobileMapObject.surfaceDetectionBaseRange * num2, mobileMapObject2.surfaceDetectionBaseRange * num2));
+					}
+					else
+					{
+						list.Add(0f);
+					}
+				}
+				else if (mobileMapObject.type == 1 && mobileMapObject2.type == 1)
+				{
+					list.Add(Config.instance.maxAirVisibility * campaignData.campaignAirSpotBonus);
+					if (mobileMapObject.usingRadar)
+					{
+						list.Add(Mathf.Max(mobileMapObject.surfaceDetectionBaseRange * num2, mobileMapObject2.surfaceDetectionBaseRange * num2));
+					}
+					else
+					{
+						list.Add(0f);
+					}
+				}
+				else
+				{
+					list.Add(Config.instance.maxSeaVisibility * Config.instance.aircraftViewingSurfaceModifier * num * campaignData.campaignAirSpotBonus);
+					if (!mobileMapObject.usingRadar)
+					{
+						list.Add(0f);
+					}
+					else if (mobileMapObject2.type == 0)
+					{
+						list.Add(mobileMapObject.surfaceDetectionBaseRange * num2);
+					}
+					else
+					{
+						list.Add(mobileMapObject.airDetectionBaseRange * num2);
+					}
+				}
+				bool flag3 = num4 < list[0];
+				if (!flag3)
+				{
+					flag3 = num4 < list[1];
+				}
+				if (!flag3 && mobileMapObject.type == 0 && mobileMapObject2.type == 0)
+				{
+					if (mobileMapObject.passiveSonarBaseRange > 0f)
+					{
+						list.Add(mobileMapObject.passiveSonarBaseRange * num3 * SensorManager.instance.GetSpeedModifier(mobileMapObject2.speed * 0.1f, Config.instance.contactPassiveIncreasePerKnot, Config.instance.passiveThreshold, 0f, 6f) * 6f);
+					}
+					else
+					{
+						list.Add(0f);
+					}
+					flag3 = num4 < list[2];
+				}
+				if (!flag3 || !(mobileMapObject.postEngagementTimer <= 0f) || !(mobileMapObject2.postEngagementTimer <= 0f))
+				{
+					continue;
+				}
+				campaignData.subAmbush = false;
+				campaignData.engagementWeatherIndex = WeatherManager.instance.GetMapObjectWeatherCellIndex(mobileMapObject.gameObjectAnimator.currentMap2DLocation);
+				if (mobileMapObject.currentFaction == 0)
+				{
+					campaignData.playerObjectEngaged = playerMobile.IndexOf(mobileMapObject.gameObjectAnimator);
+					campaignData.otherObjectEngaged = otherMobile.IndexOf(mobileMapObject2.gameObjectAnimator);
+				}
+				else
+				{
+					campaignData.playerObjectEngaged = playerMobile.IndexOf(mobileMapObject2.gameObjectAnimator);
+					campaignData.otherObjectEngaged = otherMobile.IndexOf(mobileMapObject.gameObjectAnimator);
+				}
+				if (campaignData.playerObjectEngaged >= playerMobile.Count || campaignData.otherObjectEngaged >= otherMobile.Count || campaignData.playerObjectEngaged == -1 || campaignData.otherObjectEngaged == -1)
+				{
+					continue;
+				}
+				bool scoutOnly = IsMobileAircraftScoutOnly(otherMobile[campaignData.otherObjectEngaged].mobileMapObject);
+				SpotContact(mobileMapObject2, mobileMapObject, null, scoutOnly);
+				SpotContact(mobileMapObject, mobileMapObject2, null, scoutOnly);
+				if (mobileMapObject.currentFaction == 0)
+				{
+					campaignData.playerObjectEngaged = playerMobile.IndexOf(mobileMapObject.gameObjectAnimator);
+					campaignData.otherObjectEngaged = otherMobile.IndexOf(mobileMapObject2.gameObjectAnimator);
+				}
+				else
+				{
+					campaignData.playerObjectEngaged = playerMobile.IndexOf(mobileMapObject2.gameObjectAnimator);
+					campaignData.otherObjectEngaged = otherMobile.IndexOf(mobileMapObject.gameObjectAnimator);
+				}
+				if (campaignData.playerObjectEngaged >= playerMobile.Count || campaignData.otherObjectEngaged >= otherMobile.Count || campaignData.playerObjectEngaged == -1 || campaignData.otherObjectEngaged == -1)
+				{
+					continue;
+				}
+				if (Config.instance.subAutoAmbushPosition[0] && IsMobileSubOnly(playerMobile[campaignData.playerObjectEngaged].mobileMapObject))
+				{
+					campaignData.subAmbush = true;
+				}
+				else if (Config.instance.subAutoAmbushPosition[1] && IsMobileSubOnly(otherMobile[campaignData.otherObjectEngaged].mobileMapObject))
+				{
+					campaignData.subAmbush = true;
+				}
+				if (IsMobileSubOnly(playerMobile[campaignData.playerObjectEngaged].mobileMapObject) && otherMobile[campaignData.otherObjectEngaged].mobileMapObject.type == 1 && otherMobile[campaignData.otherObjectEngaged].mobileMapObject.unitPrefabs.Count != 1)
+				{
+					continue;
+				}
+				if (otherMobile[campaignData.otherObjectEngaged].mobileMapObject.ignoreByPlayer)
+				{
+					if (EngagementManager.instance.unitDataDictionary[otherMobile[campaignData.otherObjectEngaged].mobileMapObject.unitPrefabs[0]].unitSubtype == UnitSubType.Scout || (otherMobile[campaignData.otherObjectEngaged].mobileMapObject.unitPrefabs.Count == 1 && EngagementManager.instance.unitDataDictionary[otherMobile[campaignData.otherObjectEngaged].mobileMapObject.unitPrefabs[0]].unitType == UnitType.Air))
+					{
+						EngagementPanel.instance.ClearEncounterData();
+						continue;
+					}
+					if (IsMobileSubOnly(playerMobile[campaignData.playerObjectEngaged].mobileMapObject))
+					{
+						EngagementPanel.instance.ClearEncounterData();
+						continue;
+					}
+					if (playerMobile[campaignData.playerObjectEngaged].mobileMapObject.type == 1 && otherMobile[campaignData.otherObjectEngaged].mobileMapObject.type == 0)
+					{
+						EngagementPanel.instance.ClearEncounterData();
+						continue;
+					}
+				}
+				campaignData.canIgnore = false;
+				if (playerMobile[campaignData.playerObjectEngaged].mobileMapObject.type == 1 && otherMobile[campaignData.otherObjectEngaged].mobileMapObject.type == 0)
+				{
+					campaignData.canIgnore = true;
+				}
+				if (EngagementManager.instance.unitDataDictionary[mobileMapObject.unitPrefabs[0]].unitSubtype == UnitSubType.Scout && EngagementManager.instance.unitDataDictionary[mobileMapObject2.unitPrefabs[0]].unitSubtype == UnitSubType.Scout)
+				{
+					campaignData.canIgnore = true;
+				}
+				campaignData.canAutoResolve = ModAirResolve.CanResolve(mobileMapObject, mobileMapObject2) | ModAllied.CanResolve(mobileMapObject, mobileMapObject2);
+				if ((EngagementManager.instance.unitDataDictionary[mobileMapObject.unitPrefabs[0]].unitSubtype == UnitSubType.Scout && EngagementManager.instance.unitDataDictionary[mobileMapObject2.unitPrefabs[0]].unitSubtype == UnitSubType.Fighter) || (EngagementManager.instance.unitDataDictionary[mobileMapObject.unitPrefabs[0]].unitSubtype == UnitSubType.Fighter && EngagementManager.instance.unitDataDictionary[mobileMapObject2.unitPrefabs[0]].unitSubtype == UnitSubType.Scout))
+				{
+					campaignData.canAutoResolve = true;
+				}
+				if (IsMobileSubOnly(playerMobile[campaignData.playerObjectEngaged].mobileMapObject))
+				{
+					campaignData.canIgnore = true;
+				}
+				if ((playerMobile[campaignData.playerObjectEngaged].mobileMapObject.type == 0 && EngagementManager.instance.unitDataDictionary[otherMobile[campaignData.otherObjectEngaged].mobileMapObject.unitPrefabs[0]].unitSubtype == UnitSubType.Scout) || (EngagementManager.instance.unitDataDictionary[otherMobile[campaignData.otherObjectEngaged].mobileMapObject.unitPrefabs[0]].unitType == UnitType.Air && otherMobile[campaignData.otherObjectEngaged].mobileMapObject.unitPrefabs.Count == 1))
+				{
+					if (Config.instance.alwaysIgnoreScouts)
+					{
+						EngagementPanel.instance.ClearEncounterData();
+						continue;
+					}
+					campaignData.canIgnore = true;
+				}
+				if (campaignData.playerObjectEngaged != -1)
+				{
+					EngagementPanel.instance.OpenEngagementPanel(campaignData.playerObjectEngaged);
+				}
+				return true;
+			}
+		}
+		return false;
+	}
+
+	public bool IsMobileAircraftScoutOnly(MobileMapObject mmo)
+	{
+		if (Config.instance.alwaysIgnoreScouts && mmo.unitPrefabs.Count == 1)
+		{
+			return mmo.type == 1;
+		}
+		return false;
+	}
+
+	public bool IsMobileSubOnly(MobileMapObject mmo)
+	{
+		for (int i = 0; i < mmo.unitPrefabs.Count; i++)
+		{
+			if (EngagementManager.instance.unitDataDictionary[mmo.unitPrefabs[i]].unitSubtype != 0)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	public void LoadCampaign(string filepath)
+	{
+		if (filepath == string.Empty)
+		{
+			return;
+		}
+		string[] array = File.ReadAllLines(filepath);
+		_ = campaignData.gameVersion != MenuSystem.instance.versionString;
+		CampaignInterface.instance.dateTime = new DateTime(campaignData.currentDateTime[5], campaignData.currentDateTime[4], campaignData.currentDateTime[3], campaignData.currentDateTime[2], campaignData.currentDateTime[1], campaignData.currentDateTime[0]);
+		for (int i = 0; i < landMapLocations.Count; i++)
+		{
+			for (int j = 0; j < campaignData.mapLocationSaveData.Count; j++)
+			{
+				if (campaignData.mapLocationSaveData[j].Split('"')[3] == landMapLocations[i].locationID)
+				{
+					JsonUtility.FromJsonOverwrite(campaignData.mapLocationSaveData[j], landMapLocations[i]);
+				}
+			}
+		}
+		for (int k = 0; k < campaignData.playerMobileObjectSaveData.Count; k++)
+		{
+			CampaignInterface.instance.ClearNewGroupData(CampaignInterface.instance.newTaskForce);
+			JsonUtility.FromJsonOverwrite(campaignData.playerMobileObjectSaveData[k], CampaignInterface.instance.newTaskForce);
+			GameObjectAnimator gameObjectAnimator = CampaignInterface.instance.CreateNewMobileObject((CampaignObjectType)Enum.Parse(typeof(CampaignObjectType), CampaignInterface.instance.newTaskForce.type.ToString()), CampaignInterface.instance.newTaskForce, CampaignInterface.instance.newTaskForce.currentMap2DLocation, isLoading: true, null, string.Empty);
+			JsonUtility.FromJsonOverwrite(campaignData.playerMobileObjectSaveData[k], gameObjectAnimator.mobileMapObject);
+			gameObjectAnimator.mobileMapObject.type = SetMMOType(gameObjectAnimator.mobileMapObject);
+			if (gameObjectAnimator.mobileMapObject.type == 0 && CampaignAI.instance.seaMissions[gameObjectAnimator.mobileMapObject.missionIndex].patrolForHours > 0 && gameObjectAnimator.mobileMapObject.patrolForHours <= 0)
+			{
+				gameObjectAnimator.mobileMapObject.patrolForHours = CampaignAI.instance.seaMissions[gameObjectAnimator.mobileMapObject.missionIndex].patrolForHours;
+				gameObjectAnimator.mobileMapObject.patrolZones = GetValidNeighbours(gameObjectAnimator.mobileMapObject.lastWaypoint, includeStart: true, gameObjectAnimator.mobileMapObject.prohibitedWaypoints);
+			}
+			if (gameObjectAnimator.isMoving)
+			{
+				List<Vector2> list = new List<Vector2>();
+				list.Add(gameObjectAnimator.mobileMapObject.endingMap2DLocation);
+				for (int l = 0; l < gameObjectAnimator.mobileMapObject.mapWaypoints.Count; l++)
+				{
+					list.Add(gameObjectAnimator.mobileMapObject.mapWaypoints[l]);
+				}
+				CampaignInterface.instance.MoveMobileToDestination(gameObjectAnimator, gameObjectAnimator.mobileMapObject.destination, goDirect: true, addWay: false);
+				gameObjectAnimator.mobileMapObject.mapWaypoints.Clear();
+				gameObjectAnimator.mobileMapObject.mapWaypoints = list;
+			}
+		}
+		for (int m = 0; m < campaignData.enemyMobileObjectSaveData.Count; m++)
+		{
+			CampaignInterface.instance.ClearNewGroupData(CampaignInterface.instance.newTaskForce);
+			JsonUtility.FromJsonOverwrite(campaignData.enemyMobileObjectSaveData[m], CampaignInterface.instance.newTaskForce);
+			GameObjectAnimator gameObjectAnimator2 = CampaignInterface.instance.CreateNewMobileObject((CampaignObjectType)Enum.Parse(typeof(CampaignObjectType), CampaignInterface.instance.newTaskForce.type.ToString()), CampaignInterface.instance.newTaskForce, CampaignInterface.instance.newTaskForce.currentMap2DLocation, isLoading: true, null, string.Empty);
+			JsonUtility.FromJsonOverwrite(campaignData.enemyMobileObjectSaveData[m], gameObjectAnimator2.mobileMapObject);
+			gameObjectAnimator2.mobileMapObject.type = SetMMOType(gameObjectAnimator2.mobileMapObject);
+			if (gameObjectAnimator2.mobileMapObject.currentFaction != 0 && CampaignAI.instance.seaMissions[gameObjectAnimator2.mobileMapObject.missionIndex].missionType == MissionType.Deprecated)
+			{
+				CampaignAI.instance.ApplyNavDataToMobile(gameObjectAnimator2, CampaignAI.instance.seaMissions[CampaignAI.instance.GetMissionByType(MissionType.Home)], string.Empty);
+				GetNextNavPosition(gameObjectAnimator2);
+			}
+		}
+		for (int n = 0; n < campaignData.weatherCellData.Count; n++)
+		{
+			JsonUtility.FromJsonOverwrite(campaignData.weatherCellData[n], WeatherManager.instance.weatherCells[n]);
+		}
+		WeatherManager.instance.SetWeatherIcons(display: true);
+		for (int num = 0; num < otherMobile.Count; num++)
+		{
+			if (otherMobile[num].mobileMapObject.spottedTimer > 0f)
+			{
+				spottedContacts.Add(otherMobile[num].mobileMapObject);
+				CampaignInterface.instance.SetContactColor(otherMobile[num].mobileMapObject);
+				if (Config.instance.vagueCampaignIntel && otherMobile[num].mobileMapObject.type == 0)
+				{
+					if (otherMobile[num].mobileMapObject.intelData == null || otherMobile[num].mobileMapObject.intelData.Count < 1)
+					{
+						GetIntelOnSeaGroup(otherMobile[num].mobileMapObject);
+					}
+					else
+					{
+						SetSeaGroupSpriteFromIntel(otherMobile[num].mobileMapObject);
+					}
+				}
+			}
+			else
+			{
+				otherMobile[num].GetComponentInChildren<SpriteRenderer>().color = CampaignInterface.instance.noContactColor;
+			}
+		}
+		for (int num2 = 0; num2 < playerMobile.Count; num2++)
+		{
+			if (playerMobile[num2].mobileMapObject.spottedTimer > 0f)
+			{
+				spottedContacts.Add(playerMobile[num2].mobileMapObject);
+			}
+			if (playerMobile[num2].mobileMapObject.escortingGOAIndex != -1 && playerMobile[num2].mobileMapObject.type == 1)
+			{
+				playerMobile[num2].mobileMapObject.escortingThisGOA = playerMobile[playerMobile[num2].mobileMapObject.escortingGOAIndex];
+			}
+			else
+			{
+				playerMobile[num2].mobileMapObject.escortingGOAIndex = -1;
+			}
+		}
+		if (array.Length > 1 && campaignData.currentlyInCombatIndex != -1)
+		{
+			CombatInterface.instance.tabs[4].transform.SetParent(CombatInterface.instance.transform);
+			wasUnitRefOpen = CombatInterface.instance.tabs[4].activeSelf;
+			CombatInterface.instance.tabs[4].gameObject.SetActive(value: false);
+			TerrainTiles.instance.xyPixelCoord = campaignData.lastEncounterPixelCoords;
+			GenerateCampaignEngagement(playerMobile[campaignData.currentlyInCombatIndex], null, filepath);
+		}
+		for (int num3 = 0; num3 < landMapLocations.Count; num3++)
+		{
+			if (landMapLocations[num3].troops[0] > 0 && landMapLocations[num3].troops[1] > 0)
+			{
+				CampaignInterface.instance.SetFireToLocation(landMapLocations[num3], isOn: true);
+			}
+		}
+		if (OptionsManager.instance.campaignDifficultyMultipliers == null || OptionsManager.instance.campaignDifficultyMultipliers.Length < 30)
+		{
+			string[] array2 = AssetLoader.instance.ImportText("campaign/" + campaignData.campaignID + "/setup.txt");
+			CampDifficultyArrays campDifficultyArrays = new CampDifficultyArrays();
+			JsonUtility.FromJsonOverwrite(array2[0], campDifficultyArrays);
+			campaignData.campDifficultyPreset0 = campDifficultyArrays.campDifficultyPreset0;
+			campaignData.campDifficultyPreset1 = campDifficultyArrays.campDifficultyPreset1;
+			campaignData.campDifficultyPreset2 = campDifficultyArrays.campDifficultyPreset2;
+			campaignData.campDifficultyPreset3 = campDifficultyArrays.campDifficultyPreset3;
+			campaignData.campDifficultyPreset4 = campDifficultyArrays.campDifficultyPreset4;
+			campaignData.SetCampaignDifficulty();
+		}
+		if (campaignData.campaignEnded)
+		{
+			SummaryStats.instance.OpenCampaignSummary();
+		}
+	}
+
+	public void SetMapTexture(bool clear = false)
+	{
+		if (clear)
+		{
+			mapMaterial.SetTexture("_TexTL", null);
+			mapMaterial.SetTexture("_TexTR", null);
+			mapMaterial.SetTexture("_TexBL", null);
+			mapMaterial.SetTexture("_TexBR", null);
+			return;
+		}
+		for (int i = 0; i < mapSharderQuads.Length; i++)
+		{
+			Texture2D texture2D = AssetLoader.instance.ImportTexture2D(campaignData.mapImagePaths[i], resourcesOnly: false, mipMap: true);
+			texture2D.wrapMode = TextureWrapMode.Clamp;
+			texture2D.filterMode = FilterMode.Bilinear;
+			mapMaterial.SetTexture(mapSharderQuads[i], texture2D);
+		}
+	}
+
+	public void StartCampaign(string filepath = "")
+	{
+		base.gameObject.SetActive(value: true);
+		if (base.gameObject.GetComponent<ModTFOverlay>() == null)
+		{
+			base.gameObject.AddComponent<ModTFOverlay>();
+		}
+		ModGlobe.Ensure(this);
+		StartCoroutine(SetupCampaign(filepath));
+	}
+
+	private IEnumerator SetupCampaign(string filepath = "")
+	{
+		LoadScreen.instance.SetLoadProgress(0.5f);
+		yield return null;
+		campaignData.commandPointSpent = new int[2];
+		campaignData.campaignID = MenuSystem.instance.selectionFileNames[MenuSystem.instance.currentSelectedIndex];
+		if (filepath != string.Empty)
+		{
+			string[] array = File.ReadAllLines(filepath);
+			JsonUtility.FromJsonOverwrite(array[0], campaignData);
+			if (campaignData.gameVersion != MenuSystem.instance.versionString && !Tutorial.instance.gameObject.activeSelf)
+			{
+				string text = "_" + campaignData.gameVersion.Replace(".", string.Empty);
+				string text2 = Path.Combine(Application.persistentDataPath, Path.Combine(Library.instance.backupPath, MenuSystem.instance.selectionFileNames[MenuSystem.instance.currentSelectedIndex]));
+				text2 = text2.Replace(".txt", text + ".txt");
+				if (!File.Exists(text2))
+				{
+					File.WriteAllLines(text2, array);
+				}
+			}
+		}
+		base.gameObject.SetActive(value: true);
+		CombatInterface.instance.transform.parent.gameObject.SetActive(value: false);
+		mapRenderer.sharedMaterial = mapMaterial;
+		landMapLocations = new List<MapLocation>();
+		campaignData.InitialiseCampaignData(filepath);
+		if (campaignData.customWaterMask)
+		{
+			Texture2D waterMask = AssetLoader.instance.ImportTexture2D(campaignData.mapWaterMask);
+			CampaignInterface.instance.map.waterMask = waterMask;
+		}
+		CampaignInterface.instance.InitialiseCampaignInterface();
+		CampaignInterface.instance.map.wrapHorizontally = false;
+		CampaignInterface.instance.map.zoomMinDistance = campaignData.mapZoomLevels.x;
+		CampaignInterface.instance.map.zoomMaxDistance = campaignData.mapZoomLevels.y;
+		CampaignInterface.instance.CentreMap();
+		SetMapTexture();
+		CreateSeaWaypoints("campaign/" + campaignData.campaignID + "/seaWaypoints.txt");
+		CreateLandLocations("campaign/" + campaignData.campaignID + "/mapLandLocations.txt");
+		CreateObjectives("language/campaign/" + campaignData.campaignID + "/objectives.txt");
+		UnitReference.instance.SwitchUnitReferenceTransform(UnitReference.instance.unitRefPositions[1], isOn: false);
+		CampaignInterface.instance.TogglePauseCampaign();
+		if (filepath == string.Empty)
+		{
+			campaignData.enemyUsesSubs = CampaignSettings.instance.settingsToggles[0].isOn;
+			campaignData.enemyUsesCarriers = CampaignSettings.instance.settingsToggles[1].isOn;
+			campaignData.refundPostRepair = CampaignSettings.instance.settingsToggles[2].isOn;
+			campaignData.carrierWingsRequireRelease = CampaignSettings.instance.settingsToggles[3].isOn;
+			campaignData.usePortResourcesToResupplyAmmo = CampaignSettings.instance.settingsToggles[4].isOn;
+			campaignData.usePortResourcesToResupplyShipAircraft = CampaignSettings.instance.settingsToggles[5].isOn;
+			campaignData.usePortResourcesToResupplyAirfields = CampaignSettings.instance.settingsToggles[6].isOn;
+			campaignData.replenishLimitAircraft = CampaignSettings.instance.settingsToggles[7].isOn;
+			campaignData.supplyShipsAllowed = CampaignSettings.instance.settingsToggles[8].isOn;
+			campaignData.enableStrategicBombing = CampaignSettings.instance.settingsToggles[9].isOn;
+		}
+		CampaignAI.instance.InitialiseAI();
+		WeatherManager.instance.CreateWeatherCells();
+		campaignData.playerObjectEngaged = -1;
+		if (filepath != string.Empty)
+		{
+			LoadCampaign(filepath);
+			for (int i = 0; i < landMapLocations.Count; i++)
+			{
+				landMapLocations[i].GetComponentInChildren<SpriteRenderer>().color = CampaignInterface.instance.factionColours[landMapLocations[i].currentFaction];
+				if (landMapLocations[i].troops[0] > 0 && landMapLocations[i].troops[1] > 0)
+				{
+					CampaignInterface.instance.SetFireToLocation(landMapLocations[i], isOn: true);
+				}
+			}
+			for (int j = 0; j < campaignData.mapMarkersSaveData.Count; j++)
+			{
+				MapMarkerData mapMarkerData = new MapMarkerData();
+				JsonUtility.FromJsonOverwrite(campaignData.mapMarkersSaveData[j], mapMarkerData);
+				CampaignInterface.instance.CreateMarker(mapMarkerData.locationPosition, mapMarkerData.locationName, mapMarkerData.locationDescription, mapMarkerData.portLevel);
+			}
+			CampaignInterface.instance.mapDrawField.transform.parent.parent.gameObject.SetActive(value: false);
+		}
+		else
+		{
+			campaignData.commandPoints[0] = Mathf.FloorToInt((float)campaignData.commandPoints[0] * Utilities.GetCampaignDifficultyModifier(CampaignDifficulty.StartPoints, Faction.Player));
+			campaignData.releaseRefund *= Utilities.GetCampaignDifficultyModifier(CampaignDifficulty.ReleaseRefund, Faction.Player);
+			campaignData.enemySunkYield *= Utilities.GetCampaignDifficultyModifier(CampaignDifficulty.SunkPoints, Faction.Player);
+			campaignData.baseRepairTime[0] = campaignData.baseRepairTime[0] + (int)Utilities.GetCampaignDifficultyModifier(CampaignDifficulty.RepairDays, Faction.Player);
+			campaignData.baseRepairTime[1] = campaignData.baseRepairTime[1] + (int)Utilities.GetCampaignDifficultyModifier(CampaignDifficulty.RepairDays, Faction.Enemy);
+			campaignData.repairPerComp[0] = campaignData.repairPerComp[0] + (int)Utilities.GetCampaignDifficultyModifier(CampaignDifficulty.AddRepair, Faction.Player);
+			campaignData.repairPerComp[1] = campaignData.repairPerComp[1] + (int)Utilities.GetCampaignDifficultyModifier(CampaignDifficulty.AddRepair, Faction.Enemy);
+			for (int k = 0; k < campaignData.replenish0.Count; k++)
+			{
+				campaignData.replenish0[k] = Mathf.FloorToInt((float)campaignData.replenish0[k] * Utilities.GetCampaignDifficultyModifier(CampaignDifficulty.ReplenishRate, Faction.Player));
+				campaignData.replenish1[k] = Mathf.FloorToInt((float)campaignData.replenish0[k] * Utilities.GetCampaignDifficultyModifier(CampaignDifficulty.ReplenishRate, Faction.Enemy));
+			}
+			for (int l = 0; l < campaignData.suppliesPerUpgrade0.Count; l++)
+			{
+				campaignData.suppliesPerUpgrade0[l] = Mathf.FloorToInt((float)campaignData.suppliesPerUpgrade0[l] * Utilities.GetCampaignDifficultyModifier(CampaignDifficulty.UpgradeCost, Faction.Player));
+				campaignData.suppliesPerUpgrade1[l] = Mathf.FloorToInt((float)campaignData.suppliesPerUpgrade1[l] * Utilities.GetCampaignDifficultyModifier(CampaignDifficulty.UpgradeCost, Faction.Enemy));
+				campaignData.engineeringPerUpgrade0[l] = Mathf.FloorToInt((float)campaignData.engineeringPerUpgrade0[l] * Utilities.GetCampaignDifficultyModifier(CampaignDifficulty.UpgradeCost, Faction.Player));
+				campaignData.engineeringPerUpgrade1[l] = Mathf.FloorToInt((float)campaignData.engineeringPerUpgrade1[l] * Utilities.GetCampaignDifficultyModifier(CampaignDifficulty.UpgradeCost, Faction.Enemy));
+				campaignData.fuelPerUpgrade0[l] = Mathf.FloorToInt((float)campaignData.fuelPerUpgrade0[l] * Utilities.GetCampaignDifficultyModifier(CampaignDifficulty.UpgradeCost, Faction.Player));
+				campaignData.fuelPerUpgrade1[l] = Mathf.FloorToInt((float)campaignData.fuelPerUpgrade1[l] * Utilities.GetCampaignDifficultyModifier(CampaignDifficulty.UpgradeCost, Faction.Enemy));
+			}
+			campaignData.unavailableShipInstances = new List<int>();
+			for (int m = 0; m < campaignData.unavailableShipClasses.Count; m++)
+			{
+				if (EngagementManager.instance.unitDataDictionary.ContainsKey(campaignData.unavailableShipClasses[m]))
+				{
+					int num = EngagementManager.instance.unitDataDictionary[campaignData.unavailableShipClasses[m]].instancesInClass.IndexOf(campaignData.unavailableShipInstanceNames[m]);
+					if (num != -1)
+					{
+						campaignData.unavailableShipInstances.Add(num);
+						continue;
+					}
+					campaignData.unavailableShipInstances.Add(-1);
+					Debug.LogError("Unavailable Ship Not Found: " + campaignData.unavailableShipClasses[m] + " " + campaignData.unavailableShipInstanceNames[m]);
+				}
+				else
+				{
+					campaignData.unavailableShipInstances.Add(-1);
+				}
+			}
+			CampaignInterface.instance.dateTime = new DateTime(campaignData.currentDateTime[5], campaignData.currentDateTime[4], campaignData.currentDateTime[3], campaignData.currentDateTime[2], campaignData.currentDateTime[1], campaignData.currentDateTime[0]);
+			campaignData.airOpsFirstHourPaused = campaignData.airOpHours[CampaignInterface.instance.dateTime.Hour];
+		}
+		CampaignInterface.instance.startDate = new DateTime(campaignData.startDate[5], campaignData.startDate[4], campaignData.startDate[3], campaignData.startDate[2], campaignData.startDate[1], campaignData.startDate[0]);
+		CampaignInterface.instance.SetDateTimeText();
+		CampaignInterface.instance.SetCommandTotal();
+		CampaignInterface.instance.SetLightMeter();
+		CampaignInterface.instance.strategicBombButton.SetActive(campaignData.enableStrategicBombing);
+		if (Config.instance.showCampaignLocationRadii)
+		{
+			MapRadii.instance.CreateMapRadii();
+			MapRadii.instance.SetMapRadii();
+		}
+		UnitReference.instance.PopulateUnitReferencePulldowns();
+		UnitReference.instance.DisplayUnitReference(EngagementManager.instance.unitSeaOrderList[0]);
+		if (filepath == string.Empty)
+		{
+			CampaignAI.instance.CreateStandingMissions();
+			CampaignAI.instance.MakeStrategicDecision();
+			CampaignEvent.instance.CreateEvent("start");
+		}
+		if (campaignData.playerObjectEngaged != -1 && campaignData.playerObjectEngaged < playerMobile.Count)
+		{
+			EngagementPanel.instance.OpenEngagementPanel(campaignData.playerObjectEngaged);
+		}
+		MenuSystem.instance.CloseMenuSystem();
+		LoadScreen.instance.SetLoadProgress(1f);
+	}
+
+	private Vector2 GetPointInRadius(Vector3 posRadius)
+	{
+		return new Vector2(posRadius.x + UnityEngine.Random.Range(0f - posRadius.z, posRadius.z), posRadius.y + UnityEngine.Random.Range(0f - posRadius.z, posRadius.z));
+	}
+
+	public int GetValidNeighbour(int startWaypoint, bool includeStart, List<int> prohibited)
+	{
+		SeaNavigationWaypoint seaNavigationWaypoint = seaNavigationPoints[startWaypoint];
+		List<int> list = new List<int>();
+		for (int i = 0; i < seaNavigationWaypoint.northWP.Count; i++)
+		{
+			if (!prohibited.Contains(seaNavigationWaypoint.northWP[i]) && !list.Contains(seaNavigationWaypoint.northWP[i]))
+			{
+				list.Add(seaNavigationWaypoint.northWP[i]);
+			}
+		}
+		for (int j = 0; j < seaNavigationWaypoint.eastWP.Count; j++)
+		{
+			if (!prohibited.Contains(seaNavigationWaypoint.eastWP[j]) && !list.Contains(seaNavigationWaypoint.eastWP[j]))
+			{
+				list.Add(seaNavigationWaypoint.eastWP[j]);
+			}
+		}
+		for (int k = 0; k < seaNavigationWaypoint.southWP.Count; k++)
+		{
+			if (!prohibited.Contains(seaNavigationWaypoint.southWP[k]) && !list.Contains(seaNavigationWaypoint.southWP[k]))
+			{
+				list.Add(seaNavigationWaypoint.southWP[k]);
+			}
+		}
+		for (int l = 0; l < seaNavigationWaypoint.westWP.Count; l++)
+		{
+			if (!prohibited.Contains(seaNavigationWaypoint.westWP[l]) && !list.Contains(seaNavigationWaypoint.westWP[l]))
+			{
+				list.Add(seaNavigationWaypoint.westWP[l]);
+			}
+		}
+		if (includeStart)
+		{
+			if (!list.Contains(startWaypoint))
+			{
+				list.Add(startWaypoint);
+			}
+		}
+		else if (list.Contains(startWaypoint))
+		{
+			list.Remove(startWaypoint);
+		}
+		return list[UnityEngine.Random.Range(0, list.Count)];
+	}
+
+	public List<int> GetValidNeighbours(int startWaypoint, bool includeStart, List<int> prohibited)
+	{
+		SeaNavigationWaypoint seaNavigationWaypoint = seaNavigationPoints[startWaypoint];
+		List<int> list = new List<int>();
+		for (int i = 0; i < seaNavigationWaypoint.northWP.Count; i++)
+		{
+			if (!prohibited.Contains(seaNavigationWaypoint.northWP[i]) && !list.Contains(seaNavigationWaypoint.northWP[i]))
+			{
+				list.Add(seaNavigationWaypoint.northWP[i]);
+			}
+		}
+		for (int j = 0; j < seaNavigationWaypoint.eastWP.Count; j++)
+		{
+			if (!prohibited.Contains(seaNavigationWaypoint.eastWP[j]) && !list.Contains(seaNavigationWaypoint.eastWP[j]))
+			{
+				list.Add(seaNavigationWaypoint.eastWP[j]);
+			}
+		}
+		for (int k = 0; k < seaNavigationWaypoint.southWP.Count; k++)
+		{
+			if (!prohibited.Contains(seaNavigationWaypoint.southWP[k]) && !list.Contains(seaNavigationWaypoint.southWP[k]))
+			{
+				list.Add(seaNavigationWaypoint.southWP[k]);
+			}
+		}
+		for (int l = 0; l < seaNavigationWaypoint.westWP.Count; l++)
+		{
+			if (!prohibited.Contains(seaNavigationWaypoint.westWP[l]) && !list.Contains(seaNavigationWaypoint.westWP[l]))
+			{
+				list.Add(seaNavigationWaypoint.westWP[l]);
+			}
+		}
+		if (includeStart)
+		{
+			if (!list.Contains(startWaypoint))
+			{
+				list.Add(startWaypoint);
+			}
+		}
+		else if (list.Contains(startWaypoint))
+		{
+			list.Remove(startWaypoint);
+		}
+		return list;
+	}
+
+	public void GetNextNavPosition(GameObjectAnimator obj)
+	{
+		obj.Stop();
+		if (obj.mobileMapObject.currentWaypoint == obj.mobileMapObject.lastWaypoint)
+		{
+			if (CampaignAI.instance.seaMissions[obj.mobileMapObject.missionIndex].destIsLocation)
+			{
+				CampaignAI.instance.OnDestinationReached(obj);
+			}
+			else if (CampaignAI.instance.seaMissions[obj.mobileMapObject.missionIndex].patrolDestZone)
+			{
+				Vector2 zero = Vector2.zero;
+				if (CampaignAI.instance.seaMissions[obj.mobileMapObject.missionIndex].patrolNeighbours && obj.mobileMapObject.currentWaypoint == obj.mobileMapObject.lastWaypoint)
+				{
+					obj.mobileMapObject.previousWaypoint = obj.mobileMapObject.currentWaypoint;
+					obj.mobileMapObject.currentWaypoint = GetValidNeighbour(obj.mobileMapObject.currentWaypoint, includeStart: true, obj.mobileMapObject.prohibitedWaypoints);
+					zero = GetPointInNavZone(obj.mobileMapObject.currentWaypoint);
+				}
+				else
+				{
+					zero = GetPointInNavZone(obj.mobileMapObject.currentWaypoint);
+				}
+				obj.MoveTo(zero, CampaignInterface.instance.GetMoveDuration(obj.currentMap2DLocation, zero, obj.mobileMapObject.speed), DURATION_TYPE.Route);
+				return;
+			}
+		}
+		if (obj.mobileMapObject.currentWaypoint == obj.mobileMapObject.waitAtWaypoint && CampaignInterface.instance.dateTime.Hour < obj.mobileMapObject.untilHour)
+		{
+			Vector2 zero2 = Vector2.zero;
+			zero2 = GetPointInNavZone(obj.mobileMapObject.currentWaypoint);
+			obj.MoveTo(zero2, CampaignInterface.instance.GetMoveDuration(obj.currentMap2DLocation, zero2, obj.mobileMapObject.speed), DURATION_TYPE.Route);
+			return;
+		}
+		int previousWaypoint = obj.mobileMapObject.previousWaypoint;
+		obj.mobileMapObject.previousWaypoint = obj.mobileMapObject.currentWaypoint;
+		_ = Vector2.zero;
+		if (obj.mobileMapObject.mustUseWaypoints.Count != 0 && obj.mobileMapObject.type == 0)
+		{
+			obj.mobileMapObject.currentWaypoint = GetNextWaypoint(obj, previousWaypoint);
+			obj.MoveTo(seaNavigationPoints[obj.mobileMapObject.currentWaypoint].positionRadius, CampaignInterface.instance.GetMoveDuration(obj.currentMap2DLocation, seaNavigationPoints[obj.mobileMapObject.currentWaypoint].positionRadius, obj.mobileMapObject.speed), DURATION_TYPE.Route);
+		}
+	}
+
+	private Vector2 GetPointInNavZone(int zoneIndex)
+	{
+		Vector3 positionRadius = seaNavigationPoints[zoneIndex].positionRadius;
+		Vector2 vector = UnityEngine.Random.insideUnitCircle * seaNavigationPoints[zoneIndex].positionRadius.z;
+		vector.x /= 2f;
+		return new Vector2(positionRadius.x, positionRadius.y) + vector;
+	}
+
+	private int CheckMustUse(GameObjectAnimator obj)
+	{
+		int num = -1;
+		if (obj.mobileMapObject.mustUseWaypoints.Count > 0)
+		{
+			num = seaNavigationPoints[obj.mobileMapObject.currentWaypoint].northWP.IndexOf(obj.mobileMapObject.mustUseWaypoints[0]);
+			if (num != -1)
+			{
+				return seaNavigationPoints[obj.mobileMapObject.currentWaypoint].northWP[num];
+			}
+			num = seaNavigationPoints[obj.mobileMapObject.currentWaypoint].southWP.IndexOf(obj.mobileMapObject.mustUseWaypoints[0]);
+			if (num != -1)
+			{
+				return seaNavigationPoints[obj.mobileMapObject.currentWaypoint].southWP[num];
+			}
+			num = seaNavigationPoints[obj.mobileMapObject.currentWaypoint].eastWP.IndexOf(obj.mobileMapObject.mustUseWaypoints[0]);
+			if (num != -1)
+			{
+				return seaNavigationPoints[obj.mobileMapObject.currentWaypoint].eastWP[num];
+			}
+			num = seaNavigationPoints[obj.mobileMapObject.currentWaypoint].westWP.IndexOf(obj.mobileMapObject.mustUseWaypoints[0]);
+			if (num != -1)
+			{
+				return seaNavigationPoints[obj.mobileMapObject.currentWaypoint].westWP[num];
+			}
+		}
+		return num;
+	}
+
+	private int GetNextWaypoint(GameObjectAnimator obj, int previousWaypoint = -1)
+	{
+		MobileMapObject mobileMapObject = obj.mobileMapObject;
+		mobileMapObject.aiWaypointIndexesToCheck.Clear();
+		int num = CheckMustUse(obj);
+		if (num != -1)
+		{
+			if (mobileMapObject.mustUseWaypoints.Count > 1)
+			{
+				mobileMapObject.mustUseWaypoints.RemoveAt(0);
+			}
+			return num;
+		}
+		float num2 = mobileMapObject.destinationPosition.x - obj.currentMap2DLocation.x;
+		float num3 = mobileMapObject.destinationPosition.y - obj.currentMap2DLocation.y;
+		bool[] array = new bool[4];
+		if (num2 >= 0f)
+		{
+			GetAdditionalPossibleWaypoints(mobileMapObject, seaNavigationPoints[mobileMapObject.currentWaypoint].eastWP, previousWaypoint);
+			array[1] = true;
+		}
+		else
+		{
+			GetAdditionalPossibleWaypoints(mobileMapObject, seaNavigationPoints[mobileMapObject.currentWaypoint].westWP, previousWaypoint);
+			array[3] = true;
+		}
+		if (num3 >= 0f)
+		{
+			GetAdditionalPossibleWaypoints(mobileMapObject, seaNavigationPoints[mobileMapObject.currentWaypoint].northWP, previousWaypoint);
+			array[0] = true;
+		}
+		else
+		{
+			GetAdditionalPossibleWaypoints(mobileMapObject, seaNavigationPoints[mobileMapObject.currentWaypoint].southWP, previousWaypoint);
+			array[2] = true;
+		}
+		if (mobileMapObject.aiWaypointIndexesToCheck.Count == 0)
+		{
+			if (!array[0])
+			{
+				GetAdditionalPossibleWaypoints(mobileMapObject, seaNavigationPoints[mobileMapObject.currentWaypoint].northWP);
+			}
+			if (!array[1])
+			{
+				GetAdditionalPossibleWaypoints(mobileMapObject, seaNavigationPoints[mobileMapObject.currentWaypoint].eastWP);
+			}
+			if (!array[2])
+			{
+				GetAdditionalPossibleWaypoints(mobileMapObject, seaNavigationPoints[mobileMapObject.currentWaypoint].southWP);
+			}
+			if (!array[3])
+			{
+				GetAdditionalPossibleWaypoints(mobileMapObject, seaNavigationPoints[mobileMapObject.currentWaypoint].westWP);
+			}
+			if (mobileMapObject.aiWaypointIndexesToCheck.Count > 1 && mobileMapObject.aiWaypointIndexesToCheck.Contains(mobileMapObject.previousWaypoint))
+			{
+				mobileMapObject.aiWaypointIndexesToCheck.Remove(mobileMapObject.previousWaypoint);
+			}
+		}
+		string text = string.Empty;
+		for (int i = 0; i < mobileMapObject.aiWaypointIndexesToCheck.Count; i++)
+		{
+			text = text + seaNavigationPoints[mobileMapObject.aiWaypointIndexesToCheck[i]].waypointName + ", ";
+		}
+		if (mobileMapObject.aiWaypointIndexesToCheck.Count == 0)
+		{
+			GetAllWaypoints(mobileMapObject, seaNavigationPoints[mobileMapObject.currentWaypoint].northWP);
+			GetAllWaypoints(mobileMapObject, seaNavigationPoints[mobileMapObject.currentWaypoint].southWP);
+			GetAllWaypoints(mobileMapObject, seaNavigationPoints[mobileMapObject.currentWaypoint].eastWP);
+			GetAllWaypoints(mobileMapObject, seaNavigationPoints[mobileMapObject.currentWaypoint].westWP);
+			return mobileMapObject.aiWaypointIndexesToCheck[UnityEngine.Random.Range(0, mobileMapObject.aiWaypointIndexesToCheck.Count)];
+		}
+		if (mobileMapObject.mustUseWaypoints.Count > 0 && mobileMapObject.aiWaypointIndexesToCheck.Contains(mobileMapObject.mustUseWaypoints[0]))
+		{
+			int result = mobileMapObject.mustUseWaypoints[0];
+			if (mobileMapObject.mustUseWaypoints.Count > 1)
+			{
+				mobileMapObject.mustUseWaypoints.RemoveAt(0);
+			}
+			return result;
+		}
+		if (CampaignAI.instance.seaMissions[mobileMapObject.missionIndex].directPath && mobileMapObject.aiWaypointIndexesToCheck.Count > 1)
+		{
+			float num4 = float.PositiveInfinity;
+			int index = 0;
+			for (int j = 0; j < mobileMapObject.aiWaypointIndexesToCheck.Count; j++)
+			{
+				float num5 = Vector3.Distance(seaNavigationPoints[mobileMapObject.aiWaypointIndexesToCheck[j]].positionRadius, mobileMapObject.destinationPosition);
+				if (num5 < num4)
+				{
+					num4 = num5;
+					index = j;
+				}
+			}
+			return mobileMapObject.aiWaypointIndexesToCheck[index];
+		}
+		return mobileMapObject.aiWaypointIndexesToCheck[UnityEngine.Random.Range(0, mobileMapObject.aiWaypointIndexesToCheck.Count)];
+	}
+
+	private void GetAdditionalPossibleWaypoints(MobileMapObject mmo, List<int> waypointsToCheck, int disallow = -1)
+	{
+		for (int i = 0; i < waypointsToCheck.Count; i++)
+		{
+			if (waypointsToCheck[i] != mmo.previousWaypoint && !mmo.aiWaypointIndexesToCheck.Contains(waypointsToCheck[i]) && !mmo.prohibitedWaypoints.Contains(waypointsToCheck[i]) && mmo.previousWaypoint != waypointsToCheck[i] && (!seaNavigationPoints[waypointsToCheck[i]].isLocation || mmo.mustUseWaypoints.Contains(waypointsToCheck[i])) && disallow != -1)
+			{
+				mmo.aiWaypointIndexesToCheck.Add(waypointsToCheck[i]);
+			}
+		}
+	}
+
+	private void GetAllWaypoints(MobileMapObject mmo, List<int> waypointsToCheck)
+	{
+		for (int i = 0; i < waypointsToCheck.Count; i++)
+		{
+			mmo.aiWaypointIndexesToCheck.Add(waypointsToCheck[i]);
+		}
+	}
+
+	public int GetNearestSeaWaypoint(GameObjectAnimator goa)
+	{
+		float num = float.PositiveInfinity;
+		int result = 0;
+		for (int i = 0; i < seaNavigationPoints.Count; i++)
+		{
+			float num2 = Vector2.Distance(goa.currentMap2DLocation, seaNavigationPoints[i].positionRadius);
+			if (num2 < num)
+			{
+				num = num2;
+				result = i;
+			}
+		}
+		return result;
+	}
+
+	public GameObjectAnimator GetNearestMobileOfSameType(GameObjectAnimator goa, List<GameObjectAnimator> goaList)
+	{
+		float num = float.PositiveInfinity;
+		int num2 = -1;
+		for (int i = 0; i < goaList.Count; i++)
+		{
+			if (goaList[i] != goa && goaList[i].mobileMapObject.type == goa.mobileMapObject.type)
+			{
+				float num3 = Vector2.Distance(goa.currentMap2DLocation, goaList[i].currentMap2DLocation);
+				if (num3 < num)
+				{
+					num = num3;
+					num2 = i;
+				}
+			}
+		}
+		if (num2 == -1)
+		{
+			return null;
+		}
+		return goaList[num2];
+	}
+
+	public void OnDestinationReached(GameObjectAnimator goa)
+	{
+		if (goa.mobileMapObject.type != 1)
+		{
+			return;
+		}
+		if (goa.mobileMapObject.currentFaction == 1 && goa.mobileMapObject.missionIndex == 5)
+		{
+			if (CampaignAI.instance.strategicBombData.ContainsKey(goa.mobileMapObject.unitPrefabs[0]))
+			{
+				StrategicBombLocation(goa.mobileMapObject, GetClosestLocation(goa));
+			}
+			goa.mobileMapObject.currentCampaignAction = 1;
+			goa.mobileMapObject.missionIndex = 0;
+		}
+		else if (goa.mobileMapObject.currentCampaignAction == 1)
+		{
+			AirAttemptLand(goa);
+		}
+		else if (goa.mobileMapObject.escortingThisGOA != null)
+		{
+			AutoPlayerManager.instance.MoveGoaToEscorted(goa);
+		}
+	}
+
+	private int GetMobileMapObjectNextWaypoint(GameObjectAnimator goa)
+	{
+		_ = goa.isMoving;
+		return 0;
+	}
+
+	public void ApplyUpgradeLocation(MapLocation ml, int baseType, bool player)
+	{
+		int index = ((baseType != 0) ? ml.airfieldLevel : ml.portLevel);
+		if (player)
+		{
+			ml.supplies[0] -= campaignData.suppliesPerUpgrade0[index];
+			ml.fuel[0] -= campaignData.fuelPerUpgrade0[index];
+			ml.engineering[0] -= campaignData.engineeringPerUpgrade0[index];
+			if (baseType == 0)
+			{
+				ml.portLevel++;
+			}
+			else
+			{
+				ml.airfieldLevel++;
+				CampaignAI.instance.CheckUnsafeLocations(ml);
+			}
+		}
+		else
+		{
+			ml.supplies[1] -= campaignData.suppliesPerUpgrade1[index];
+			ml.fuel[1] -= campaignData.fuelPerUpgrade1[index];
+			ml.engineering[1] -= campaignData.engineeringPerUpgrade1[index];
+			if (baseType == 0)
+			{
+				ml.portLevel++;
+			}
+			else
+			{
+				ml.airfieldLevel++;
+			}
+		}
+		if (Config.instance.showCampaignLocationRadii)
+		{
+			MapRadii.instance.SetMapRadii();
+		}
+		if (CampaignInterface.instance.currentMapObject == ml.GetComponent<GameObjectAnimator>())
+		{
+			CampaignInterface.instance.SelectMapObject(CampaignInterface.instance.currentMapObject);
+		}
+	}
+
+	public bool IsPortUpgradable(MapLocation ml, Faction faction)
+	{
+		if (ml.portLevel >= campaignData.maxPort[(int)faction])
+		{
+			return false;
+		}
+		if (faction == Faction.Player)
+		{
+			if (ml.supplies[0] >= campaignData.suppliesPerUpgrade0[ml.portLevel] && ml.fuel[0] >= campaignData.fuelPerUpgrade0[ml.portLevel] && ml.engineering[0] >= campaignData.engineeringPerUpgrade0[ml.portLevel])
+			{
+				return true;
+			}
+		}
+		else if (ml.supplies[1] >= campaignData.suppliesPerUpgrade1[ml.portLevel] && ml.fuel[1] >= campaignData.fuelPerUpgrade1[ml.portLevel] && ml.engineering[1] >= campaignData.engineeringPerUpgrade1[ml.portLevel])
+		{
+			return true;
+		}
+		return false;
+	}
+
+	public bool IsAirfieldUpgradable(MapLocation ml, Faction faction)
+	{
+		if (ml.airfieldLevel >= campaignData.maxAirfield[(int)faction])
+		{
+			return false;
+		}
+		if (faction == Faction.Player)
+		{
+			if (ml.supplies[0] >= campaignData.suppliesPerUpgrade0[ml.airfieldLevel] && ml.fuel[0] >= campaignData.fuelPerUpgrade0[ml.airfieldLevel] && ml.engineering[0] >= campaignData.engineeringPerUpgrade0[ml.airfieldLevel])
+			{
+				return true;
+			}
+		}
+		else if (ml.supplies[1] >= campaignData.suppliesPerUpgrade1[ml.airfieldLevel] && ml.fuel[1] >= campaignData.fuelPerUpgrade1[ml.airfieldLevel] && ml.engineering[1] >= campaignData.engineeringPerUpgrade1[ml.airfieldLevel])
+		{
+			return true;
+		}
+		return false;
+	}
+
+	private void CreateSeaWaypoints(string path)
+	{
+		seaNavigationPoints = new List<SeaNavigationWaypoint>();
+		seaNavigationIndexes = new Dictionary<string, int>();
+		string[] array = AssetLoader.instance.ImportText(path);
+		for (int i = 0; i < array.Length; i++)
+		{
+			SeaNavigationWaypoint seaNavigationWaypoint = new SeaNavigationWaypoint();
+			JsonUtility.FromJsonOverwrite(array[i], seaNavigationWaypoint);
+			seaNavigationWaypoint.navWaypointID = i;
+			seaNavigationWaypoint.positionRadius = new Vector3(float.Parse(seaNavigationWaypoint.pos[0]), float.Parse(seaNavigationWaypoint.pos[1]), float.Parse(seaNavigationWaypoint.pos[2]));
+			seaNavigationIndexes.Add(seaNavigationWaypoint.waypointName, i);
+			seaNavigationPoints.Add(seaNavigationWaypoint);
+		}
+		for (int j = 0; j < seaNavigationPoints.Count; j++)
+		{
+			seaNavigationPoints[j].northWP = GetListIndexes(seaNavigationPoints[j].sNorthWP);
+			seaNavigationPoints[j].southWP = GetListIndexes(seaNavigationPoints[j].sSouthWP);
+			seaNavigationPoints[j].eastWP = GetListIndexes(seaNavigationPoints[j].sEastWP);
+			seaNavigationPoints[j].westWP = GetListIndexes(seaNavigationPoints[j].sWestWP);
+		}
+	}
+
+	private List<int> GetListIndexes(List<string> inputList)
+	{
+		List<int> list = new List<int>();
+		for (int i = 0; i < inputList.Count; i++)
+		{
+			list.Add(seaNavigationIndexes[inputList[i]]);
+		}
+		return list;
+	}
+
+	private void CreateObjectives(string path)
+	{
+		SummaryStats.instance.objectivesText.text = string.Empty;
+		string[] array = AssetLoader.instance.ImportText(path);
+		for (int i = 0; i < array.Length; i++)
+		{
+			Text objectivesText = SummaryStats.instance.objectivesText;
+			objectivesText.text = objectivesText.text + array[i] + "\n";
+		}
+		SummaryStats.instance.objectivesText.transform.parent.gameObject.SetActive(value: true);
+	}
+
+	private void CreateLandLocations(string path)
+	{
+		string[] array = AssetLoader.instance.ImportText(path);
+		for (int i = 0; i < array.Length; i++)
+		{
+			CampaignInterface.instance.AddMapLocationAtPosition(array[i], i);
+		}
+		array = AssetLoader.instance.ImportText("language/campaign/" + campaignData.campaignID + "/mapLocationNames.txt");
+		CampaignAI.instance.enemyHomePorts.Clear();
+		CampaignAI.instance.playerHomePorts.Clear();
+		for (int j = 0; j < landMapLocations.Count; j++)
+		{
+			landMapLocations[j].locationName = array[j].Trim();
+			if (landMapLocations[j].createShips)
+			{
+				if (landMapLocations[j].currentFaction == 0)
+				{
+					CampaignAI.instance.playerHomePorts.Add(landMapLocations[j]);
+				}
+				else if (landMapLocations[j].currentFaction == 1)
+				{
+					CampaignAI.instance.enemyHomePorts.Add(landMapLocations[j]);
+				}
+			}
+		}
+	}
+
+	public int IsPlayerShipInstanceAvailable(string prefabName, int instanceIndex)
+	{
+		int indexInDoubleList = GetIndexInDoubleList(prefabName, instanceIndex, campaignData.playerOwnedShipClasses, campaignData.playerOwnedShipInstances);
+		if (indexInDoubleList != -1)
+		{
+			if (campaignData.playerOwnedRepairDays[indexInDoubleList] > 0)
+			{
+				return 3;
+			}
+			return 0;
+		}
+		if (GetIndexInDoubleList(prefabName, instanceIndex, campaignData.unavailableShipClasses, campaignData.unavailableShipInstances) != -1)
+		{
+			return 1;
+		}
+		if (GetIndexInDoubleList(prefabName, instanceIndex, campaignData.sunkShipClasses, campaignData.sunkShipInstances) != -1)
+		{
+			return 2;
+		}
+		return -1;
+	}
+
+	public bool IsEnemyShipClassAvailable(string prefabName)
+	{
+		if (UnitReference.instance.IsShipClassAvailable(prefabName) != string.Empty)
+		{
+			return false;
+		}
+		int num = 0;
+		for (int i = 0; i < campaignData.unavailableShipClasses.Count; i++)
+		{
+			if (campaignData.unavailableShipClasses[i] == prefabName)
+			{
+				num++;
+			}
+		}
+		for (int j = 0; j < campaignData.enemyOwnedShipClasses.Count; j++)
+		{
+			if (campaignData.enemyOwnedShipClasses[j] == prefabName)
+			{
+				num++;
+			}
+		}
+		for (int k = 0; k < campaignData.sunkShipClasses.Count; k++)
+		{
+			if (campaignData.sunkShipClasses[k] == prefabName)
+			{
+				num++;
+			}
+		}
+		return num < EngagementManager.instance.unitDataDictionary[prefabName].namesInClass.Count;
+	}
+
+	public int IsEnemyShipInstanceAvailable(string prefabName, int instanceIndex)
+	{
+		int indexInDoubleList = GetIndexInDoubleList(prefabName, instanceIndex, campaignData.enemyOwnedShipClasses, campaignData.enemyOwnedShipInstances);
+		if (indexInDoubleList != -1)
+		{
+			if (campaignData.enemyOwnedRepairDays[indexInDoubleList] > 0)
+			{
+				return 3;
+			}
+			return 0;
+		}
+		if (GetIndexInDoubleList(prefabName, instanceIndex, campaignData.unavailableShipClasses, campaignData.unavailableShipInstances) != -1)
+		{
+			return 1;
+		}
+		if (GetIndexInDoubleList(prefabName, instanceIndex, campaignData.sunkShipClasses, campaignData.sunkShipInstances) != -1)
+		{
+			return 2;
+		}
+		return -1;
+	}
+
+	public void ModifyShipInLists(bool isAdded, string prefabName, int instance, int repairTime, List<string> listString, List<int> listInt, List<int> listInt2)
+	{
+		if (isAdded)
+		{
+			listString.Add(prefabName);
+			listInt.Add(instance);
+			listInt2.Add(repairTime);
+			return;
+		}
+		int indexInDoubleList = GetIndexInDoubleList(prefabName, instance, listString, listInt);
+		if (indexInDoubleList != -1)
+		{
+			listString.RemoveAt(indexInDoubleList);
+			listInt.RemoveAt(indexInDoubleList);
+			listInt2.RemoveAt(indexInDoubleList);
+		}
+	}
+
+	public int GetIndexInDoubleList(string prefabName, int instance, List<string> listString, List<int> listInt)
+	{
+		for (int i = 0; i < listString.Count; i++)
+		{
+			if (listString[i] == prefabName && listInt[i] == instance)
+			{
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	public void GenerateCampaignEngagement(GameObjectAnimator obj, GameObjectAnimator obj2 = null, string filepath = "", bool bombard = false)
+	{
+		CampaignInterface.instance.PauseCampaign();
+		if (Config.instance.autoSaveCampaign && filepath == string.Empty)
+		{
+			SaveCampaign(LanguageManager.instance.GetDictionaryString(LanguageManager.generalDictionary, "AutoSaveName"));
+		}
+		campaignData.currentlyInCombatIndex = playerMobile.IndexOf(obj);
+		CombatInterface.instance.gameObject.SetActive(value: false);
+		CampaignInterface.instance.ApplyHighlightColor(CampaignInterface.instance.currentMapObject);
+		if (campaignData.playerObjectEngaged != -1 && obj == playerMobile[campaignData.playerObjectEngaged])
+		{
+			EngagementPanel.instance.gameObject.SetActive(value: false);
+		}
+		if (CampaignInterface.instance.enablePlotCourse)
+		{
+			CampaignInterface.instance.PlotCourse();
+			CampaignInterface.instance.DestroyPathLines();
+			CampaignInterface.instance.DestroyPathLine();
+		}
+		UnitReference.instance.wasLeftOpen = CombatInterface.instance.tabs[4].activeSelf;
+		UnitReference.instance.unitRefPositions[1].transform.position = CombatInterface.instance.tabs[4].transform.GetChild(0).position;
+		UnitReference.instance.SwitchUnitReferenceTransform(UnitReference.instance.unitRefPositions[2], isOn: false);
+		EngagementManager.instance.ClearEngagementData();
+		EngagementData engagementData = EngagementManager.instance.engagementData;
+		engagementData.campaignMobileObjectIndexes0.Clear();
+		engagementData.campaignMobileObjectIndexes1.Clear();
+		engagementData.isCampaignEngagement = true;
+		engagementData.isBombardment = bombard;
+		if (filepath == string.Empty)
+		{
+			engagementData.timeofday = new int[2]
+			{
+				CampaignInterface.instance.dateTime.Hour,
+				CampaignInterface.instance.dateTime.Minute
+			};
+			engagementData.date = new int[3]
+			{
+				CampaignInterface.instance.dateTime.Day,
+				CampaignInterface.instance.dateTime.Month,
+				CampaignInterface.instance.dateTime.Year
+			};
+			engagementData.environmentTime = Utilities.GetTimeOfDayString(engagementData.timeofday[0]);
+			WeatherCell weatherCell = WeatherManager.instance.weatherCells[WeatherManager.instance.GetMapObjectWeatherCellIndex(obj.currentMap2DLocation)];
+			switch (weatherCell.cloudLevel)
+			{
+			case 0:
+				engagementData.environmentWeather = "Clear";
+				break;
+			case 1:
+				engagementData.environmentWeather = "Scattered";
+				break;
+			case 2:
+				engagementData.environmentWeather = "Broken";
+				break;
+			case 3:
+				engagementData.environmentWeather = "Overcast";
+				break;
+			}
+			engagementData.currentSeaState = weatherCell.seaState;
+			engagementData.isRaining = weatherCell.isRaining;
+			engagementData.isStorm = weatherCell.isStorm;
+			engagementData.isSnowing = weatherCell.isSnowing;
+			engagementData.unitGroups.Clear();
+			goasInBattle = new List<GameObjectAnimator>();
+			seaPresent = new bool[2];
+			airNumbers = new int[2];
+			engagementData.unitGroups.Add(GenerateUnitGroupData(obj, Vector3.zero, GetHeadingFromObj(obj), obj.mobileMapObject.speed / 0.514444f, obj.mobileMapObject.currentFaction));
+			seaPresent[obj.mobileMapObject.currentFaction] = obj.mobileMapObject.type == 0;
+			goasInBattle.Add(obj);
+			if (obj.mobileMapObject.type == 1)
+			{
+				airNumbers[obj.mobileMapObject.currentFaction] += obj.mobileMapObject.unitPrefabs.Count;
+			}
+			Vector2 zero = Vector2.zero;
+			if (obj2 != null)
+			{
+				zero = ModGeo.Battle((obj2.currentMap2DLocation - obj.currentMap2DLocation) * campaignData.mapWidthMetres * 0.1f, obj);
+				engagementData.unitGroups.Add(GenerateUnitGroupData(obj2, new Vector3(zero.x, 0f, zero.y / 2f), GetHeadingFromObj(obj2), obj2.mobileMapObject.speed / 0.514444f, obj.mobileMapObject.currentFaction));
+				goasInBattle.Add(obj2);
+				seaPresent[obj2.mobileMapObject.currentFaction] = obj2.mobileMapObject.type == 0;
+				if (obj2.mobileMapObject.type == 1)
+				{
+					airNumbers[obj2.mobileMapObject.currentFaction] += obj2.mobileMapObject.unitPrefabs.Count;
+				}
+			}
+			List<GameObjectAnimator> nearbyMobiles = SortMobilesByDistance(playerMobile, obj.currentMap2DLocation);
+			GetValidNeighbouringMobiles(nearbyMobiles, obj);
+			nearbyMobiles = SortMobilesByDistance(otherMobile, obj.currentMap2DLocation);
+			GetValidNeighbouringMobiles(nearbyMobiles, obj);
+			GameObjectAnimator gameObjectAnimator = null;
+			GameObjectAnimator gameObjectAnimator2 = null;
+			for (int i = 0; i < goasInBattle.Count; i++)
+			{
+				if (goasInBattle[i].mobileMapObject.type == 0)
+				{
+					if (goasInBattle[i].mobileMapObject.currentFaction == 0)
+					{
+						gameObjectAnimator = goasInBattle[i];
+					}
+					else
+					{
+						gameObjectAnimator2 = goasInBattle[i];
+					}
+				}
+			}
+			if (gameObjectAnimator != null && gameObjectAnimator2 != null && GetDistanceInMetresBetweenMapObjects(gameObjectAnimator.currentMap2DLocation, gameObjectAnimator2.currentMap2DLocation) < 6000f)
+			{
+				goasInBattle.Remove(gameObjectAnimator2);
+			}
+			if (campaignData.airOpHours[CampaignInterface.instance.dateTime.Hour])
+			{
+				for (int j = 0; j < goasInBattle.Count; j++)
+				{
+					if (goasInBattle[j].mobileMapObject.currentFaction == 0 || goasInBattle[j].mobileMapObject.type != 0)
+					{
+						continue;
+					}
+					for (int k = 0; k < goasInBattle[j].mobileMapObject.unitPrefabs.Count; k++)
+					{
+						if (Utilities.IsCarrier(goasInBattle[j].mobileMapObject.unitPrefabs[k]))
+						{
+							CampaignAI.instance.CheckCarrierLaunchAirstrikeOnMobile(goasInBattle[j].mobileMapObject, obj.mobileMapObject, encounter: true, gameObjectAnimator != null, isCap: true);
+						}
+					}
+				}
+			}
+			GetValidNeighbouringMobiles(otherMobile, obj);
+			campaignData.lastEncounterPixelCoords = GetXYPixelCoord(obj);
+			if (!TerrainTiles.instance.disableTerrain)
+			{
+				TerrainTiles.instance.xyPixelCoord = campaignData.lastEncounterPixelCoords;
+			}
+			SwichToWorld(forward: true);
+			EngagementManager.instance.InitialiseEngagement(string.Empty, loadFromFile: false);
+		}
+		else
+		{
+			SwichToWorld(forward: true);
+			EngagementData.instance.LoadCombat(filepath);
+		}
+		foreach (Transform item in CampaignInterface.instance.mapLabels.transform.GetChild(0))
+		{
+			if (item != null)
+			{
+				UnityEngine.Object.Destroy(item.gameObject);
+			}
+		}
+		if (bombard)
+		{
+			CombatInterface.instance.ordersText.text = LanguageManager.instance.GetDictionaryString(LanguageManager.generalDictionary, "DescriptionBombard").Replace("\\n", "\n");
+		}
+		else
+		{
+			CombatInterface.instance.ordersText.text = LanguageManager.instance.GetDictionaryString(LanguageManager.generalDictionary, "DescriptionGeneral").Replace("\\n", "\n");
+		}
+	}
+
+	private List<GameObjectAnimator> SortMobilesByDistance(List<GameObjectAnimator> goas, Vector2 pos)
+	{
+		return new List<GameObjectAnimator>(goas).OrderBy((GameObjectAnimator x) => (pos - x.currentMap2DLocation).sqrMagnitude).ToList();
+	}
+
+	private void GetValidNeighbouringMobiles(List<GameObjectAnimator> nearbyMobiles, GameObjectAnimator battleMobile)
+	{
+		bool flag = nearbyMobiles == otherMobile;
+		_ = "[TFJOIN] ---- pass, list size " + nearbyMobiles.Count + ", secondPass " + flag.ToString() + ", in battle so far " + goasInBattle.Count;
+		for (int i = 0; i < nearbyMobiles.Count; i++)
+		{
+			GameObjectAnimator gameObjectAnimator = nearbyMobiles[i];
+			if (gameObjectAnimator == null || gameObjectAnimator.mobileMapObject == null)
+			{
+				continue;
+			}
+			MobileMapObject mobileMapObject = gameObjectAnimator.mobileMapObject;
+			float distanceInMetresBetweenMapObjects = GetDistanceInMetresBetweenMapObjects(battleMobile.currentMap2DLocation, gameObjectAnimator.currentMap2DLocation);
+			string text = "[TFJOIN] " + mobileMapObject.mobileName + " type " + mobileMapObject.type + " side " + mobileMapObject.currentFaction + " ships " + mobileMapObject.unitPrefabs.Count + " dist " + distanceInMetresBetweenMapObjects.ToString("F0") + " timer " + mobileMapObject.postEngagementTimer.ToString("F0");
+			if (mobileMapObject.type == 0 && flag)
+			{
+				_ = text + " -> skip (second pass)";
+				continue;
+			}
+			if (distanceInMetresBetweenMapObjects >= ModGeo.JoinRadiusMetres)
+			{
+				_ = text + " -> skip (too far)";
+				continue;
+			}
+			if (goasInBattle.Contains(gameObjectAnimator))
+			{
+				_ = text + " -> skip (already in battle)";
+				continue;
+			}
+			int currentFaction = mobileMapObject.currentFaction;
+			if (mobileMapObject.type == 0)
+			{
+				int num = 0;
+				for (int j = 0; j < goasInBattle.Count; j++)
+				{
+					GameObjectAnimator gameObjectAnimator2 = goasInBattle[j];
+					if (gameObjectAnimator2 != null && gameObjectAnimator2.mobileMapObject != null && gameObjectAnimator2.mobileMapObject.type == 0 && gameObjectAnimator2.mobileMapObject.currentFaction == currentFaction)
+					{
+						num += gameObjectAnimator2.mobileMapObject.unitPrefabs.Count;
+					}
+				}
+				if (num + mobileMapObject.unitPrefabs.Count > 40)
+				{
+					_ = text + " -> skip (ship limit)";
+					continue;
+				}
+			}
+			else if (airNumbers[currentFaction] + mobileMapObject.unitPrefabs.Count > Config.instance.maxAirPerSide)
+			{
+				_ = text + " -> skip (air limit)";
+				continue;
+			}
+			Vector2 vector = ModGeo.Battle((gameObjectAnimator.currentMap2DLocation - battleMobile.currentMap2DLocation) * campaignData.mapWidthMetres * 0.1f, battleMobile);
+			EngagementManager.instance.engagementData.unitGroups.Add(GenerateUnitGroupData(gameObjectAnimator, new Vector3(vector.x, 0f, vector.y / 2f), GetHeadingFromObj(gameObjectAnimator), mobileMapObject.speed / 0.514444f, mobileMapObject.currentFaction));
+			if (mobileMapObject.type == 0)
+			{
+				seaPresent[currentFaction] = true;
+			}
+			else
+			{
+				airNumbers[currentFaction] += mobileMapObject.unitPrefabs.Count;
+			}
+			goasInBattle.Add(gameObjectAnimator);
+			_ = text + " -> ADDED";
+		}
+	}
+
+	private int[] GetXYPixelCoord(GameObjectAnimator obj)
+	{
+		int[] obj2 = new int[2]
+		{
+			campaignData.mapOriginXY[0],
+			campaignData.mapOriginXY[1]
+		};
+		float num = campaignData.mapPixelWidth;
+		int num2 = Mathf.FloorToInt((obj.currentMap2DLocation.x + 0.5f) * num);
+		int num3 = Mathf.FloorToInt((obj.currentMap2DLocation.y + 0.5f) * (num * 0.5f));
+		obj2[0] += num2;
+		obj2[1] += num3;
+		return ModGeo.WrapPixel(obj2);
+	}
+
+	public void ExportWorldData()
+	{
+		int num = 0;
+		List<GameObjectAnimator> list = new List<GameObjectAnimator>();
+		for (int i = 0; i < EngagementManager.instance.engagementData.campaignMobileObjectIndexes0.Count; i++)
+		{
+			list.Add(playerMobile[EngagementManager.instance.engagementData.campaignMobileObjectIndexes0[i]]);
+		}
+		for (int j = 0; j < list.Count; j++)
+		{
+			EngagementData.instance.ProcessUnitsPostCombat(list[j].mobileMapObject, EngagementManager.instance.playerUnits, num);
+			num += list[j].mobileMapObject.unitPrefabs.Count;
+		}
+		for (int num2 = list.Count - 1; num2 > -1; num2--)
+		{
+			ProcessMobileObjectPostCombat(list[num2].mobileMapObject);
+		}
+		num = 0;
+		list.Clear();
+		for (int k = 0; k < EngagementManager.instance.engagementData.campaignMobileObjectIndexes1.Count; k++)
+		{
+			list.Add(otherMobile[EngagementManager.instance.engagementData.campaignMobileObjectIndexes1[k]]);
+		}
+		for (int l = 0; l < list.Count; l++)
+		{
+			EngagementData.instance.ProcessUnitsPostCombat(list[l].mobileMapObject, EngagementManager.instance.otherUnits, num);
+			num += list[l].mobileMapObject.unitPrefabs.Count;
+		}
+		for (int num3 = list.Count - 1; num3 > -1; num3--)
+		{
+			ProcessMobileObjectPostCombat(list[num3].mobileMapObject);
+		}
+	}
+
+	public void SwichToWorld(bool forward)
+	{
+		if (EngagementManager.instance.engagementData.isCampaignEngagement)
+		{
+			if (!forward)
+			{
+			}
+		}
+		else if (EngagementManager.instance.engagementData.isSkirmishEncounter)
+		{
+			SkirmishManager.instance.gameObject.SetActive(value: true);
+			ThirdPersonCamera.instance.lookAt = EngagementManager.instance.ammoParentTransform;
+		}
+		CombatInterface.instance.transform.parent.gameObject.SetActive(forward);
+		RenderSettings.fog = forward;
+		if (EnvironmentSwitch.instance.isUnderwater)
+		{
+			EnvironmentSwitch.instance.SwitchToUnderwater();
+		}
+	}
+
+	private string GenerateUnitGroupData(GameObjectAnimator obj, Vector3 position, float heading, float speed, int faction)
+	{
+		if (faction == 0)
+		{
+			EngagementManager.instance.engagementData.campaignMobileObjectIndexes0.Add(playerMobile.IndexOf(obj));
+		}
+		else
+		{
+			EngagementManager.instance.engagementData.campaignMobileObjectIndexes1.Add(otherMobile.IndexOf(obj));
+		}
+		UnitGroupData unitGroupData = new UnitGroupData();
+		unitGroupData.startPosition = position;
+		if (obj.type == 0)
+		{
+			unitGroupData.unitType = UnitType.Sea;
+			unitGroupData.formationSea = (FormationSea)Enum.Parse(typeof(FormationSea), obj.mobileMapObject.formation.ToString());
+			unitGroupData.spacing = (float)Config.instance.formationSeaSpacings[obj.mobileMapObject.formationSpacing] * 0.1f;
+		}
+		else
+		{
+			unitGroupData.startPosition.y = 100f;
+			unitGroupData.unitType = UnitType.Air;
+			unitGroupData.formationAir = FormationAir.Vic;
+			unitGroupData.spacing = 5f;
+			unitGroupData.payloads = obj.mobileMapObject.payload;
+		}
+		unitGroupData.heading = heading;
+		unitGroupData.speed = speed;
+		unitGroupData.faction = (Faction)faction;
+		unitGroupData.unitPrefabs = obj.mobileMapObject.unitPrefabs;
+		unitGroupData.unitNames = obj.mobileMapObject.unitDisplayNames;
+		unitGroupData.cellVariables = obj.mobileMapObject.cellVariables;
+		unitGroupData.remainingAmmunition = obj.mobileMapObject.ammunitionRemaining;
+		unitGroupData.previousBombards = obj.mobileMapObject.bombardments;
+		unitGroupData.paint = obj.mobileMapObject.paint;
+		unitGroupData.speedModifier = obj.mobileMapObject.speedModifier;
+		unitGroupData.vulnerable = GetVulnerableShips(obj.mobileMapObject);
+		return JsonUtility.ToJson(unitGroupData);
+	}
+
+	private List<int> GetVulnerableShips(MobileMapObject mmo)
+	{
+		List<int> list = new List<int>();
+		for (int i = 0; i < mmo.cargo.Count; i++)
+		{
+			List<int> cargoOnBoard = CargoInterface.instance.GetCargoOnBoard(mmo.cargo[i]);
+			list.Add(CargoInterface.instance.GetCurrentCargoIndex(cargoOnBoard, string.Empty));
+			if (Utilities.IsCarrier(mmo.unitPrefabs[i]) && HoursShipLaunchAir(mmo, i) > 0f)
+			{
+				list[i] = 4;
+			}
+		}
+		return list;
+	}
+
+	private float GetHeadingFromObj(GameObjectAnimator obj)
+	{
+		float result = UnityEngine.Random.value * 360f;
+		if (obj.isMoving)
+		{
+			Vector2 vector = obj.destination - obj.currentMap2DLocation;
+			result = Mathf.Atan2(vector.x, vector.y) * 57.29578f + UnityEngine.Random.Range(-25f, 25f);
+		}
+		return result;
+	}
+
+	public void SaveCampaign(string filename)
+	{
+		campaignData.gameVersion = MenuSystem.instance.versionString;
+		string[] contents = new string[1] { GetCampaignDataString() };
+		File.WriteAllLines(Path.Combine(Path.Combine(Application.persistentDataPath, Library.instance.campaignPath), filename), contents);
+	}
+
+	public string GetCampaignDataString()
+	{
+		campaignData.currentDateTime = new List<int>();
+		campaignData.currentDateTime.Add(CampaignInterface.instance.dateTime.Second);
+		campaignData.currentDateTime.Add(CampaignInterface.instance.dateTime.Minute);
+		campaignData.currentDateTime.Add(CampaignInterface.instance.dateTime.Hour);
+		campaignData.currentDateTime.Add(CampaignInterface.instance.dateTime.Day);
+		campaignData.currentDateTime.Add(CampaignInterface.instance.dateTime.Month);
+		campaignData.currentDateTime.Add(CampaignInterface.instance.dateTime.Year);
+		campaignData.mapLocationSaveData = new List<string>();
+		for (int i = 0; i < landMapLocations.Count; i++)
+		{
+			campaignData.mapLocationSaveData.Add(JsonUtility.ToJson(landMapLocations[i]));
+		}
+		campaignData.mapMarkersSaveData = new List<string>();
+		foreach (Transform item in CampaignInterface.instance.mapMarkerParent.transform)
+		{
+			MapLocation component = item.GetComponent<MapLocation>();
+			if (component != null && component.gameObjectAnimator.type == 7)
+			{
+				campaignData.mapMarkersSaveData.Add(JsonUtility.ToJson(component));
+			}
+		}
+		campaignData.playerMobileObjectSaveData = new List<string>();
+		for (int j = 0; j < playerMobile.Count; j++)
+		{
+			campaignData.playerMobileObjectSaveData.Add(GetGOADataForMobileMapObject(playerMobile[j]));
+		}
+		campaignData.enemyMobileObjectSaveData = new List<string>();
+		for (int k = 0; k < otherMobile.Count; k++)
+		{
+			campaignData.enemyMobileObjectSaveData.Add(GetGOADataForMobileMapObject(otherMobile[k]));
+		}
+		campaignData.weatherCellData = new List<string>();
+		for (int l = 0; l < WeatherManager.instance.weatherCells.Count; l++)
+		{
+			campaignData.weatherCellData.Add(JsonUtility.ToJson(WeatherManager.instance.weatherCells[l]));
+		}
+		ModNotify.Save(campaignData);
+		return JsonUtility.ToJson(campaignData);
+	}
+
+	private string GetGOADataForMobileMapObject(GameObjectAnimator goa)
+	{
+		goa.mobileMapObject.type = SetMMOType(goa.mobileMapObject);
+		goa.mobileMapObject.duration = goa.duration;
+		goa.mobileMapObject.destination = goa.destination;
+		goa.mobileMapObject.isMoving = goa.isMoving;
+		goa.mobileMapObject.currentMap2DLocation = goa.currentMap2DLocation;
+		goa.mobileMapObject.startingMap2DLocation = goa.startingMap2DLocation;
+		goa.mobileMapObject.endingMap2DLocation = goa.endingMap2DLocation;
+		if (goa.mobileMapObject.escortingThisGOA != null)
+		{
+			goa.mobileMapObject.escortingGOAIndex = playerMobile.IndexOf(goa.mobileMapObject.escortingThisGOA);
+		}
+		else
+		{
+			goa.mobileMapObject.escortingGOAIndex = -1;
+		}
+		return JsonUtility.ToJson(goa.mobileMapObject);
+	}
+
+	public float GetDistanceInMetresBetweenMapObjects(Vector2 a, Vector2 b)
+	{
+		return ModGeo.Metres(a, b);
+	}
+
+	private float SetSeaCooldown(int faction)
+	{
+		List<Unit> list = EngagementManager.instance.playerUnits;
+		if (faction == 0)
+		{
+			list = EngagementManager.instance.otherUnits;
+		}
+		bool flag = false;
+		for (int i = 0; i < list.Count; i++)
+		{
+			if (list[i].unitData.unitType == UnitType.Sea && (!list[i].isDestroyed || list[i].isParked))
+			{
+				flag = true;
+				break;
+			}
+		}
+		if (flag)
+		{
+			return campaignData.postEngageSeaCooldown;
+		}
+		return campaignData.postEngageAirCooldown;
+	}
+
+	private void ProcessMobileObjectPostCombat(MobileMapObject mmo)
+	{
+		string item = string.Empty;
+		if (mmo.type == 1)
+		{
+			int num = 0;
+			mmo.postEngagementTimer = campaignData.postEngageAirCooldown;
+			for (int num2 = mmo.unitPrefabs.Count - 1; num2 > -1; num2--)
+			{
+				if (mmo.cellVariables[num2] != string.Empty)
+				{
+					item = mmo.unitPrefabs[0];
+					mmo.unitPrefabs.RemoveAt(num2);
+					mmo.ammunitionRemaining.RemoveAt(num2);
+					if (mmo.currentFaction == 0)
+					{
+						campaignData.playerAircraftDowned++;
+					}
+					else
+					{
+						campaignData.otherAircraftDowned++;
+					}
+					num++;
+				}
+			}
+			mmo.cellVariables.Clear();
+			if (mmo.currentFaction != 0)
+			{
+				int num3 = spottedContacts.IndexOf(mmo);
+				if (num3 != -1)
+				{
+					spottedContacts[num3].intelData.Clear();
+					spottedContacts.RemoveAt(num3);
+				}
+				mmo.spottedTimer = 0f;
+				CampaignInterface.instance.SetContactColor(mmo, forceZero: true);
+			}
+			bool flag = false;
+			if (mmo.unitPrefabs.Count == 0)
+			{
+				mmo.unitPrefabs.Add(item);
+				flag = true;
+			}
+			if (num > 0)
+			{
+				SetAircraftReturnedToLocation(mmo, num, destroyed: true);
+			}
+			if (flag)
+			{
+				if (CampaignInterface.instance.currentMapObject == mmo.gameObjectAnimator)
+				{
+					CampaignInterface.instance.currentMapObject = null;
+				}
+				CampaignInterface.instance.DestroyMapMobileObject(mmo.gameObjectAnimator);
+			}
+			return;
+		}
+		mmo.postEngagementTimer = SetSeaCooldown(mmo.currentFaction);
+		bool flag2 = IsMobileSubOnly(mmo);
+		if (flag2)
+		{
+			mmo.postEngagementTimer = campaignData.postEngageSubCooldown;
+		}
+		if (mmo.cellVariables.Count > 0)
+		{
+			MobileMapObject.AwardVeterancy(mmo);
+			if (mmo.currentFaction != 0)
+			{
+				int num4 = spottedContacts.IndexOf(mmo);
+				if (num4 != -1)
+				{
+					spottedContacts.RemoveAt(num4);
+					mmo.intelData.Clear();
+				}
+				mmo.spottedTimer = 0f;
+				CampaignInterface.instance.SetContactColor(mmo, forceZero: true);
+			}
+			for (int num5 = mmo.unitPrefabs.Count - 1; num5 > -1; num5--)
+			{
+				mmo.bombardments[num5] = 0;
+				if (mmo.cellVariables[num5] == "DESTROYED")
+				{
+					if (mmo.currentFaction == 0)
+					{
+						int indexInDoubleList = GetIndexInDoubleList(mmo.unitPrefabs[num5], mmo.unitInstances[num5], campaignData.playerOwnedShipClasses, campaignData.playerOwnedShipInstances);
+						if (indexInDoubleList != -1)
+						{
+							campaignData.playerOwnedShipClasses.RemoveAt(indexInDoubleList);
+							campaignData.playerOwnedShipInstances.RemoveAt(indexInDoubleList);
+							campaignData.playerOwnedRepairDays.RemoveAt(indexInDoubleList);
+						}
+					}
+					else
+					{
+						int indexInDoubleList2 = GetIndexInDoubleList(mmo.unitPrefabs[num5], mmo.unitInstances[num5], campaignData.enemyOwnedShipClasses, campaignData.enemyOwnedShipInstances);
+						if (indexInDoubleList2 != -1)
+						{
+							campaignData.enemyOwnedShipClasses.RemoveAt(indexInDoubleList2);
+							campaignData.enemyOwnedShipInstances.RemoveAt(indexInDoubleList2);
+							campaignData.enemyOwnedRepairDays.RemoveAt(indexInDoubleList2);
+						}
+					}
+					campaignData.sunkShipClasses.Add(mmo.unitPrefabs[num5]);
+					campaignData.sunkShipInstances.Add(mmo.unitInstances[num5]);
+					campaignData.daySunk.Add(EngagementData.instance.date[0]);
+					campaignData.monthSunk.Add(EngagementData.instance.date[1]);
+					campaignData.yearSunk.Add(EngagementData.instance.date[2]);
+					campaignData.factionSunk.Add(mmo.currentFaction);
+					mmo.unitPrefabs.RemoveAt(num5);
+					mmo.unitDisplayNames.RemoveAt(num5);
+					mmo.unitInstances.RemoveAt(num5);
+					mmo.cellVariables.RemoveAt(num5);
+					mmo.currentAircraft.RemoveAt(num5);
+					mmo.aircraftCooldown.RemoveAt(num5);
+					mmo.cargo.RemoveAt(num5);
+					mmo.bombardments.RemoveAt(num5);
+					mmo.paint.RemoveAt(num5);
+					mmo.speedModifier.RemoveAt(num5);
+				}
+			}
+		}
+		if (mmo.unitPrefabs.Count == 0)
+		{
+			if (mmo.currentFaction != 0 && CampaignAI.instance.seaMissions[mmo.missionIndex].autoRenew)
+			{
+				campaignData.recreateMissions.Add(mmo.missionIndex);
+			}
+			CampaignInterface.instance.DestroyMapMobileObject(mmo.gameObjectAnimator);
+			return;
+		}
+		if (mmo.type == 0)
+		{
+			float mobileMapObjectSpeed = GetMobileMapObjectSpeed(mmo);
+			if (mmo.fuelSavedSpeed > 0f)
+			{
+				mmo.fuelSavedSpeed = mobileMapObjectSpeed;
+			}
+			else
+			{
+				mmo.speed = mobileMapObjectSpeed;
+			}
+		}
+		if (mmo.currentFaction == 0 || mmo.type != 0)
+		{
+			return;
+		}
+		bool flag3 = false;
+		MissionData missionData = CampaignAI.instance.seaMissions[mmo.missionIndex];
+		if ((float)mmo.unitPrefabs.Count / (float)missionData.units.Count < 0.6f)
+		{
+			flag3 = true;
+		}
+		if (!flag3 && missionData.bombard && GetbombardIndexes(mmo).Count == 0)
+		{
+			flag3 = true;
+		}
+		if (!flag3)
+		{
+			float num6 = 0f;
+			float num7 = 0f;
+			float num8 = 0f;
+			for (int i = 0; i < mmo.unitPrefabs.Count; i++)
+			{
+				float num9 = (float)mmo.cellVariables[i].Split('|').Length / 2f / (float)EngagementManager.instance.unitDataDictionary[mmo.unitPrefabs[i]].cellDictionary.Count;
+				num7 += num9;
+				if (num9 > num6)
+				{
+					num6 = num9;
+				}
+				if (EngagementManager.instance.unitDataDictionary[mmo.unitPrefabs[i]].unitSubtype == UnitSubType.Merchant || EngagementManager.instance.unitDataDictionary[mmo.unitPrefabs[i]].unitSubtype == UnitSubType.Oiler)
+				{
+					num8 += 1f;
+				}
+				if (num9 > campaignData.taskForceRetreatCapitalDestroyed && (EngagementManager.instance.unitDataDictionary[mmo.unitPrefabs[i]].unitSubtype == UnitSubType.Battleship || EngagementManager.instance.unitDataDictionary[mmo.unitPrefabs[i]].unitSubtype == UnitSubType.Battlecruiser || EngagementManager.instance.unitDataDictionary[mmo.unitPrefabs[i]].unitSubtype == UnitSubType.Aircraft_Carrier || EngagementManager.instance.unitDataDictionary[mmo.unitPrefabs[i]].unitSubtype == UnitSubType.Light_Carrier || EngagementManager.instance.unitDataDictionary[mmo.unitPrefabs[i]].unitSubtype == UnitSubType.Heavy_Cruiser))
+				{
+					flag3 = true;
+				}
+				if (flag2 && num6 > 1f / (float)EngagementManager.instance.unitDataDictionary[mmo.unitPrefabs[i]].cellDictionary.Count)
+				{
+					flag3 = true;
+				}
+			}
+			if ((missionData.missionType == MissionType.Convoy || missionData.missionType == MissionType.LargeInvasion || missionData.missionType == MissionType.SmallInvasion) && num8 == 0f)
+			{
+				flag3 = true;
+			}
+			else
+			{
+				num7 /= (float)mmo.unitPrefabs.Count;
+				if (num6 > campaignData.taskForceRetreatHighestDestroyed || num7 > campaignData.taskForceRetreatAverageDestroyed)
+				{
+					flag3 = true;
+				}
+			}
+		}
+		if (!flag3)
+		{
+			float[] array = new float[2];
+			for (int j = 0; j < mmo.unitPrefabs.Count; j++)
+			{
+				float[] weightedAmmoRemaining = ResupplyShips.instance.GetWeightedAmmoRemaining(mmo, j);
+				if (flag2)
+				{
+					if (weightedAmmoRemaining[4] / weightedAmmoRemaining[5] < UnityEngine.Random.Range(0.1f, 0.25f))
+					{
+						flag3 = true;
+					}
+				}
+				else
+				{
+					array[0] += weightedAmmoRemaining[0];
+					array[1] += weightedAmmoRemaining[1];
+				}
+			}
+			if (array[0] / array[1] < UnityEngine.Random.Range(0.1f, 0.25f))
+			{
+				flag3 = true;
+			}
+		}
+		if (flag3)
+		{
+			if (CampaignAI.instance.seaMissions[mmo.missionIndex].autoRenew)
+			{
+				campaignData.recreateMissions.Add(mmo.missionIndex);
+			}
+			CampaignAI.instance.ApplyNavDataToMobile(mmo.gameObjectAnimator, CampaignAI.instance.seaMissions[CampaignAI.instance.GetMissionByType(MissionType.Home)], string.Empty);
+			mmo.gameObjectAnimator.Stop();
+		}
+	}
+
+	public float GetMobileMapObjectSpeed(MobileMapObject mmo)
+	{
+		SetMobileMapObjectSensors(mmo);
+		SpriteRenderer componentInChildren = mmo.GetComponentInChildren<SpriteRenderer>();
+		if (componentInChildren != null)
+		{
+			componentInChildren.sprite = CampaignInterface.instance.mobileMapSprites[GetMobileSpriteIndex(mmo)];
+		}
+		if (mmo.type != 0)
+		{
+			return EngagementManager.instance.unitDataDictionary[mmo.unitPrefabs[0]].maxKnots * campaignData.airGroupCruiseSpeed * 0.514444f;
+		}
+		List<float> list = new List<float>();
+		for (int i = 0; i < mmo.unitPrefabs.Count; i++)
+		{
+			list.Add(EngagementManager.instance.unitDataDictionary[mmo.unitPrefabs[i]].maxKnots * MobileMapObject.GetDamageSpeedFactor(mmo, i));
+		}
+		float lowestFloat = Utilities.GetLowestFloat(list);
+		if (mmo.currentFaction != 0 && CampaignAI.instance.seaMissions[mmo.missionIndex].missionType == MissionType.Home)
+		{
+			return lowestFloat * campaignData.taskForceHomeSpeed * 0.514444f;
+		}
+		return lowestFloat * campaignData.taskForceCruiseSpeed * 0.514444f;
+	}
+
+	public void SetMobileMapObjectSensors(MobileMapObject mmo)
+	{
+		List<float> list = new List<float>();
+		List<float> list2 = new List<float>();
+		List<float> list3 = new List<float>();
+		List<float> list4 = new List<float>();
+		if (mmo.type == 0)
+		{
+			for (int i = 0; i < mmo.unitPrefabs.Count; i++)
+			{
+				UnitData unitData = EngagementManager.instance.unitDataDictionary[mmo.unitPrefabs[i]];
+				list.Add(unitData.surfaceRadarStrength);
+				list2.Add(unitData.airRadarStrength);
+				list3.Add(unitData.visualHorizonDistance);
+				list4.Add(unitData.passiveSonarStrength);
+			}
+			mmo.surfaceDetectionBaseRange = Mathf.Max(list.ToArray());
+			mmo.airDetectionBaseRange = Mathf.Max(list2.ToArray());
+			mmo.passiveSonarBaseRange = Mathf.Max(list4.ToArray());
+			mmo.visualBaseRange = Mathf.Max(list3.ToArray());
+		}
+		else
+		{
+			UnitData unitData2 = EngagementManager.instance.unitDataDictionary[mmo.unitPrefabs[0]];
+			mmo.surfaceDetectionBaseRange = unitData2.surfaceRadarStrength;
+			mmo.airDetectionBaseRange = unitData2.airRadarStrength;
+			mmo.visualBaseRange = unitData2.unitVisualSizeModifier;
+		}
+		if (mmo.surfaceDetectionBaseRange > 0f || mmo.airDetectionBaseRange > 0f)
+		{
+			mmo.usingRadar = true;
+		}
+	}
+
+	public float GetMobileEndurance(MobileMapObject mmo)
+	{
+		if (mmo.type != 1)
+		{
+			return 0f;
+		}
+		float num = EngagementManager.instance.unitDataDictionary[mmo.unitPrefabs[0]].range / mmo.speed * 1000f;
+		num /= 2f;
+		if (mmo.payload.Count <= 0)
+		{
+			return num;
+		}
+		List<float> endurance = EngagementManager.instance.unitAirDictionary[mmo.unitPrefabs[0]].endurance;
+		if (endurance != null && endurance.Count > 0)
+		{
+			return num * endurance[mmo.payload[0]];
+		}
+		return num * 0.667f;
+	}
+
+	public int GetSpriteIndexFromShipSubtype(UnitSubType subtype)
+	{
+		switch (subtype)
+		{
+		case UnitSubType.Light_Carrier:
+		case UnitSubType.Aircraft_Carrier:
+			return 4;
+		case UnitSubType.Battlecruiser:
+		case UnitSubType.Battleship:
+			return 3;
+		case UnitSubType.Oiler:
+		case UnitSubType.Merchant:
+			return 5;
+		case UnitSubType.Light_Cruiser:
+		case UnitSubType.Heavy_Cruiser:
+			return 2;
+		case UnitSubType.Destroyer_Escort:
+		case UnitSubType.Destroyer:
+			return 1;
+		default:
+			return 0;
+		}
+	}
+
+	public int GetMobileSpriteIndex(MobileMapObject mmo)
+	{
+		List<int> list = new List<int>();
+		if (mmo.type == 0)
+		{
+			int num = 0;
+			for (int i = 0; i < mmo.unitPrefabs.Count; i++)
+			{
+				list.Add((int)EngagementManager.instance.unitDataDictionary[mmo.unitPrefabs[i]].unitSubtype);
+				if (EngagementManager.instance.unitDataDictionary[mmo.unitPrefabs[i]].unitSubtype == UnitSubType.Merchant || EngagementManager.instance.unitDataDictionary[mmo.unitPrefabs[i]].unitSubtype == UnitSubType.Oiler)
+				{
+					num++;
+				}
+			}
+			if (list.Contains(8) || list.Contains(7))
+			{
+				return 4;
+			}
+			if (list.Contains(6) || list.Contains(5))
+			{
+				return 3;
+			}
+			if ((float)num / (float)mmo.unitPrefabs.Count > 0.5f)
+			{
+				return 5;
+			}
+			if (list.Contains(3) || list.Contains(4))
+			{
+				return 2;
+			}
+			if (list.Contains(2) || list.Contains(1))
+			{
+				return 1;
+			}
+			return 0;
+		}
+		return EngagementManager.instance.unitDataDictionary[mmo.unitPrefabs[0]].unitSubtype switch
+		{
+			UnitSubType.Scout => 6, 
+			UnitSubType.Fighter => 7, 
+			UnitSubType.Dive_Bomber => 8, 
+			UnitSubType.Torpedo_Bomber => 9, 
+			UnitSubType.Medium_Bomber => 10, 
+			UnitSubType.Heavy_Bomber => 11, 
+			_ => 7, 
+		};
+	}
+
+	public void AirReturnToBase(GameObjectAnimator goa)
+	{
+		if ((goa.mobileMapObject.escortingThisGOA != null && goa.mobileMapObject.endurance > 0f && instance.campaignData.airOpHours[CampaignInterface.instance.dateTime.Hour]) || goa.mobileMapObject.type != 1)
+		{
+			return;
+		}
+		AutoPlayerManager.instance.ClearEscortData(goa);
+		if (goa.mobileMapObject.createdBy.Count == 1)
+		{
+			CampaignInterface.instance.MoveMobileToDestination(goa, GetMapLocationPosition(goa.mobileMapObject.createdBy[0]), goDirect: true);
+		}
+		else
+		{
+			Vector2 zero = Vector2.zero;
+			zero = ((goa.mobileMapObject.currentFaction != 0) ? GetMobileGameObjectAnimatorPosition(goa, goa.mobileMapObject.createdBy, otherMobile) : GetMobileGameObjectAnimatorPosition(goa, goa.mobileMapObject.createdBy, playerMobile));
+			if (zero.x == -1f || zero.y == -1f)
+			{
+				CampaignInterface.instance.DestroyMapMobileObject(goa);
+				return;
+			}
+			CampaignInterface.instance.MoveMobileToDestination(goa, zero, goDirect: true);
+		}
+		goa.mobileMapObject.currentCampaignAction = 1;
+	}
+
+	public List<int> GetAircraftInTheAir(MapLocation ml)
+	{
+		int[] array = new int[GetAirTypesAtLocation(ml).Count];
+		List<string> airTypesAtLocation = GetAirTypesAtLocation(ml);
+		List<GameObjectAnimator> list = playerMobile;
+		if (ml.currentFaction != 0)
+		{
+			list = otherMobile;
+		}
+		for (int i = 0; i < list.Count; i++)
+		{
+			if (list[i].mobileMapObject.type == 1 && list[i].mobileMapObject.createdBy[0] == ml.locationID)
+			{
+				int num = airTypesAtLocation.IndexOf(list[i].mobileMapObject.unitPrefabs[0]);
+				if (num != -1)
+				{
+					array[num] += list[i].mobileMapObject.unitPrefabs.Count;
+				}
+			}
+		}
+		List<int> list2 = new List<int>();
+		for (int j = 0; j < array.Length; j++)
+		{
+			list2.Add(array[j]);
+		}
+		return list2;
+	}
+
+	public void SetAircraftReturnedToLocation(MobileMapObject mmo, int number, bool destroyed = false)
+	{
+		MapLocation mapLocationObject = GetMapLocationObject(mmo.createdBy[0]);
+		if (!(mapLocationObject != null) || mapLocationObject.currentFaction != mmo.currentFaction)
+		{
+			return;
+		}
+		List<string> airTypesAtLocation = GetAirTypesAtLocation(mapLocationObject);
+		int num = airTypesAtLocation.IndexOf(mmo.unitPrefabs[0]);
+		if (num == -1)
+		{
+			mapLocationObject.inTheAir = GetAircraftInTheAir(mapLocationObject);
+			return;
+		}
+		mapLocationObject.inTheAir[num] -= number;
+		if (mapLocationObject.inTheAir[num] < 0)
+		{
+			mapLocationObject.inTheAir[num] = 0;
+		}
+		if (!destroyed)
+		{
+			mapLocationObject.aircraftCooldown += Config.instance.aircraftLandCooldown * (float)number;
+			return;
+		}
+		if (mapLocationObject.destroyedAir == null || mapLocationObject.destroyedAir.Count < airTypesAtLocation.Count)
+		{
+			mapLocationObject.destroyedAir = new List<int>();
+			for (int i = 0; i < airTypesAtLocation.Count; i++)
+			{
+				mapLocationObject.destroyedAir.Add(0);
+			}
+		}
+		mapLocationObject.destroyedAir[num] += number;
+	}
+
+	public MobileMapObject GetShipMMOThatCreatedAir(MobileMapObject mmo)
+	{
+		List<GameObjectAnimator> checkList = playerMobile;
+		if (mmo.currentFaction != 0)
+		{
+			checkList = otherMobile;
+		}
+		GameObjectAnimator gameObjectAnimatorContainingShip = GetGameObjectAnimatorContainingShip(checkList, mmo.createdBy[0], int.Parse(mmo.createdBy[1]));
+		if (gameObjectAnimatorContainingShip == null)
+		{
+			return null;
+		}
+		return gameObjectAnimatorContainingShip.mobileMapObject;
+	}
+
+	public void SetAircraftReturnedToShip(MobileMapObject mmoAir, MobileMapObject mmoShip, bool max = false)
+	{
+		if (!(mmoShip != null))
+		{
+			return;
+		}
+		int indexOfShipInMobileMapObject = GetIndexOfShipInMobileMapObject(mmoShip, mmoAir.createdBy[0], int.Parse(mmoAir.createdBy[1]));
+		if (indexOfShipInMobileMapObject == -1)
+		{
+			return;
+		}
+		UnitData unitData = EngagementManager.instance.unitDataDictionary[mmoShip.unitPrefabs[indexOfShipInMobileMapObject]];
+		int index = unitData.aircraftOnBoard.IndexOf(mmoAir.unitPrefabs[0]);
+		List<int> intListFromString = GetIntListFromString(mmoShip.currentAircraft[indexOfShipInMobileMapObject]);
+		List<int> list = new List<int>();
+		intListFromString[index] += mmoAir.unitPrefabs.Count;
+		for (int i = 0; i < intListFromString.Count; i++)
+		{
+			intListFromString[index] = Mathf.Clamp(intListFromString[index], 0, unitData.aircraftTotal[index]);
+		}
+		mmoShip.currentAircraft[indexOfShipInMobileMapObject] = SetIntListToString(intListFromString);
+		bool flag = false;
+		if (Vector2.Distance(mmoAir.gameObjectAnimator.currentMap2DLocation, mmoShip.gameObjectAnimator.currentMap2DLocation) < 1000f)
+		{
+			flag = true;
+		}
+		if (!flag)
+		{
+			if (mmoShip.aircraftCooldown[indexOfShipInMobileMapObject] == string.Empty)
+			{
+				mmoShip.aircraftCooldown[indexOfShipInMobileMapObject] = (Config.instance.aircraftLandCooldown * (float)mmoAir.unitPrefabs.Count).ToString();
+			}
+			else
+			{
+				mmoShip.aircraftCooldown[indexOfShipInMobileMapObject] = ((float)int.Parse(mmoShip.aircraftCooldown[indexOfShipInMobileMapObject]) + Config.instance.aircraftLandCooldown * (float)mmoAir.unitPrefabs.Count).ToString();
+			}
+		}
+		if (mmoShip.currentFaction != 0 && (EngagementManager.instance.unitDataDictionary[mmoShip.unitPrefabs[indexOfShipInMobileMapObject]].unitSubtype == UnitSubType.Aircraft_Carrier || EngagementManager.instance.unitDataDictionary[mmoShip.unitPrefabs[indexOfShipInMobileMapObject]].unitSubtype == UnitSubType.Light_Carrier))
+		{
+			CheckAICarrierGroupAirWingSufficient(mmoShip, indexOfShipInMobileMapObject);
+		}
+	}
+
+	public bool CheckAICarrierGroupAirWingSufficient(MobileMapObject mmoShip, int launchedIndex)
+	{
+		List<int> list = new List<int>(EngagementManager.instance.unitDataDictionary[mmoShip.unitPrefabs[launchedIndex]].aircraftTotal);
+		int[] shipAircraftAlreadyInAir = GetShipAircraftAlreadyInAir(mmoShip.unitPrefabs[launchedIndex], mmoShip.unitInstances[launchedIndex], mmoShip.currentFaction);
+		List<int> intListFromString = GetIntListFromString(mmoShip.currentAircraft[launchedIndex]);
+		int num = 0;
+		for (int i = 0; i < list.Count; i++)
+		{
+			num += list[i] - shipAircraftAlreadyInAir[i] - intListFromString[i];
+		}
+		if ((float)num / (float)Utilities.GetListSum(list) > 0.66f)
+		{
+			if (CampaignAI.instance.seaMissions[mmoShip.missionIndex].autoRenew)
+			{
+				campaignData.recreateMissions.Add(mmoShip.missionIndex);
+			}
+			CampaignAI.instance.ApplyNavDataToMobile(mmoShip.gameObjectAnimator, CampaignAI.instance.seaMissions[CampaignAI.instance.GetMissionByType(MissionType.Home)], string.Empty);
+			GetNextNavPosition(mmoShip.gameObjectAnimator);
+			return false;
+		}
+		return true;
+	}
+
+	public bool AirAttemptLand(GameObjectAnimator goa)
+	{
+		if (goa.mobileMapObject.type != 1)
+		{
+			Debug.LogError("Sea group called: AirAttemptLand");
+			return false;
+		}
+		GameObjectAnimator gameObjectAnimator = null;
+		if (goa.mobileMapObject.createdBy.Count == 1)
+		{
+			MapLocation mapLocationObject = GetMapLocationObject(goa.mobileMapObject.createdBy[0]);
+			if (mapLocationObject != null)
+			{
+				gameObjectAnimator = mapLocationObject.GetComponent<GameObjectAnimator>();
+			}
+		}
+		else
+		{
+			MobileMapObject shipMMOThatCreatedAir = GetShipMMOThatCreatedAir(goa.mobileMapObject);
+			if (shipMMOThatCreatedAir != null)
+			{
+				gameObjectAnimator = shipMMOThatCreatedAir.gameObjectAnimator;
+			}
+		}
+		if (!(gameObjectAnimator != null) || GetDistanceInMetresBetweenMapObjects(goa.currentMap2DLocation, gameObjectAnimator.currentMap2DLocation) >= campaignData.interactionDistanceMetres)
+		{
+			return false;
+		}
+		if (campaignData.airOpHours[CampaignInterface.instance.dateTime.Hour] && goa.mobileMapObject.escortingThisGOA != null)
+		{
+			goa.mobileMapObject.currentCampaignAction = 0;
+			goa.mobileMapObject.endurance = GetMobileEndurance(goa.mobileMapObject);
+			ResetAmmunition(goa.mobileMapObject);
+			goa.mobileMapObject.ammunitionRemaining.Clear();
+			AutoPlayerManager.instance.MoveGoaToEscorted(goa);
+			return true;
+		}
+		if (goa.mobileMapObject.autoMove)
+		{
+			if (campaignData.airOpHours[CampaignInterface.instance.dateTime.Hour])
+			{
+				goa.mobileMapObject.currentCampaignAction = 0;
+				goa.mobileMapObject.endurance = GetMobileEndurance(goa.mobileMapObject);
+				ResetAmmunition(goa.mobileMapObject);
+				if (goa.mobileMapObject.createdBy.Count == 1)
+				{
+					goa.mobileMapObject.mapWaypoints = new List<Vector2>(goa.mobileMapObject.autoPath);
+					if (goa.mobileMapObject.mapWaypoints.Count != 0)
+					{
+						goa.mobileMapObject.mapWaypoints.RemoveAt(0);
+						goa.Stop();
+						CampaignInterface.instance.MoveMobileToDestination(goa, goa.mobileMapObject.autoPath[0]);
+						return true;
+					}
+				}
+				CampaignInterface.instance.CalculateAutoWaypoints(goa);
+				if (goa.mobileMapObject.mapWaypoints.Count != 0)
+				{
+					goa.Stop();
+					CampaignInterface.instance.MoveMobileToDestination(goa, goa.mobileMapObject.mapWaypoints[0]);
+				}
+			}
+			else
+			{
+				AutoPlayerManager.instance.LandAutoScout(goa.mobileMapObject);
+				if (goa.mobileMapObject.createdBy.Count == 1)
+				{
+					SetAircraftReturnedToLocation(goa.mobileMapObject, goa.mobileMapObject.unitPrefabs.Count);
+				}
+				else
+				{
+					SetAircraftReturnedToShip(goa.mobileMapObject, gameObjectAnimator.mobileMapObject);
+				}
+				CampaignInterface.instance.DestroyMapMobileObject(goa);
+			}
+			return true;
+		}
+		if (goa.mobileMapObject.createdBy.Count == 1)
+		{
+			SetAircraftReturnedToLocation(goa.mobileMapObject, goa.mobileMapObject.unitPrefabs.Count);
+		}
+		else
+		{
+			SetAircraftReturnedToShip(goa.mobileMapObject, gameObjectAnimator.mobileMapObject);
+		}
+		CampaignInterface.instance.DestroyMapMobileObject(goa);
+		return true;
+	}
+
+	private void ResetAmmunition(MobileMapObject mmo)
+	{
+		for (int i = 0; i < mmo.ammunitionRemaining.Count; i++)
+		{
+			mmo.ammunitionRemaining[i] = string.Empty;
+		}
+	}
+
+	private Vector2 GetMobileGameObjectAnimatorPosition(GameObjectAnimator goa, List<string> id, List<GameObjectAnimator> listGOA)
+	{
+		int num = int.Parse(id[1]);
+		for (int i = 0; i < listGOA.Count; i++)
+		{
+			for (int j = 0; j < listGOA[i].mobileMapObject.unitInstances.Count; j++)
+			{
+				if (listGOA[i].mobileMapObject.unitInstances[j] == num && listGOA[i].mobileMapObject.unitPrefabs[j] == id[0])
+				{
+					return listGOA[i].currentMap2DLocation;
+				}
+			}
+		}
+		return new Vector2(-1f, -1f);
+	}
+
+	public Vector2 GetMapLocationPosition(string id)
+	{
+		for (int i = 0; i < landMapLocations.Count; i++)
+		{
+			if (landMapLocations[i].locationID == id)
+			{
+				return landMapLocations[i].locationPosition;
+			}
+		}
+		Debug.LogError("No GetMapLocationPosition found for: " + id);
+		return new Vector2(-1f, -1f);
+	}
+
+	public int GetIndexOfShipInMobileMapObject(MobileMapObject mmo, string prefabName, int instance)
+	{
+		for (int i = 0; i < mmo.unitPrefabs.Count; i++)
+		{
+			if (mmo.unitPrefabs[i] == prefabName && mmo.unitInstances[i] == instance)
+			{
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	public GameObjectAnimator GetGameObjectAnimatorContainingShip(List<GameObjectAnimator> checkList, string prefabName, int instance)
+	{
+		for (int i = 0; i < checkList.Count; i++)
+		{
+			for (int j = 0; j < checkList[i].mobileMapObject.unitPrefabs.Count; j++)
+			{
+				if (checkList[i].mobileMapObject.unitPrefabs[j] == prefabName && checkList[i].mobileMapObject.unitInstances[j] == instance)
+				{
+					return checkList[i];
+				}
+			}
+		}
+		return null;
+	}
+
+	public MapLocation GetMapLocationObject(string id)
+	{
+		for (int i = 0; i < landMapLocations.Count; i++)
+		{
+			if (landMapLocations[i].locationID == id)
+			{
+				return landMapLocations[i];
+			}
+		}
+		return null;
+	}
+
+	public int GetBaseAircraftAlreadyInAir(MapLocation ml, string prefabName)
+	{
+		int num = 0;
+		List<GameObjectAnimator> list = playerMobile;
+		for (int i = 0; i < list.Count; i++)
+		{
+			if (list[i].mobileMapObject.type == 1 && list[i].mobileMapObject.createdBy[0] == ml.locationID && prefabName == list[i].mobileMapObject.unitPrefabs[0])
+			{
+				num += list[i].mobileMapObject.unitPrefabs.Count;
+			}
+		}
+		return num;
+	}
+
+	public int[] GetShipAircraftAlreadyInAir(string prefab, int index, int faction)
+	{
+		int[] array = new int[3];
+		List<GameObjectAnimator> list = playerMobile;
+		if (faction != 0)
+		{
+			list = otherMobile;
+		}
+		for (int i = 0; i < list.Count; i++)
+		{
+			if (list[i].mobileMapObject.type == 1 && list[i].mobileMapObject.createdBy.Count == 2 && list[i].mobileMapObject.createdBy[0] == prefab && int.Parse(list[i].mobileMapObject.createdBy[1]) == index)
+			{
+				array[EngagementManager.instance.unitDataDictionary[prefab].aircraftOnBoard.IndexOf(list[i].mobileMapObject.unitPrefabs[0])] += list[i].mobileMapObject.unitPrefabs.Count;
+			}
+		}
+		return array;
+	}
+
+	public void ReArmShips(MobileMapObject mmo)
+	{
+		ResupplyShips.instance.ReArmShips(mmo);
+	}
+
+	public string SetIntListToString(List<int> inputList)
+	{
+		string text = string.Empty;
+		for (int i = 0; i < inputList.Count; i++)
+		{
+			text = text + inputList[i] + "|";
+		}
+		return text.Substring(0, text.Length - 1);
+	}
+
+	public List<int> GetIntListFromString(string input)
+	{
+		List<int> list = new List<int>();
+		string[] array = input.Split('|');
+		for (int i = 0; i < array.Length; i++)
+		{
+			list.Add(int.Parse(array[i]));
+		}
+		return list;
+	}
+
+	public bool IsHomePort(MapLocation ml, int faction)
+	{
+		if (ml.createShips)
+		{
+			if (faction == 0 && CampaignAI.instance.playerHomePorts.Contains(ml))
+			{
+				return true;
+			}
+			if (faction == 1 && CampaignAI.instance.enemyHomePorts.Contains(ml))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	public bool AllowTakeOverLocation(MapLocation ml)
+	{
+		if (ml.createShips)
+		{
+			return campaignData.allowHomePortTakeOver;
+		}
+		return true;
+	}
+
+	public void SwitchMapLocationFaction(MapLocation ml, int faction)
+	{
+		if (!AllowTakeOverLocation(ml) || ml.currentFaction == faction)
+		{
+			return;
+		}
+		ml.currentFaction = faction;
+		int max = campaignData.maxPort[faction];
+		int max2 = campaignData.maxAirfield[faction];
+		ml.airfieldLevel = Mathf.Clamp(ml.airfieldLevel--, 0, max2);
+		ml.portLevel = Mathf.Clamp(ml.portLevel--, 0, max);
+		List<string> airTypesAtLocation = GetAirTypesAtLocation(ml);
+		if (ml.airfieldLevel > 0 && campaignData.removeAirOnTakeOver)
+		{
+			ResetLocationAir(ml, airTypesAtLocation.Count);
+			List<int> airNumbersAtLocation = GetAirNumbersAtLocation(ml);
+			int num = (ml.airfieldLevel - 1) * airTypesAtLocation.Count;
+			for (int i = 0; i < airTypesAtLocation.Count; i++)
+			{
+				ml.inTheAir[i] = 0;
+				ml.destroyedAir[i] = airNumbersAtLocation[num + i];
+			}
+		}
+		else
+		{
+			ResetLocationAir(ml, airTypesAtLocation.Count);
+		}
+	}
+
+	public bool CheckEachSideHasHomePort()
+	{
+		if (campaignData.endIfNoPlayerHomePort && GetHomePortOwnedCount(0) == 0)
+		{
+			CampaignEvent.instance.CreateEvent("defeatNoPort");
+			campaignData.campaignEnded = true;
+			return false;
+		}
+		if (campaignData.endIfNoEnemyHomePort && GetHomePortOwnedCount(1) == 0)
+		{
+			CampaignEvent.instance.CreateEvent("victoryNoPort");
+			campaignData.campaignEnded = true;
+			return false;
+		}
+		return true;
+	}
+
+	private int GetHomePortOwnedCount(int faction)
+	{
+		int num = 0;
+		for (int i = 0; i < landMapLocations.Count; i++)
+		{
+			if (IsHomePort(landMapLocations[i], faction) && landMapLocations[i].currentFaction == faction)
+			{
+				num++;
+			}
+		}
+		return num;
+	}
+
+	private void ResetLocationAir(MapLocation ml, int count)
+	{
+		ml.inTheAir.Clear();
+		ml.destroyedAir.Clear();
+		for (int i = 0; i < count; i++)
+		{
+			ml.inTheAir.Add(0);
+			ml.destroyedAir.Add(0);
+		}
+	}
+
+	public void ApplyCooldownToAirLauncher(MapLocation ml, MobileMapObject launcherSea, int shipIndex, MobileMapObject mmo)
+	{
+		float aircraftCooldown = Utilities.GetAircraftCooldown(mmo.unitPrefabs.Count, mmo.payload.Count != 0);
+		if (ml != null)
+		{
+			ml.aircraftCooldown = aircraftCooldown;
+		}
+		else
+		{
+			launcherSea.aircraftCooldown[shipIndex] = aircraftCooldown.ToString();
+		}
+	}
+
+	public float HoursShipLaunchAir(MobileMapObject mmo, int launchedByIndex)
+	{
+		if (mmo.aircraftCooldown[launchedByIndex] == string.Empty)
+		{
+			return 0f;
+		}
+		float num = float.Parse(mmo.aircraftCooldown[launchedByIndex].Split('|')[0]);
+		if (num <= 0f)
+		{
+			mmo.aircraftCooldown[launchedByIndex] = string.Empty;
+		}
+		return num;
+	}
+
+	public bool IsShipPlayerNation(string prefabName)
+	{
+		return campaignData.nations0.Contains(EngagementManager.instance.unitSeaDictionary[prefabName].nation);
+	}
+
+	public MapLocation GetClosestLocation(GameObjectAnimator obj, bool checkMin = true)
+	{
+		int index = -1;
+		float num = float.PositiveInfinity;
+		for (int i = 0; i < landMapLocations.Count; i++)
+		{
+			float distanceInMetresBetweenMapObjects = GetDistanceInMetresBetweenMapObjects(obj.currentMap2DLocation, landMapLocations[i].gameObjectAnimator.currentMap2DLocation);
+			if (distanceInMetresBetweenMapObjects < num)
+			{
+				num = distanceInMetresBetweenMapObjects;
+				index = i;
+			}
+		}
+		if (!checkMin)
+		{
+			return landMapLocations[index];
+		}
+		if (num < campaignData.interactionDistanceMetres)
+		{
+			return landMapLocations[index];
+		}
+		return null;
+	}
+
+	public int GetClosestPlayerSpottedIndex(GameObjectAnimator goa, float maxDist)
+	{
+		int num = -1;
+		float num2 = float.PositiveInfinity;
+		for (int i = 0; i < spottedContacts.Count; i++)
+		{
+			if (spottedContacts[i].currentFaction == 0 && (goa.mobileMapObject.type == 1 || (goa.mobileMapObject.type == 0 && spottedContacts[i].type == 0)))
+			{
+				float num3 = Vector2.Distance(goa.currentMap2DLocation, spottedContacts[i].gameObjectAnimator.currentMap2DLocation);
+				if (num3 < num2)
+				{
+					num2 = num3;
+					num = i;
+				}
+			}
+		}
+		if (num != -1 && GetDistanceInMetresBetweenMapObjects(goa.currentMap2DLocation, spottedContacts[num].gameObjectAnimator.currentMap2DLocation) < maxDist)
+		{
+			return num;
+		}
+		return -1;
+	}
+
+	public void UnloadAllCargo(MobileMapObject mmo)
+	{
+		MapLocation closestLocation = GetClosestLocation(mmo.gameObjectAnimator);
+		if (mmo.currentFaction == 0 && closestLocation == null)
+		{
+			string measurementString = Utilities.GetMeasurementString(campaignData.interactionDistanceMetres * 0.001f, MeasurementUnit.kilometre);
+			ErrorPanel.instance.SetErrorMessage("OutOfLocationRange", measurementString, string.Empty, string.Empty);
+		}
+		else
+		{
+			mmo.isMoving = false;
+			RemoveAllCargoFromShips(mmo);
+		}
+	}
+
+	public float GetTimeToUnloadAllShips(MobileMapObject mmo)
+	{
+		float num = 0f;
+		for (int i = 0; i < mmo.cargo.Count; i++)
+		{
+			if (mmo.cargo[i] != "0|0|0|0")
+			{
+				num += 1f;
+			}
+		}
+		return num * 14400f;
+	}
+
+	public void RemoveAllCargoFromShips(MobileMapObject mmo)
+	{
+		MapLocation closestLocation = GetClosestLocation(mmo.gameObjectAnimator);
+		if (closestLocation == null)
+		{
+			return;
+		}
+		if (mmo.currentFaction == 0)
+		{
+			ErrorPanel.instance.SetErrorMessage("UnloadedCargo", mmo.mobileName, closestLocation.locationName, string.Empty);
+		}
+		mmo.unloadTimer = 0f;
+		for (int i = 0; i < mmo.cargo.Count; i++)
+		{
+			List<int> intListFromString = GetIntListFromString(mmo.cargo[i]);
+			for (int j = 0; j < intListFromString.Count; j++)
+			{
+				if (intListFromString[j] != 0)
+				{
+					CargoInterface.instance.SetCargoChange(mmo, i, j, closestLocation);
+				}
+			}
+		}
+		CheckLocationTakeover(closestLocation);
+		if (closestLocation.currentFaction == 0)
+		{
+			if (mmo.currentFaction != 0)
+			{
+				ErrorPanel.instance.SetErrorMessage("LocationAttacked", closestLocation.locationName, string.Empty, string.Empty);
+				CampaignInterface.instance.PauseCampaign();
+				if (CampaignInterface.instance.currentMapObject != null && CampaignInterface.instance.currentMapObject.GetComponent<MapLocation>() == closestLocation)
+				{
+					CampaignInterface.instance.SetLocationPanelData(CampaignInterface.instance.currentMapObject);
+				}
+			}
+		}
+		else
+		{
+			if (closestLocation.currentFaction != 1)
+			{
+				return;
+			}
+			bool[] array = new bool[2]
+			{
+				IsPortUpgradable(closestLocation, Faction.Enemy),
+				IsAirfieldUpgradable(closestLocation, Faction.Enemy)
+			};
+			if (campaignData.maxAirAt.Contains(closestLocation.locationID))
+			{
+				if (array[1])
+				{
+					ApplyUpgradeLocation(closestLocation, 1, player: false);
+					return;
+				}
+				if (closestLocation.airfieldLevel != campaignData.maxAirfield[1])
+				{
+					return;
+				}
+			}
+			if (campaignData.maxPortAt.Contains(closestLocation.locationID))
+			{
+				if (array[0])
+				{
+					ApplyUpgradeLocation(closestLocation, 0, player: false);
+					return;
+				}
+				if (closestLocation.portLevel != campaignData.maxPort[1])
+				{
+					return;
+				}
+			}
+			if (IsAirfieldUpgradable(closestLocation, Faction.Enemy))
+			{
+				ApplyUpgradeLocation(closestLocation, 1, player: false);
+			}
+			else if (IsPortUpgradable(closestLocation, Faction.Enemy))
+			{
+				ApplyUpgradeLocation(closestLocation, 0, player: false);
+			}
+		}
+	}
+
+	public void CheckLocationTakeover(MapLocation ml)
+	{
+		if (ml.currentFaction == 2)
+		{
+			if (ml.troops[0] > 0)
+			{
+				TakeOverMapLocation(ml, isPlayer: true);
+			}
+			else if (ml.troops[1] > 0)
+			{
+				TakeOverMapLocation(ml, isPlayer: false);
+			}
+		}
+		else if (ml.currentFaction == 0 && AllowTakeOverLocation(ml) && ml.troops[0] <= 0 && ml.troops[1] <= 0)
+		{
+			ml.currentFaction = 2;
+			CampaignInterface.instance.SetLocationSprite(ml.GetComponentInChildren<SpriteRenderer>(), ml);
+		}
+	}
+
+	private void CheckWinCondition()
+	{
+		if (campaignData.campaignEnded || !CheckEachSideHasHomePort())
+		{
+			return;
+		}
+		if (campaignData.winEnemyShipsSunk > 0)
+		{
+			int num = 0;
+			int num2 = 1;
+			for (int i = 0; i < campaignData.factionSunk.Count; i++)
+			{
+				if (campaignData.factionSunk[i] == num2)
+				{
+					num++;
+				}
+			}
+			int num3 = 0;
+			num2 = 0;
+			for (int j = 0; j < campaignData.factionSunk.Count; j++)
+			{
+				if (campaignData.factionSunk[j] == num2)
+				{
+					num3++;
+				}
+			}
+			if (num - num3 >= campaignData.winEnemyShipsSunk)
+			{
+				if (campaignData.winEnemyShipSunkSupplyIncrease <= 1f)
+				{
+					CampaignEvent.instance.CreateEvent("shipsSunk");
+					campaignData.campaignEnded = true;
+					return;
+				}
+				if (!campaignData.campaignDominated)
+				{
+					ErrorPanel.instance.SetErrorMessage("SeaLanesOpen", campaignData.winEnemyShipSunkSupplyIncrease + " " + LanguageManager.instance.GetDictionaryString(LanguageManager.generalDictionary, "Multiplied"), string.Empty, string.Empty);
+					campaignData.campaignDominated = true;
+				}
+			}
+			else if (campaignData.campaignDominated)
+			{
+				ErrorPanel.instance.SetErrorMessage("SeaLanesClosed", string.Empty, string.Empty, string.Empty);
+				campaignData.campaignDominated = false;
+			}
+		}
+		int num4 = campaignData.mustControl.Count;
+		for (int k = 0; k < landMapLocations.Count; k++)
+		{
+			if ((landMapLocations[k].currentFaction == 0 || landMapLocations[k].currentFaction == 2) && campaignData.mustControl.Contains(landMapLocations[k].locationID))
+			{
+				num4--;
+			}
+		}
+		if (num4 == 0 && CheckMaxAirAndPort())
+		{
+			CampaignEvent.instance.CreateEvent("victory");
+			campaignData.campaignEnded = true;
+			return;
+		}
+		num4 = campaignData.mustControl.Count;
+		for (int l = 0; l < landMapLocations.Count; l++)
+		{
+			if ((landMapLocations[l].currentFaction == 1 || landMapLocations[l].currentFaction == 2) && campaignData.mustControl.Contains(landMapLocations[l].locationID))
+			{
+				num4--;
+			}
+		}
+		if (num4 == 0 && CheckMaxAirAndPort())
+		{
+			CampaignEvent.instance.CreateEvent("defeat");
+			campaignData.campaignEnded = true;
+		}
+	}
+
+	private bool CheckMaxAirAndPort()
+	{
+		for (int i = 0; i < campaignData.maxAirAt.Count; i++)
+		{
+			if (GetMapLocationObject(campaignData.maxAirAt[i]).airfieldLevel != campaignData.maxAirfield[0])
+			{
+				return false;
+			}
+		}
+		for (int j = 0; j < campaignData.maxPortAt.Count; j++)
+		{
+			if (GetMapLocationObject(campaignData.maxPortAt[j]).portLevel != campaignData.maxPort[0])
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	public int GetNumberOfDaysToRepair(string cvData, Faction faction, bool includeBase = true)
+	{
+		int num = campaignData.baseRepairTime[(int)faction];
+		if (!includeBase)
+		{
+			num = 0;
+		}
+		int num2 = campaignData.repairPerComp[(int)faction];
+		string[] array = cvData.Split('|');
+		int num3 = 0;
+		float num4 = 0f;
+		for (int i = 1; i < array.Length; i += 2)
+		{
+			CellVariable cellVariable = new CellVariable();
+			JsonUtility.FromJsonOverwrite(array[i], cellVariable);
+			if (cellVariable.isDestroyed)
+			{
+				num3++;
+			}
+			else
+			{
+				num4 += 100f - cellVariable.maxIntegrity;
+			}
+		}
+		int num5 = Mathf.CeilToInt(num4 * campaignData.repairHourPerIntegrity[(int)faction] / 24f);
+		return num3 * num2 + num + num5;
+	}
+
+	public float GetBombLocationWeatherModifier(MapLocation ml)
+	{
+		WeatherCell weatherCell = WeatherManager.instance.weatherCells[WeatherManager.instance.GetMapObjectWeatherCellIndex(ml.locationPosition)];
+		float num = 1f;
+		num *= campaignData.strategicBombCloudModifer[weatherCell.cloudLevel];
+		num *= campaignData.strategicBombWindModifer[weatherCell.seaState];
+		if (weatherCell.isRaining)
+		{
+			num *= campaignData.strategicBombPrecipModifer[0];
+		}
+		else if (weatherCell.isSnowing)
+		{
+			num *= campaignData.strategicBombPrecipModifer[1];
+		}
+		else if (weatherCell.isStorm)
+		{
+			num *= campaignData.strategicBombPrecipModifer[2];
+		}
+		return num;
+	}
+
+	public void StrategicBombLocation(MobileMapObject mmo, MapLocation ml)
+	{
+		if (ml == null || mmo.currentFaction == ml.currentFaction)
+		{
+			return;
+		}
+		if (mmo.currentFaction == 0 && EngagementPanel.instance.gameObject.activeSelf)
+		{
+			ErrorPanel.instance.SetErrorMessage("Encounter", mmo.mobileName, string.Empty, string.Empty);
+			return;
+		}
+		if (mmo.payload.Count == 0)
+		{
+			ErrorPanel.instance.SetErrorMessage("StrategicBombNoBomb", string.Empty, string.Empty, string.Empty);
+			return;
+		}
+		string item = mmo.unitPrefabs[0];
+		int count = mmo.unitPrefabs.Count;
+		string payload = EngagementManager.instance.unitAirDictionary[mmo.unitPrefabs[0]].payloadDisplayNames[mmo.payload[0]];
+		int numberWithPayload = GetNumberWithPayload(mmo, payload);
+		if (numberWithPayload <= 0)
+		{
+			ErrorPanel.instance.SetErrorMessage("StrategicBombEmpty", string.Empty, string.Empty, string.Empty);
+			return;
+		}
+		float num = 0f;
+		string[] array = AssetLoader.instance.ImportText("unit/air/" + mmo.unitPrefabs[0] + "/" + mmo.unitPrefabs[0] + "_data.txt");
+		StratBombWeaponData stratBombWeaponData = new StratBombWeaponData();
+		JsonUtility.FromJsonOverwrite(array[mmo.payload[0] + 1], stratBombWeaponData);
+		Dictionary<string, AmmunitionReference> dictionary = new Dictionary<string, AmmunitionReference>();
+		for (int i = 0; i < stratBombWeaponData.ammunitionPrefabString.Count; i++)
+		{
+			if (dictionary.ContainsKey(stratBombWeaponData.ammunitionPrefabString[i]))
+			{
+				if (dictionary[stratBombWeaponData.ammunitionPrefabString[i]].ammoType == AmmoType.Bomb.ToString())
+				{
+					num += dictionary[stratBombWeaponData.ammunitionPrefabString[i]].damageAmount;
+				}
+				continue;
+			}
+			string[] array2 = AssetLoader.instance.ImportText("ammunition/" + stratBombWeaponData.ammunitionPrefabString[i] + ".txt");
+			AmmunitionReference ammunitionReference = new AmmunitionReference();
+			JsonUtility.FromJsonOverwrite(array2[0], ammunitionReference);
+			dictionary.Add(stratBombWeaponData.ammunitionPrefabString[i], ammunitionReference);
+			if (ammunitionReference.ammoType == AmmoType.Bomb.ToString())
+			{
+				num += ammunitionReference.damageAmount;
+			}
+		}
+		dictionary.Clear();
+		num *= (float)numberWithPayload;
+		if (num <= 0f)
+		{
+			ErrorPanel.instance.SetErrorMessage("StrategicBombNoBomb", string.Empty, string.Empty, string.Empty);
+			return;
+		}
+		num /= campaignData.strategicBombDamageModifer;
+		float bombLocationWeatherModifier = GetBombLocationWeatherModifier(ml);
+		num *= bombLocationWeatherModifier;
+		float num2 = ((float)ml.portLevel + (float)ml.airfieldLevel) * campaignData.strategicBombDefenderRankBonus;
+		float cooldownModifier = Mathf.Clamp01((float)count / campaignData.strategicBombCooldownMinNumberAttackers);
+		DamageLocation(ml, num, cooldownModifier);
+		CampaignInterface.instance.CreateStratMapExplosion(new Vector3(ml.locationPosition.x, ml.locationPosition.y, 0f));
+		if (Config.instance.showCampaignLocationRadii)
+		{
+			MapRadii.instance.SetMapRadii();
+		}
+		float armorAbsorbProbability = EngagementManager.instance.unitDataDictionary[mmo.unitPrefabs[0]].armorAbsorbProbability;
+		UnitModelReference unitModelReference = UnityEngine.Object.Instantiate(PrefabBuilder.instance.blankTransform, base.transform.parent).AddComponent<UnitModelReference>();
+		JsonUtility.FromJsonOverwrite(AssetLoader.instance.ImportText("unit/air/" + mmo.unitPrefabs[0] + "/" + mmo.unitPrefabs[0] + "_model.txt")[0], unitModelReference);
+		float num3 = -1f;
+		if (unitModelReference.fixedGunData != null && unitModelReference.fixedGunData.Count > 0)
+		{
+			FixedGun fixedGun = new FixedGun();
+			JsonUtility.FromJsonOverwrite(unitModelReference.fixedGunData[0], fixedGun);
+			num3 = fixedGun.secondsFiring;
+		}
+		List<string> list = new List<string>();
+		for (int j = 0; j < mmo.unitPrefabs.Count; j++)
+		{
+			list.Add(num3 + "|0|0");
+		}
+		for (int k = 0; k < mmo.ammunitionRemaining.Count; k++)
+		{
+			list[k] = mmo.ammunitionRemaining[k];
+		}
+		int num4 = 0;
+		for (int num5 = mmo.unitPrefabs.Count - 1; num5 > -1; num5--)
+		{
+			float value = UnityEngine.Random.value;
+			int num6 = 0;
+			if (value < campaignData.strategicBombLosses[0] + num2 && UnityEngine.Random.value > armorAbsorbProbability * campaignData.strategicBombAttackerArmorModifier[0])
+			{
+				num6 += 3;
+			}
+			if (value < campaignData.strategicBombLosses[1] + num2 && UnityEngine.Random.value > armorAbsorbProbability * campaignData.strategicBombAttackerArmorModifier[1])
+			{
+				num6++;
+			}
+			if (value < campaignData.strategicBombLosses[2] + num2 && UnityEngine.Random.value > armorAbsorbProbability * campaignData.strategicBombAttackerArmorModifier[2])
+			{
+				num6++;
+			}
+			if (num6 > 2)
+			{
+				mmo.unitPrefabs.RemoveAt(num5);
+				list.RemoveAt(num5);
+				num4++;
+				if (mmo.currentFaction == 0)
+				{
+					campaignData.playerAircraftDowned++;
+				}
+				else
+				{
+					campaignData.otherAircraftDowned++;
+				}
+			}
+			else
+			{
+				string[] array3 = list[num5].Split('|');
+				list[num5] = array3[0] + "|" + num6 + "|" + stratBombWeaponData.ammunitionPrefabString.Count;
+			}
+		}
+		mmo.ammunitionRemaining = list;
+		if (num4 > 0)
+		{
+			if (num4 >= count)
+			{
+				mmo.unitPrefabs.Add(item);
+			}
+			SetAircraftReturnedToLocation(mmo, num4, destroyed: true);
+		}
+		if (count - num4 <= 0)
+		{
+			CampaignInterface.instance.DestroyMapMobileObject(mmo.gameObjectAnimator);
+		}
+		ErrorPanel.instance.SetErrorMessage("EnemyStrategicBombed", ml.locationName, string.Empty, string.Empty);
+		CampaignInterface.instance.PauseCampaign();
+	}
+
+	public void BombardWithMobile(MobileMapObject mmo, List<int> indexes, MapLocation ml)
+	{
+		if (ml == null || mmo.currentFaction == ml.currentFaction)
+		{
+			return;
+		}
+		float num = 0f;
+		for (int i = 0; i < indexes.Count; i++)
+		{
+			num += GetBombardDamage(mmo.unitPrefabs[indexes[i]]) * GetBombardFactor(mmo.bombardments[indexes[i]]);
+			mmo.bombardments[indexes[i]]++;
+		}
+		if (num == 0f)
+		{
+			if (mmo.currentFaction == 0)
+			{
+				ErrorPanel.instance.SetErrorMessage("NoBombardAmmo", ml.locationName, string.Empty, string.Empty);
+			}
+			return;
+		}
+		if (mmo.currentFaction == 0)
+		{
+			ErrorPanel.instance.SetErrorMessage("Bombarded", mmo.mobileName, ml.locationName, string.Empty);
+		}
+		else
+		{
+			ErrorPanel.instance.SetErrorMessage("EnemyBombarded", ml.locationName, string.Empty, string.Empty);
+			CampaignInterface.instance.PauseCampaign();
+		}
+		DamageLocation(ml, num);
+		CampaignInterface.instance.CreateStratMapExplosion(new Vector3(ml.locationPosition.x, ml.locationPosition.y, 0f));
+		if (Config.instance.showCampaignLocationRadii)
+		{
+			MapRadii.instance.SetMapRadii();
+		}
+	}
+
+	private void DamageLocation(MapLocation ml, float damage, float cooldownModifier = 1f)
+	{
+		damage *= (float)campaignData.maxPort[0] + (float)campaignData.maxAirfield[0] + 1f - (float)ml.portLevel - (float)ml.airfieldLevel;
+		damage *= UnityEngine.Random.Range(campaignData.bombardDamageRange[0], campaignData.bombardDamageRange[1]);
+		float num = 1f - Mathf.Clamp01(ml.aircraftCooldown / campaignData.bombardMaxAirCooldown);
+		damage *= num;
+		ml.integrity -= (int)damage;
+		if (ml.integrity < -100)
+		{
+			ml.portLevel = DecreaseUpgrade(ml, ml.portLevel);
+			ml.airfieldLevel = DecreaseUpgrade(ml, ml.airfieldLevel);
+		}
+		else if (ml.integrity < 1)
+		{
+			if (ml.airfieldLevel >= ml.portLevel)
+			{
+				ml.airfieldLevel = DecreaseUpgrade(ml, ml.airfieldLevel);
+			}
+			else
+			{
+				ml.portLevel = DecreaseUpgrade(ml, ml.portLevel);
+			}
+		}
+		if (ml.airfieldLevel > 0)
+		{
+			ml.aircraftCooldown += damage * campaignData.bombardAirCooldownFactor * cooldownModifier;
+		}
+	}
+
+	private int DecreaseUpgrade(MapLocation ml, int facility)
+	{
+		facility--;
+		if (facility < 1)
+		{
+			facility = 0;
+		}
+		ml.integrity = 100;
+		if (ml.GetComponent<GameObjectAnimator>() == CampaignInterface.instance.currentMapObject)
+		{
+			CampaignInterface.instance.SetLocationPanelData(ml.GetComponent<GameObjectAnimator>());
+		}
+		return facility;
+	}
+
+	private float GetBombardFactor(int number)
+	{
+		if (number > 2)
+		{
+			return 0f;
+		}
+		return 1f;
+	}
+
+	private float GetBombardDamage(string prefabName)
+	{
+		if (EngagementManager.instance.unitDataDictionary[prefabName].unitSubtype == UnitSubType.Battleship)
+		{
+			return 10f;
+		}
+		if (EngagementManager.instance.unitDataDictionary[prefabName].unitSubtype == UnitSubType.Battlecruiser)
+		{
+			return 8f;
+		}
+		if (EngagementManager.instance.unitDataDictionary[prefabName].unitSubtype == UnitSubType.Heavy_Cruiser)
+		{
+			return 5f;
+		}
+		return 2f;
+	}
+
+	public List<int> GetbombardIndexes(MobileMapObject mmo)
+	{
+		List<int> list = Utilities.DoesMobileContainSubtype(mmo, UnitSubType.Battleship);
+		list.AddRange(Utilities.DoesMobileContainSubtype(mmo, UnitSubType.Battlecruiser));
+		list.AddRange(Utilities.DoesMobileContainSubtype(mmo, UnitSubType.Heavy_Cruiser));
+		for (int num = list.Count - 1; num > -1; num--)
+		{
+			if (mmo.cellVariables[num] != string.Empty && !Utilities.GetSubsystemAvailable(mmo.unitPrefabs[num], mmo.cellVariables[num], CellType.Primary))
+			{
+				list.RemoveAt(num);
+			}
+		}
+		return list;
+	}
+
+	public List<string> GetIntelOnSeaGroup(MobileMapObject mmo)
+	{
+		List<string> list = new List<string>();
+		WeatherCell weatherCell = WeatherManager.instance.weatherCells[WeatherManager.instance.GetMapObjectWeatherCellIndex(mmo.gameObjectAnimator.currentMap2DLocation)];
+		float campaignVisibility = Utilities.GetCampaignVisibility(CampaignInterface.instance.dateTime.Hour, weatherCell.seaState, weatherCell.cloudLevel);
+		float speed = mmo.speed * UnityEngine.Random.Range(0.9f, 1.1f);
+		int num = UnityEngine.Random.Range(-3, 3);
+		int[] array = new int[2] { -1, 2 };
+		if (campaignVisibility < 0.6f)
+		{
+			num += UnityEngine.Random.Range(-2, 2);
+			speed = mmo.speed * UnityEngine.Random.Range(0.9f, 1.1f);
+		}
+		if (campaignVisibility < 0.3f)
+		{
+			num += UnityEngine.Random.Range(-2, 2);
+			array = new int[2] { -2, 3 };
+			speed = mmo.speed * UnityEngine.Random.Range(0.9f, 1.1f);
+		}
+		num = mmo.unitPrefabs.Count - num;
+		if (num < 2)
+		{
+			num = mmo.unitPrefabs.Count;
+		}
+		int[] shipDesignations = GetShipDesignations(mmo);
+		int[] shipDesignations2 = GetShipDesignations(mmo);
+		for (int i = 0; i < shipDesignations.Length; i++)
+		{
+			if (shipDesignations[i] <= 0)
+			{
+				continue;
+			}
+			for (int j = 0; j < shipDesignations[i]; j++)
+			{
+				if (UnityEngine.Random.value > campaignVisibility)
+				{
+					shipDesignations2[i]--;
+					shipDesignations2[Mathf.Clamp(i + UnityEngine.Random.Range(array[0], array[1]), 1, 10)]++;
+				}
+			}
+		}
+		int num2 = 0;
+		int num3 = 0;
+		string text = string.Empty;
+		UnitSubType[] array2 = new UnitSubType[11]
+		{
+			UnitSubType.Aircraft_Carrier,
+			UnitSubType.Light_Carrier,
+			UnitSubType.Battleship,
+			UnitSubType.Battlecruiser,
+			UnitSubType.Heavy_Cruiser,
+			UnitSubType.Light_Cruiser,
+			UnitSubType.Merchant,
+			UnitSubType.Oiler,
+			UnitSubType.Destroyer,
+			UnitSubType.Destroyer_Escort,
+			UnitSubType.Submarine
+		};
+		string item = "0";
+		for (int k = 0; k < array2.Length; k++)
+		{
+			if (shipDesignations2[(int)array2[k]] > 0)
+			{
+				string text2 = text;
+				text = text2 + shipDesignations2[(int)array2[k]] + " " + LanguageManager.instance.unitTypeDisplayAbbreviations[(int)array2[k]] + ", ";
+				if (num2 == 0)
+				{
+					item = GetSpriteIndexFromShipSubtype(array2[k]).ToString();
+				}
+				num2 += shipDesignations2[(int)array2[k]];
+				num3++;
+			}
+			if (num3 == 2)
+			{
+				break;
+			}
+		}
+		if (num2 > num)
+		{
+			num = num2;
+		}
+		if (num2 == 0)
+		{
+			num = 1;
+			string text3 = text;
+			text = text3 + 1 + " " + LanguageManager.instance.unitTypeDisplayAbbreviations[(int)EngagementManager.instance.unitDataDictionary[mmo.unitPrefabs[UnityEngine.Random.Range(0, mmo.unitPrefabs.Count)]].unitSubtype] + " ,";
+		}
+		num = Mathf.Clamp(num, 1, 10);
+		string[] array3 = LanguageManager.instance.GetDictionaryString(LanguageManager.generalDictionary, "IntelSea").Split('|');
+		string text4 = num + " " + array3[0];
+		if (shipDesignations2[10] + shipDesignations2[9] > 3)
+		{
+			text4 = text4 + " " + array3[4];
+		}
+		list.Add(text4);
+		list.Add(array3[1] + " course");
+		list.Add(CampaignInterface.instance.GetMobileSeaSpeedDisplay(speed));
+		list.Add(item);
+		list.Add(array3[3] + " " + text.Substring(0, text.Length - 2));
+		mmo.intelData = list;
+		SetSeaGroupSpriteFromIntel(mmo);
+		return list;
+	}
+
+	private void SetSeaGroupSpriteFromIntel(MobileMapObject mmo)
+	{
+		SpriteRenderer componentInChildren = mmo.GetComponentInChildren<SpriteRenderer>();
+		int num = int.Parse(mmo.intelData[3]);
+		componentInChildren.sprite = CampaignInterface.instance.mobileMapSprites[num];
+	}
+
+	public int[] GetShipDesignations(MobileMapObject mmo)
+	{
+		int[] array = new int[LanguageManager.instance.unitTypeIDs.Count];
+		for (int i = 0; i < mmo.unitPrefabs.Count; i++)
+		{
+			array[LanguageManager.instance.GetUnitDesignationIndex(EngagementManager.instance.unitDataDictionary[mmo.unitPrefabs[i]].unitDesignation)]++;
+		}
+		return array;
+	}
+
+	public List<string> GetAirTypesAtLocation(MapLocation ml)
+	{
+		if (ml.currentFaction == 0)
+		{
+			if (ml.aircraft0 != null && ml.aircraft0.Count > 0)
+			{
+				return ml.aircraft0;
+			}
+			return campaignData.aircraft0;
+		}
+		if (ml.aircraft1 != null && ml.aircraft1.Count > 0)
+		{
+			return ml.aircraft1;
+		}
+		return campaignData.aircraft1;
+	}
+
+	public List<int> GetAirNumbersAtLocation(MapLocation ml)
+	{
+		if (ml.currentFaction == 0)
+		{
+			if (ml.aircraft0Numbers != null && ml.aircraft0Numbers.Count > 0)
+			{
+				return ml.aircraft0Numbers;
+			}
+			return campaignData.aircraft0Numbers;
+		}
+		if (ml.aircraft1Numbers != null && ml.aircraft1Numbers.Count > 0)
+		{
+			return ml.aircraft1Numbers;
+		}
+		return campaignData.aircraft1Numbers;
+	}
+
+	public int[] GetAirReplenishAtLocation(MapLocation ml)
+	{
+		if (ml.currentFaction == 0)
+		{
+			if (ml.replenishDailyAircraft0 != null && ml.replenishDailyAircraft0.Length != 0)
+			{
+				return ml.replenishDailyAircraft0;
+			}
+			return campaignData.replenishDailyAircraft0;
+		}
+		if (ml.replenishDailyAircraft1 != null && ml.replenishDailyAircraft1.Length != 0)
+		{
+			return ml.replenishDailyAircraft1;
+		}
+		return campaignData.replenishDailyAircraft1;
+	}
+
+	public bool IsPathValid(Vector2 start, Vector2 end)
+	{
+		return CampaignInterface.instance.map.FindRoute(start, end, CampaignInterface.instance.currentMapObject.terrainCapability, CampaignInterface.instance.currentMapObject.minAltitude, CampaignInterface.instance.currentMapObject.maxAltitude, CampaignInterface.instance.currentMapObject.maxSearchCost, CampaignInterface.instance.currentMapObject.maxSearchSteps) != null;
+	}
+
+	public bool IsMobileType(MobileMapObject mmo, UnitType unitType)
+	{
+		if (mmo != null && mmo.unitPrefabs != null && mmo.unitPrefabs.Count > 0)
+		{
+			return EngagementManager.instance.unitDataDictionary[mmo.unitPrefabs[0]].unitType == unitType;
+		}
+		return false;
+	}
+
+	public int SetMMOType(MobileMapObject mmo)
+	{
+		return (int)EngagementManager.instance.unitDataDictionary[mmo.unitPrefabs[0]].unitType;
+	}
+}
+You are not using the latest version of the tool, please update.
+Latest version is '11.2.0.10050' (yours is '8.2.0.7535-95108c96')

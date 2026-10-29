@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "JAVA: ONE WEEK", "imagePath": "", "content": "<size=18><b>1 March 1942</b></size>\nThe landing force for <color=#caa809>SURABAYA</color> sails to arrive on 1 March 1942. It needs at least 6 warships within 400 km to cover it, or it will not go in."}

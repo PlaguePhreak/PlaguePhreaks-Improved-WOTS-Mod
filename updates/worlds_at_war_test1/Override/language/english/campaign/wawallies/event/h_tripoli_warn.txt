@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "TRIPOLI: ONE WEEK", "imagePath": "", "content": "<size=18><b>23 January 1943</b></size>\nThe landing force for <color=#caa809>TRIPOLI</color> sails to arrive on 23 January 1943. It needs at least 4 warships within 500 km to cover it, or it will not go in."}

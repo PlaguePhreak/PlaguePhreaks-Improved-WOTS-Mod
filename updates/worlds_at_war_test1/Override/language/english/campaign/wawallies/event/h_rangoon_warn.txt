@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "RANGOON THREATENED", "imagePath": "", "content": "<size=18><b>8 March 1942</b></size>\nIntelligence expects an enemy move against <color=#caa809>RANGOON</color> around 8 March 1942. Have at least 3 warships within 400 km by then, or it may fall."}

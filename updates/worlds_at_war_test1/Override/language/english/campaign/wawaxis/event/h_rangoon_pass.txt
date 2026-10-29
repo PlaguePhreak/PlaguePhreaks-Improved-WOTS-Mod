@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "RANGOON TAKEN", "imagePath": "", "content": "<size=18><b>8 March 1942</b></size>\nCovered by our warships, the landing force has taken <color=#caa809>RANGOON</color>. <b>+100 command points.</b>\n\n<i>Rangoon fell on 8 March 1942, closing the Burma Road.</i>"}

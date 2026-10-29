@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "THE DARWIN RAID THREATENED", "imagePath": "", "content": "<size=18><b>19 February 1942</b></size>\nIntelligence expects an enemy move against <color=#caa809>DARWIN</color> around 19 February 1942. Have at least 2 carriers within 600 km by then, or it may fall."}

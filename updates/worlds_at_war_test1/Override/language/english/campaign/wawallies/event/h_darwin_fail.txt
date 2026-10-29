@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "THE DARWIN RAID FALLEN", "imagePath": "", "content": "<size=18><b>19 February 1942</b></size>\nWith no carriers to stop them, the enemy has landed at <color=#caa809>DARWIN</color> and taken it. <b>-50 command points.</b>\n\n<i>Four carriers of the Kido Butai struck Darwin on 19 February 1942, sinking eight ships in the harbour.</i>"}

@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "THE BATTLE OF THE NORTH CAPE", "imagePath": "", "content": "<size=18><b>26 December 1943</b></size>\nOur warships were on hand at <color=#caa809>NARVIK</color>. <b>+150 command points.</b>\n\n<i>Scharnhorst sortied against convoy JW 55B and was sunk by Duke of York on 26 December 1943.</i>"}

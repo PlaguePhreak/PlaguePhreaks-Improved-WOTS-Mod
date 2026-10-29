@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "SICILY THREATENED", "imagePath": "", "content": "<size=18><b>10 July 1943</b></size>\nIntelligence expects an enemy move against <color=#caa809>MESSINA</color> around 10 July 1943. Have at least 8 warships within 500 km by then, or it may fall."}

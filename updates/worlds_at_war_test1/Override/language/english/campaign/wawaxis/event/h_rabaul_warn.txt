@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "RABAUL: ONE WEEK", "imagePath": "", "content": "<size=18><b>23 January 1942</b></size>\nThe landing force for <color=#caa809>RABAUL</color> sails to arrive on 23 January 1942. It needs at least 3 warships within 500 km to cover it, or it will not go in."}

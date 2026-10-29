@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "IWO JIMA THREATENED", "imagePath": "", "content": "<size=18><b>19 February 1945</b></size>\nIntelligence expects an enemy move against <color=#caa809>IWO JIMA</color> around 19 February 1945. Have at least 8 warships within 500 km by then, or it may fall."}

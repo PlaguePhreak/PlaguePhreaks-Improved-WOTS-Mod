@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "JAVA HELD", "imagePath": "", "content": "<size=18><b>1 March 1942</b></size>\nOur warships off <color=#caa809>SURABAYA</color> turned the enemy landing force back. <b>+150 command points.</b>\n\n<i>The ABDA fleet was destroyed in the Java Sea on 27 February 1942 and the Japanese landed on Java on 1 March.</i>"}

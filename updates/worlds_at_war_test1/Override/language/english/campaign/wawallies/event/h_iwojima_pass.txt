@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "IWO JIMA TAKEN", "imagePath": "", "content": "<size=18><b>19 February 1945</b></size>\nCovered by our warships, the landing force has taken <color=#caa809>IWO JIMA</color>. <b>+200 command points.</b>\n\n<i>Three Marine divisions landed on Iwo Jima on 19 February 1945.</i>"}

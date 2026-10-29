@@ -1,7 +1,7 @@
 # Worlds at War (test build 1): how to install
 
 Two new campaigns on a whole-world map: **Worlds at War: Allies** and **Worlds at War: Axis**. Nothing in the DLL
-changes for this part. Use it with 0.32.9 (or later) so distances, the globe and the battle square are right.
+changes for this part. Use it with 0.32.14 (or later): the historical events need the ModHistory class that 0.32.14 adds.
 
 1. Unzip `WorldsAtWar_test1_Override.zip`.
 2. Copy the `Override` folder from the zip over your game's `StreamingAssets/Override` folder. It only adds new files
@@ -13,7 +13,12 @@ changes for this part. Use it with 0.32.9 (or later) so distances, the globe and
 
 ## What is in it
 - The whole world, 100W eastwards round to 100W (so the Americas are split at 100W, through land), pole to pole.
-  Four 4096 x 2048 map images and a 4096 x 2048 water mask, drawn from Natural Earth 10m coastlines.
+  Four 8192 x 4096 map images (16384 pixels round the world) and a 4096 x 2048 water mask, drawn from Natural Earth
+  10m coastlines. The four images take about 512 MB of video memory; if the campaign map fails to load on a small
+  graphics card, the old 4096-wide set is in maps_4096/ and drops straight in.
+- 38 historical events on their real dates (campaign/<id>/history.txt, pop-ups h_*.txt): a warning a week ahead,
+  then the place changes hands or points are won, depending on whether you have enough warships or carriers near it.
+  Wake, Singapore, Java, Midway, Guadalcanal, Torch, Sicily, Normandy, Leyte, Okinawa and more, seen from each side.
 - 134 ports and bases in every ocean, set for 8 December 1941: Allies (US, UK and Commonwealth, Dutch East Indies,
   Free French, Soviet Arctic ports), Axis (Japan and its islands, Germany and occupied Norway and France, Italy,
   Vichy Africa and Indochina) and neutrals (Spain, Portugal, Sweden, South America, Mexico, unoccupied islands).

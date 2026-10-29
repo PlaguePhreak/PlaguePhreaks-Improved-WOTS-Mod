@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "ORAN THREATENED", "imagePath": "", "content": "<size=18><b>8 November 1942</b></size>\nIntelligence expects an enemy move against <color=#caa809>ORAN</color> around 8 November 1942. Have at least 6 warships within 600 km by then, or it may fall."}

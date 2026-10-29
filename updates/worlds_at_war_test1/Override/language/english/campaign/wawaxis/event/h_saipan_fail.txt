@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "SAIPAN FALLEN", "imagePath": "", "content": "<size=18><b>15 June 1944</b></size>\nWith no carriers to stop them, the enemy has landed at <color=#caa809>SAIPAN</color> and taken it. <b>-100 command points.</b>\n\n<i>The landing on Saipan on 15 June 1944 brought on the Battle of the Philippine Sea and the loss of three Japanese carriers.</i>"}

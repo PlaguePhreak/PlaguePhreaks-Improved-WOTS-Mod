@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "TARANTO TAKEN", "imagePath": "", "content": "<size=18><b>9 September 1943</b></size>\nCovered by our warships, the landing force has taken <color=#caa809>TARANTO</color>. <b>+150 command points.</b>\n\n<i>The 1st Airborne Division was landed at Taranto by warships on 9 September 1943, as the Italian fleet sailed for Malta.</i>"}

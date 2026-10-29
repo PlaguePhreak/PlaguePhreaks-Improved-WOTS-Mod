@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "RABAUL: LANDING CALLED OFF", "imagePath": "", "content": "<size=18><b>23 January 1942</b></size>\nWith fewer than 3 warships within 500 km of <color=#caa809>RABAUL</color>, the landing force turned back.\n\n<i>The South Seas Force took Rabaul on 23 January 1942 and made it the great Japanese base of the South Pacific.</i>"}

@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "GUAM: ONE WEEK", "imagePath": "", "content": "<size=18><b>21 July 1944</b></size>\nThe landing force for <color=#caa809>GUAM</color> sails to arrive on 21 July 1944. It needs at least 6 warships within 500 km to cover it, or it will not go in."}

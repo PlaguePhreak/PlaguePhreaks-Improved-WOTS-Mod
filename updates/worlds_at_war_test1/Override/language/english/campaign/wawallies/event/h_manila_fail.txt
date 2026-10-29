@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "MANILA FALLEN", "imagePath": "", "content": "<size=18><b>2 January 1942</b></size>\nWith no warships to stop them, the enemy has landed at <color=#caa809>MANILA</color> and taken it. <b>-75 command points.</b>\n\n<i>Manila was declared an open city and occupied on 2 January 1942; the Asiatic Fleet fell back to Java.</i>"}
