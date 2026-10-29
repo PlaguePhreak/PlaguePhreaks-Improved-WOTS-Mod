@@ -1,6 +1,6 @@
 # 0.31.1: every ship can blow up and break apart
 
-Built on 0.31 (enemy AI), so it has everything up to 0.31.
+Built on 0.31 with the changelog box fix (`v0.31_changelog_box`), so it has everything up to 0.31 plus that fix.
 
 ## What changed
 
@@ -16,7 +16,7 @@ Built on 0.31 (enemy AI), so it has everything up to 0.31.
 2. Go to `E:\SteamLibrary\steamapps\common\War on the Sea\WarOnTheSea_Data\Managed\`.
 3. Rename `Assembly-CSharp.dll` to `Assembly-CSharp_0.31.dll` as a backup.
 4. Copy `Assembly-CSharp.dll` from this folder into `Managed\`.
-5. Start the game.
+5. Start the game. The menu should say **Version 0.31.1**.
 
 ## In the log
 
@@ -35,10 +35,11 @@ Built on 0.31 (enemy AI), so it has everything up to 0.31.
 ## Checks
 
 - Only the `ModSinking` class changed.
-- In `ModVersion`, only `Current` changed (0.31 to 0.31.1), so it stays out of the way of the changelog box fix. The menu line still comes from that thread's work.
+- `ModVersion.Build` is the changelog box fix, unchanged apart from its text. The version is now 0.31.1, and the changelog gained the line "Any ship can blow up and break apart: a loaded magazine is fatal".
 - The DLL verifier lists the same warnings as 0.31.
 - Not tested in the game. Big ships are cut at runtime with no torn-edge kit, so watch the first battleship or carrier break.
 
 ## dnSpy
 
-`ModSinking`: Edit Class with `dnspy_reference\ModSinking.cs.txt`.
+1. `ModSinking`: Edit Class with `dnspy_reference\ModSinking.cs.txt`.
+2. `ModVersion`: change the strings as listed in `dnspy_reference\ModVersion_strings.txt`.
