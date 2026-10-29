@@ -1,0 +1,44 @@
+# 0.31.1: every ship can blow up and break apart
+
+Built on 0.31 (enemy AI), so it has everything up to 0.31.
+
+## What changed
+
+- **Every ship uses the magazine blast system.** That includes battleships, battlecruisers, carriers, heavy and light cruisers, destroyers, escorts and merchants. Only submarines are left out. Each blast is still sized by the shells left in that magazine (a full battleship magazine is the biggest), and it still starts small, bursts and then smokes.
+- **A loaded magazine now destroys any ship.** Before, only a blast that covered a lot of the damage grid sank the ship, so big ships with armoured magazines almost always survived one. Now a magazine that is at least a quarter full is fatal for any ship, whatever its size or armour. The old rule (a blast over 9 squares) still applies too. A nearly empty magazine (under 5%) is still never fatal.
+- **It breaks apart.** A fatal blast breaks the ship in two, or blows off the bow or stern, most of the time. That's 75% of the time for a nearly empty magazine, rising to 95% for a full one. Otherwise it plunges fast.
+- **A torpedo can break the back of any ship.** The game decides when a torpedo breaks a ship's back. Until now the mod only broke destroyers and escorts in two when that happened. Now merchants, oilers, cruisers, battleships and carriers break in two as well, and both magazines go up.
+- Only destroyers and escorts have the hand-made torn break pieces. The other ships are cut cleanly at the break, as before 0.29 kits.
+
+## Install
+
+1. Close the game.
+2. Go to `E:\SteamLibrary\steamapps\common\War on the Sea\WarOnTheSea_Data\Managed\`.
+3. Rename `Assembly-CSharp.dll` to `Assembly-CSharp_0.31.dll` as a backup.
+4. Copy `Assembly-CSharp.dll` from this folder into `Managed\`.
+5. Start the game.
+
+## In the log
+
+`[SINK] <ship> magazine explosion at square ...: the blast covers 7 squares, magazine 80% full: LETHAL, the ship is lost (at least 25% full)`
+
+## Knobs (top of ModSinking)
+
+| Knob | Default | What it does |
+|---|---|---|
+| `LethalFull` | 0.25 | A magazine at least this full destroys any ship |
+| `LethalCells` | 9 | The old rule: a blast over this many squares is fatal too |
+| `EmptyMagazine` | 0.05 | Below this, never fatal |
+| `LethalSplitChance` / `FullSplitChance` | 0.75 / 0.95 | Chance a fatal blast breaks the ship (empty / full magazine) |
+| `BreakMerchants`, `BreakCruisers`, `BreakOthers` | true | Torpedo break-back for those ship types |
+
+## Checks
+
+- Only the `ModSinking` class changed.
+- In `ModVersion`, only `Current` changed (0.31 to 0.31.1), so it stays out of the way of the changelog box fix. The menu line still comes from that thread's work.
+- The DLL verifier lists the same warnings as 0.31.
+- Not tested in the game. Big ships are cut at runtime with no torn-edge kit, so watch the first battleship or carrier break.
+
+## dnSpy
+
+`ModSinking`: Edit Class with `dnspy_reference\ModSinking.cs.txt`.

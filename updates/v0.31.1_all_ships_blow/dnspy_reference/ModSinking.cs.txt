@@ -1,0 +1,2078 @@
+using System;
+using System.Collections.Generic;
+using Ceto;
+using UnityEngine;
+
+// v0.29 NEW CLASS (0.29.1: break kicks up first, 3D blast; 0.29.4: torpedo water towers, both magazines blow on a break, blasts by contents). How ships blow up, break in two and sink.
+//
+// 0. (0.29.4, 0.29.6) Every torpedo hit throws up a huge splash: the game's own splashLarge, TorpedoSplash times bigger (TorpedoHit, first line of DamageableSea.ApplyDamage).
+// 1. Torpedo breaks a destroyer's back (stock DamageableSea.ApplyDamage, torpBreakBackValues): it sets off both magazines, fore and aft, each
+//    blast sized by the shells left in it (ModWreckArt.MagazineLoad), with the game's "explosionMagazine" effect and secondary blasts,
+//    the ship breaks in two at the hit: the middle first kicks up by HogAngle degrees, slams back down into the sea, and then both halves
+//    sink in a V, bow and stern rising out of the water (TorpedoBreakBack).
+// 2. (0.31.1: every ship) A magazine explosion that is "lethal" (the blast covers more than LethalCells squares of the damage grid, or the magazine is at least LethalFull full) sinks the ship at once with a big
+//    explosion sized by what's in the magazine (an empty one is never lethal). Most of the time (LethalSplitChance) it also breaks the ship: a magazine near midships splits it in half, one near the bow blows the
+//    bow off, one near the stern blows the stern off (AfterMagazine). A smaller magazine blast gets the same contents-based explosion.
+// 3. Every sinking ship (except submarines) now sinks with a scripted motion instead of the stock "fill and roll" (Begin, called at the end of
+//    DamageableSea.SinkShip). The way it goes depends on where it flooded:
+//       flooded on one side, or already listing  -> CAPSIZES: rolls over, floats keel-up for a while, then goes.
+//       flooded at one end                        -> PLUNGES by that end: settles by the bow (or stern), the other end rises, then it slides under.
+//       flooded evenly (or scuttled)              -> SETTLES: sinks slowly and level, then goes down by one end at the end.
+//    A ship in shallow water comes to rest on the seabed (the wreck can stick out of the water). Big ships take longer than small ones.
+// 4. Where a ship sinks there is floating debris (planks, crates, barrels, plates, rafts) and an oil slick that spreads and fades after about 45 minutes
+//    (battle time). Oilers leave a much bigger slick, and it often burns. Explosions throw debris into the air.
+//
+// The split: the half that breaks off is a copy of the ship's own meshes, cut exactly at the break. For every destroyer and escort there are
+// pre-made breaks made in Blender (ModWreckArt, fore / mid / aft): the ship's model is cut where the pre-made torn part starts and the torn part
+// (jagged burnt plating, the dark inside of the hull, torn decks) is added, so the halves look really broken. Turrets, guns and directors are
+// never cut: each goes whole with its half. The big explosions use ModWreckArt's 3D blast (fireball, fire-and-smoke streamers, sparks).
+// The floating wreckage is ModDebrisArt's Blender models (planks, crates, drums, rafts, life rings...) and the slicks use its oil shapes with a
+// rainbow sheen on the thin edges; without the mod_debris folder it falls back to plain boxes and a round slick.
+// Log lines start with [SINK]. Everything is switched off with On = false.
+public static class ModSinking
+{
+	// ---------------- knobs ----------------
+	public static bool On = true;
+	public static bool LogOn = true;
+
+	// Which ships break in two when a torpedo breaks their back. Aaron asked for destroyers.
+	public static bool BreakDestroyers = true;          // Destroyer
+	public static bool BreakEscorts = true;             // Destroyer_Escort
+	public static bool BreakMerchants = true;           // Merchant and Oiler (0.31.1: on)
+	public static bool BreakCruisers = true;            // Light_Cruiser (0.31.1: on)
+	public static bool BreakOthers = true;              // 0.31.1: every other ship (heavy cruisers, battleships, carriers...), not submarines
+
+	public static int LethalCells = 9;                  // magazine blast bigger than this many squares = ship lost
+	public static float LethalSplitChance = 0.75f;      // a lethal magazine blast breaks the ship (else it just plunges fast)...
+	public static float FullSplitChance = 0.95f;        // ...rising to this for a full magazine (0.31.1)
+	public static float LethalFull = 0.25f;             // 0.31.1: a magazine at least this full destroys any ship, whatever its size or armour
+	public static float EmptyMagazine = 0.05f;          // a magazine with less than this part of its shells left can't blow the ship apart
+	public static float TorpedoSplash = 2.5f;           // torpedo hit: the game's big splash made this many times bigger (0 = only the game's own)
+	public static float AftMagDelay = 0.7f;             // torpedo break: the aft magazine goes up this many battle seconds after the fore one
+	// the size of each blast comes from the magazine's contents: see the knobs at the top of ModWreckArt (BlastK, BigBlast, TowerHeight)
+
+	// How long each way of sinking takes, in battle seconds, for a 2000 t ship. Bigger ships take up to 2.5 x longer.
+	public static float BreakTime = 90f;
+	public static float HogAngle = 4.5f;                // torpedo break: the two halves first kick up at the break by this many degrees (0 = off)
+	public static float HogRise = 1.2f;                 // battle seconds the middle takes to lift
+	public static float HogHold = 0.6f;                 // it hangs there this long
+	public static float HogFall = 0.7f;                 // then slams back down into the sea this fast (and dips below where it was)
+	public static float MagTime = 70f;
+	public static float PlungeTime = 360f;
+	public static float CapsizeTime = 300f;
+	public static float SettleTime = 600f;
+
+	public static bool Debris = true;
+	public static float DebrisPerLength = 2.4f;         // pieces per 10 m of ship length
+	public static int DebrisMax = 40;                   // per ship
+	public static int DebrisTotalMax = 160;             // in the whole battle
+	public static float DebrisScale = 1f;
+	public static float DebrisLife = 1800f;             // battle seconds a piece floats
+
+	public static bool Oil = true;
+	public static float OilSize = 1f;                   // slick size: 1 = each oil patch grows to 1.2 to 2 ship lengths across
+	public static float OilStart = 0.4f;                // a new oil patch starts this many ship lengths across
+	public static float OilSpreadTime = 240f;           // battle seconds a patch takes to spread to full size (4 minutes)
+	public static float OilLife = 2700f;                // battle seconds the slick lasts (it fades out over the last 10 minutes)
+	public static float OilAlpha = 0.6f;                // how dark the slick is
+	public static int OilQueue = 3100;                  // draw order. If the slick can't be seen at all, try 4000.
+	public static float OilerFireChance = 0.6f;         // an oiler's slick catches fire
+	public static float ExplosionFireChance = 0.25f;    // any ship that blew up: its slick catches fire
+
+	// ---------------- state ----------------
+	private class Piece
+	{
+		public Transform tr;
+		public bool isUnit;
+		public float pivotZ;            // ship local z the piece turns about (the break, or 0 for a whole ship)
+		public float lenFrac;           // piece length / ship length
+		public float[] T;
+		public float[] D;               // pivot height (world y)
+		public float[] P;               // pitch, + = bow down
+		public float[] R;               // roll, + = port side down
+		public float dur;
+		public float t;
+		public float sep;               // how far it drifts away from the break along the ship's axis (world units, signed)
+		public float lat;               // and sideways
+		public float yawDrift;
+		public Vector3 pivotRest;       // pivot position at the start, relative to the base point
+		public float extra;             // sunk further after the scripted part
+		public float sinkV;
+		public bool grounded;
+		public float groundTime;
+		public bool done;
+		public float pitch;
+		public float roll;
+		public float y;
+		public List<Mesh> made = new List<Mesh>();
+		public float debrisFrom = 0.6f;
+		public float sigma;             // +1 bow side of the break, -1 stern side
+		public float hog;               // degrees the break kicks up first (0 = no kick)
+		public float age;
+		public bool splashed;
+	}
+
+	private class Wreck
+	{
+		public Unit u;
+		public DamageableSea ds;
+		public string name;
+		public string mode;
+		public float L;                 // ship length, world units
+		public float scale;             // ship root scale
+		public float draft;
+		public Vector3 baseRel;         // the ship's position at rest, relative to the effects root
+		public Vector3 lastRel;
+		public float yaw0;
+		public bool hasFloor;
+		public float floorY;
+		public bool split;
+		public List<Piece> pieces = new List<Piece>();
+		public Slick slick;
+		public int debrisLeft;
+		public float debrisTimer;
+		public float age;
+	}
+
+	private class Pending
+	{
+		public DamageableSea ds;
+		public string mode;             // "break", "magsplit", "magplunge"
+		public float z;                 // ship local z of the hit / magazine
+	}
+
+	private class Bit
+	{
+		public Transform tr;
+		public Vector3 rel;
+		public Vector3 vel;
+		public Vector3 spin;
+		public bool flying;
+		public float age;
+		public float life;
+		public float halfH;
+		public float phase;
+		public Quaternion rest;
+		public float sink;
+	}
+
+	private class Blob
+	{
+		public Transform tr;
+		public MeshRenderer r;
+		public MeshRenderer sheen;
+		public Vector3 rel;
+		public float start;
+		public float max;
+		public float grow;
+		public float age;
+	}
+
+	private class Slick
+	{
+		public List<Blob> blobs = new List<Blob>();
+		public float age;
+		public float L;
+		public float sizeMul;
+		public int maxBlobs;
+		public float nextBlob;
+		public bool fire;
+		public List<GameObject> fires = new List<GameObject>();
+		public float fireEnd;
+		public bool open = true;        // still being fed by the wreck
+	}
+
+	private class Timed
+	{
+		public float at;
+		public Vector3 rel;
+		public string fx;
+		public float scale;
+		public float life;
+	}
+
+	private static bool failed;
+	private static ModSinkFx runner;
+	private static Transform root;
+	private static float clock;
+	private static readonly List<Wreck> wrecks = new List<Wreck>();
+	private static readonly List<Pending> pending = new List<Pending>();
+	private static readonly List<Bit> bits = new List<Bit>();
+	private static readonly List<Slick> slicks = new List<Slick>();
+	private static readonly List<Timed> timed = new List<Timed>();
+	private static readonly List<Mesh> unreadable = new List<Mesh>();
+	private static readonly List<GameObject> attached = new List<GameObject>();   // fire and smoke on a sinking piece: stopped when it goes under
+	private static Pending current;
+	private static Material[] debrisMats;
+	private static Material oilMat;
+	private static Texture2D oilTex;
+	private static Mesh oilQuad;
+	private static MaterialPropertyBlock mpb;
+
+	private static readonly Color[] DebrisColours = new Color[6]
+	{
+		new Color(0.33f, 0.23f, 0.14f),   // wood
+		new Color(0.40f, 0.30f, 0.18f),   // crate
+		new Color(0.22f, 0.10f, 0.08f),   // barrel
+		new Color(0.20f, 0.21f, 0.22f),   // steel plate
+		new Color(0.62f, 0.50f, 0.28f),   // raft / cork
+		new Color(0.06f, 0.06f, 0.06f)    // burnt
+	};
+
+	// ================= hooks =================
+
+	// Hook: last line of DamageableSea.SinkShip:   ModSinking.Begin(this);
+	public static void Begin(DamageableSea ds)
+	{
+		if (!On || failed || ds == null)
+		{
+			return;
+		}
+		try
+		{
+			Unit u = ds.parentUnit;
+			if (u == null || u.unitSea == null || u.unitData == null || u.unitData.unitSubtype == UnitSubType.Submarine)
+			{
+				return;
+			}
+			if (!((Component)u).gameObject.activeInHierarchy)
+			{
+				return;
+			}
+			Pending p = (current != null && current.ds == ds) ? current : null;
+			StartWreck(ds, p, null);
+		}
+		catch (Exception ex)
+		{
+			Fail("Begin", ex);
+		}
+	}
+
+	// Hook: last line of DamageableSea.ApplyMagazineExplosion:   ModSinking.AfterMagazine(this, cv);
+	public static void AfterMagazine(DamageableSea ds, CellVariable cv)
+	{
+		if (!On || failed || ds == null || cv == null || cv.parentCell == null)
+		{
+			return;
+		}
+		try
+		{
+			Unit u = ds.parentUnit;
+			if (u == null || u.unitData == null || u.unitData.unitSubtype == UnitSubType.Submarine)
+			{
+				return;
+			}
+			UnitData ud = u.unitData;
+			string at = cv.parentCell.cellCoords;
+			List<string> cells = new List<string>();
+			if (ud.cellDictionary.ContainsKey(at))
+			{
+				cells.Add(at);
+			}
+			int[] a = Utilities.GetCompartmentIntArray(ud, at);
+			AddCells(cells, ud, Utilities.plusPattern(ud, a, 1, vert: true));
+			a = Utilities.GetCompartmentIntArray(ud, at);
+			AddCells(cells, ud, Utilities.diagonalsPattern(ud, a, 1, vert: true));
+			a = Utilities.GetCompartmentIntArray(ud, at);
+			AddCells(cells, ud, Utilities.plusPattern(ud, a, 2, vert: true));
+			int n = cells.Count;
+			ModWreckArt.MagLoad ld = ModWreckArt.MagazineLoad(u, ds, cv);
+			bool empty = ld.capKg > 0.01f && ld.Full < EmptyMagazine;
+			bool byLoad = ld.capKg > 0.01f && ld.Full >= LethalFull;
+			bool lethal = !empty && (n > LethalCells || byLoad);
+			Vector3 local = Utilities.GetCellPositionInUnitLocalSpace(cv.parentCell, u);
+			Log(Name(u) + " magazine explosion at square " + at + ": the blast covers " + n + " squares, magazine " + Mathf.RoundToInt(ld.Full * 100f) + "% full" + (lethal ? ": LETHAL, the ship is lost (" + (n > LethalCells ? "more than " + LethalCells + " squares" : "at least " + Mathf.RoundToInt(LethalFull * 100f) + "% full") + ")" : (empty ? ", the magazine was nearly empty: not lethal" : ", not lethal")));
+			if (!EnsureRunner())
+			{
+				return;
+			}
+			Vector3 world = ((Component)u).transform.TransformPoint(local);
+			MagBlast(u, world, ld, 0f, "magazine " + at);
+			if (!lethal)
+			{
+				return;
+			}
+			Message(u, "<UNITA> blows up!");
+			Pending p = new Pending();
+			p.ds = ds;
+			p.mode = (UnityEngine.Random.value < Mathf.Lerp(LethalSplitChance, FullSplitChance, ld.Full)) ? "magsplit" : "magplunge";
+			p.z = local.z;
+			pending.Add(p);
+		}
+		catch (Exception ex)
+		{
+			Fail("AfterMagazine", ex);
+		}
+	}
+
+	// Hook: in DamageableSea.ApplyDamage, torpedo break-back block, after the second ApplyMagazineDamage(coordsToDestroy);
+	//   ModSinking.TorpedoBreakBack(this, text);      (text = the keel square the game just destroyed)
+	public static void TorpedoBreakBack(DamageableSea ds, string keel)
+	{
+		if (!On || failed || ds == null || string.IsNullOrEmpty(keel))
+		{
+			return;
+		}
+		try
+		{
+			Unit u = ds.parentUnit;
+			if (u == null || u.unitData == null || !Breaks(u.unitData.unitSubtype))
+			{
+				return;
+			}
+			CellVariable kv;
+			if (ds.cellVariables == null || !ds.cellVariables.TryGetValue(keel, out kv) || kv.parentCell == null || !EnsureRunner())
+			{
+				return;
+			}
+			Vector3 local = Utilities.GetCellPositionInUnitLocalSpace(kv.parentCell, u);
+			Vector3 world = ((Component)u).transform.TransformPoint(local);
+			Log(Name(u) + " torpedo BROKE ITS BACK at square " + keel + ": both magazines go up, the ship breaks in two");
+			BlowMagazines(u, ds, world);
+			Message(u, "<UNITA> breaks in two!");
+			Pending p = new Pending();
+			p.ds = ds;
+			p.mode = "break";
+			p.z = local.z;
+			pending.Add(p);
+		}
+		catch (Exception ex)
+		{
+			Fail("TorpedoBreakBack", ex);
+		}
+	}
+
+	// Hook (0.29.4): first line of DamageableSea.ApplyDamage, after ModHitLog.BeginHit:   ModSinking.TorpedoHit(this, ammunitionDamage, collision);
+	// Every torpedo that hits a ship throws up a huge splash at the hit (the game's own splash effect, scaled up).
+	private static AmmunitionDamage lastTorpedo;
+	private static int lastTorpedoFrame;
+
+	public static void TorpedoHit(DamageableSea ds, AmmunitionDamage ad, Collision collision)
+	{
+		if (!On || failed || ds == null || ad == null || !ad.isTorpedo || TorpedoSplash <= 0f)
+		{
+			return;
+		}
+		try
+		{
+			if (ad == lastTorpedo && Time.frameCount - lastTorpedoFrame < 10)
+			{
+				return;
+			}
+			lastTorpedo = ad;
+			lastTorpedoFrame = Time.frameCount;
+			Unit u = ds.parentUnit;
+			if (u == null || ((Component)u).transform.position.y < -1f || !EnsureRunner())
+			{
+				return;
+			}
+			Vector3 at = ((Component)ad).transform.position;
+			if (collision != null)
+			{
+				ContactPoint[] cp = collision.contacts;
+				if (cp != null && cp.Length > 0)
+				{
+					at = cp[0].point;
+				}
+			}
+			// 0.29.6: the game's own big splash, made bigger (the game already plays its normal one at the hit)
+			at.y = ((Component)u).transform.position.y;
+			float k = TorpedoSplash * UnityEngine.Random.Range(0.85f, 1.15f);
+			Fx("splashLarge", at, k, 20f);
+			Log(Name(u) + " torpedo hit: the game's big splash, x" + (Mathf.RoundToInt(k * 10f) / 10f));
+		}
+		catch (Exception ex)
+		{
+			Fail("TorpedoHit", ex);
+		}
+	}
+
+	// For ModWreckArt: true while this ship is sinking and still above the water (its smoke keeps rising until then).
+	private static bool StillSinking(Unit u)
+	{
+		if (u == null)
+		{
+			return false;
+		}
+		for (int i = 0; i < pending.Count; i++)
+		{
+			if (pending[i].ds != null && pending[i].ds.parentUnit == u)
+			{
+				return true;
+			}
+		}
+		for (int i = 0; i < wrecks.Count; i++)
+		{
+			if (wrecks[i].u != u)
+			{
+				continue;
+			}
+			for (int j = 0; j < wrecks[i].pieces.Count; j++)
+			{
+				if (!wrecks[i].pieces[j].done)
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+		return false;
+	}
+
+	// Called every frame by ModSinkFx (through ModSinkFx.OnTick). dt = battle seconds.
+	public static void Tick(float dt)
+	{
+		if (failed || dt <= 0f)
+		{
+			return;
+		}
+		try
+		{
+			dt = Mathf.Min(dt, 5f);
+			clock += dt;
+			if (pending.Count > 0)
+			{
+				List<Pending> list = new List<Pending>(pending);
+				pending.Clear();
+				for (int i = 0; i < list.Count; i++)
+				{
+					RunPending(list[i]);
+				}
+			}
+			for (int i = timed.Count - 1; i >= 0; i--)
+			{
+				if (clock >= timed[i].at)
+				{
+					Timed e = timed[i];
+					timed.RemoveAt(i);
+					Fx(e.fx, root.position + e.rel, e.scale, e.life);
+				}
+			}
+			for (int i = wrecks.Count - 1; i >= 0; i--)
+			{
+				if (!TickWreck(wrecks[i], dt))
+				{
+					wrecks.RemoveAt(i);
+				}
+			}
+			for (int i = attached.Count - 1; i >= 0; i--)
+			{
+				GameObject g = attached[i];
+				if (g == null)
+				{
+					attached.RemoveAt(i);
+				}
+				else if (g.transform.position.y < -0.3f)
+				{
+					ParticleSystem[] ps = g.GetComponentsInChildren<ParticleSystem>();
+					for (int j = 0; j < ps.Length; j++)
+					{
+						ps[j].Stop(true);
+					}
+					AudioSource[] au = g.GetComponentsInChildren<AudioSource>();
+					for (int j = 0; j < au.Length; j++)
+					{
+						au[j].Stop();
+					}
+					attached.RemoveAt(i);
+				}
+			}
+			ModWreckArt.Tick(dt);
+			for (int i = bits.Count - 1; i >= 0; i--)
+			{
+				if (!TickBit(bits[i], dt))
+				{
+					bits.RemoveAt(i);
+				}
+			}
+			for (int i = slicks.Count - 1; i >= 0; i--)
+			{
+				if (!TickSlick(slicks[i], dt))
+				{
+					slicks.RemoveAt(i);
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			Fail("Tick", ex);
+		}
+	}
+
+	// ================= starting a wreck =================
+
+	private static void RunPending(Pending p)
+	{
+		if (p.ds == null || p.ds.parentUnit == null)
+		{
+			return;
+		}
+		Unit u = p.ds.parentUnit;
+		if (!u.isDestroyed)
+		{
+			current = p;
+			try
+			{
+				p.ds.SinkShip();      // the stock sinking (map, AI, crew...), which calls Begin
+			}
+			finally
+			{
+				current = null;
+			}
+			return;
+		}
+		// already sinking: break it now, from where it is, unless it is nearly gone
+		Wreck w = Find(p.ds);
+		if (w != null)
+		{
+			if (w.split || w.pieces.Count == 0 || w.pieces[0].t > 0.85f)
+			{
+				return;
+			}
+			Slick keep = w.slick;
+			ReleaseWreck(w, false);
+			wrecks.Remove(w);
+			StartWreck(p.ds, p, keep);
+		}
+		else if (((Component)u).gameObject.activeInHierarchy)
+		{
+			StartWreck(p.ds, p, null);
+		}
+	}
+
+	private static void StartWreck(DamageableSea ds, Pending p, Slick slick)
+	{
+		if (!EnsureRunner())
+		{
+			return;
+		}
+		Unit u = ds.parentUnit;
+		UnitSea us = u.unitSea;
+		Transform tr = ((Component)u).transform;
+		Wreck w = new Wreck();
+		w.u = u;
+		w.ds = ds;
+		w.name = Name(u);
+		w.scale = Mathf.Max(0.0001f, tr.lossyScale.z);
+		float lenLocal = u.unitData.dimensions.z > 0.1f ? u.unitData.dimensions.z : u.unitData.length * 0.1f;
+		w.L = lenLocal * w.scale;
+		w.draft = Mathf.Max(0.25f, 0.045f * w.L);
+		w.baseRel = tr.position - root.position;
+		w.baseRel.y = 0f;
+		w.lastRel = tr.position - root.position;
+		Vector3 e = tr.eulerAngles;
+		float p0 = Signed(e.x);
+		float r0 = Signed(e.z);
+		w.yaw0 = e.y;
+
+		// stop the stock physics: the motion is scripted from here
+		Rigidbody rb = u.unitRigidbody;
+		if (rb != null)
+		{
+			FixedJoint[] joints = ((Component)u).GetComponentsInChildren<FixedJoint>(true);
+			for (int i = 0; i < joints.Length; i++)
+			{
+				if (joints[i] != null && joints[i].connectedBody == rb)
+				{
+					UnityEngine.Object.Destroy(((Component)joints[i]).gameObject);
+				}
+			}
+			rb.velocity = Vector3.zero;
+			rb.angularVelocity = Vector3.zero;
+			rb.isKinematic = true;
+		}
+
+		RaycastHit hit;
+		if (Physics.Raycast(new Vector3(tr.position.x, 50f, tr.position.z), Vector3.down, out hit, 2000f, 1 << 28))
+		{
+			w.floorY = hit.point.y;
+			w.hasFloor = w.floorY > -60f;
+		}
+
+		float disp = Mathf.Max(200f, (float)u.unitData.displacement_weight);
+		float sizeK = Mathf.Clamp(Mathf.Pow(disp / 2000f, 0.35f), 0.75f, 2.5f);
+		string mode = p != null ? p.mode : PickMode(ds, us, r0);
+		w.mode = mode;
+		string how;
+		bool blew = p != null;
+
+		if (mode == "break" || mode == "magsplit")
+		{
+			float half = lenLocal * 0.5f;
+			float cut;
+			if (mode == "break")
+			{
+				cut = Mathf.Clamp(p.z, -0.25f * lenLocal, 0.25f * lenLocal);
+				how = "breaks in two";
+			}
+			else if (Mathf.Abs(p.z) <= 0.18f * lenLocal)
+			{
+				cut = p.z;
+				how = "breaks in two at the magazine";
+			}
+			else
+			{
+				float tile = u.unitData.tileSize.z > 0f ? u.unitData.tileSize.z : lenLocal * 0.1f;
+				cut = p.z - Mathf.Sign(p.z) * tile * 0.5f;
+				cut = Mathf.Clamp(cut, -0.4f * lenLocal, 0.4f * lenLocal);
+				how = (p.z > 0f ? "the bow is blown off" : "the stern is blown off");
+			}
+			ModWreckArt.Kit kit = ModWreckArt.FindKit(u, ref cut, lenLocal);
+			float foreFrac = (half - cut) / lenLocal;
+			float aftFrac = (cut + half) / lenLocal;
+			bool detachFore = foreFrac <= aftFrac;
+			int sliced;
+			int copied;
+			Piece clonePiece = new Piece();
+			Transform clone = BuildClone(w, cut, detachFore, clonePiece.made, kit, out sliced, out copied);
+			Piece unitPiece = new Piece();
+			unitPiece.tr = tr;
+			unitPiece.isUnit = true;
+			float baseTime = (mode == "break" ? BreakTime : MagTime) * sizeK * UnityEngine.Random.Range(0.8f, 1.25f);
+			MakeSplitPiece(w, unitPiece, cut, detachFore ? -1f : 1f, detachFore ? aftFrac : foreFrac, baseTime, p0, r0);
+			if (mode == "break")
+			{
+				unitPiece.hog = HogAngle;
+			}
+			w.pieces.Add(unitPiece);
+			if (clone != null)
+			{
+				clonePiece.tr = clone;
+				MakeSplitPiece(w, clonePiece, cut, detachFore ? 1f : -1f, detachFore ? foreFrac : aftFrac, baseTime, p0, r0);
+				if (mode == "break")
+				{
+					clonePiece.hog = HogAngle;
+				}
+				w.pieces.Add(clonePiece);
+				CloneEffects(w, clone, cut, detachFore);
+			}
+			w.split = true;
+			Log(w.name + " " + how + ": cut " + (cut * w.scale * 10f).ToString("F0") + " m from midships, pieces " + (foreFrac * 100f).ToString("F0") + "% bow / " + (aftFrac * 100f).ToString("F0") + "% stern, " + (kit != null ? "pre-made break " + kit.file + ", " : "no pre-made break, ") + (clone != null ? "meshes cut " + sliced + ", copied whole " + copied : "NO copy made") + ", sinks in about " + unitPiece.dur.ToString("F0") + " s");
+		}
+		else
+		{
+			Piece pc = new Piece();
+			pc.tr = tr;
+			pc.isUnit = true;
+			how = MakeWholePiece(w, pc, mode, ds, us, p, p0, r0, sizeK);
+			w.pieces.Add(pc);
+			Log(w.name + " sinks: " + how + " in about " + pc.dur.ToString("F0") + " s" + (ds.scuttled ? " (scuttled)" : ""));
+		}
+		Log(w.name + " " + (w.hasFloor ? "seabed at " + (-w.floorY * 10f).ToString("F0") + " m: the wreck comes to rest on the bottom" : "deep water") + ", length " + (w.L * 10f).ToString("F0") + " m, " + disp.ToString("F0") + " t");
+
+		// debris and oil
+		int n = Mathf.Clamp(Mathf.RoundToInt(w.L * DebrisPerLength), 6, DebrisMax);
+		if (blew)
+		{
+			n = Mathf.Min(DebrisMax, Mathf.RoundToInt(n * 1.4f));
+		}
+		w.debrisLeft = Debris ? n : 0;
+		if (Debris && blew)
+		{
+			int thrown = n / 2;
+			Vector3 at = tr.TransformPoint(new Vector3(0f, 0f, p.z));
+			for (int i = 0; i < thrown; i++)
+			{
+				Vector3 v = UnityEngine.Random.insideUnitSphere * 1.6f;
+				v.y = UnityEngine.Random.Range(1.2f, 4f);
+				SpawnBit(at + UnityEngine.Random.insideUnitSphere * 0.2f * w.L * 0.2f, v, true, w.L, UnityEngine.Random.value < 0.5f ? 5 : -1);
+			}
+			w.debrisLeft -= thrown;
+		}
+		if (Oil)
+		{
+			if (slick == null)
+			{
+				slick = new Slick();
+				slick.L = w.L;
+				slick.sizeMul = OilSize * TypeOil(u.unitData.unitSubtype);
+				slick.maxBlobs = Mathf.Clamp(Mathf.RoundToInt(w.L * 0.6f), 4, 12);
+				slick.fire = UnityEngine.Random.value < (u.unitData.unitSubtype == UnitSubType.Oiler ? OilerFireChance : (blew ? ExplosionFireChance : 0f));
+				slicks.Add(slick);
+				AddBlob(slick, tr.position);
+			}
+			slick.open = true;
+			w.slick = slick;
+		}
+		wrecks.Add(w);
+	}
+
+	private static string PickMode(DamageableSea ds, UnitSea us, float r0)
+	{
+		Compartment[] c = us.compartments;
+		if (c == null || c.Length < 6)
+		{
+			return "settle";
+		}
+		float port = c[0].currentFlooding + c[1].currentFlooding + c[2].currentFlooding;
+		float stbd = c[3].currentFlooding + c[4].currentFlooding + c[5].currentFlooding;
+		float aft = c[0].currentFlooding + c[3].currentFlooding;
+		float fore = c[2].currentFlooding + c[5].currentFlooding;
+		float tot = Mathf.Max(0.01f, port + stbd);
+		if (ds.scuttled)
+		{
+			return "settle";
+		}
+		if (Mathf.Abs(r0) > 25f || Mathf.Abs(port - stbd) > 0.45f * tot)
+		{
+			return "capsize";
+		}
+		if (Mathf.Abs(fore - aft) > 0.25f * tot)
+		{
+			return "plunge";
+		}
+		return "settle";
+	}
+
+	// ================= keys =================
+
+	private static string MakeWholePiece(Wreck w, Piece pc, string mode, DamageableSea ds, UnitSea us, Pending p, float p0, float r0, float sizeK)
+	{
+		Compartment[] c = us.compartments;
+		float fore = 0f;
+		float aft = 0f;
+		float port = 0f;
+		float stbd = 0f;
+		if (c != null && c.Length >= 6)
+		{
+			fore = c[2].currentFlooding + c[5].currentFlooding;
+			aft = c[0].currentFlooding + c[3].currentFlooding;
+			port = c[0].currentFlooding + c[1].currentFlooding + c[2].currentFlooding;
+			stbd = c[3].currentFlooding + c[4].currentFlooding + c[5].currentFlooding;
+		}
+		float s = fore >= aft ? 1f : -1f;             // + = bow goes first
+		if (Mathf.Abs(fore - aft) < 0.05f)
+		{
+			s = UnityEngine.Random.value < 0.5f ? 1f : -1f;
+		}
+		pc.pivotZ = 0f;
+		pc.lenFrac = 1f;
+		float y0 = w.u.transform.position.y;
+		string how;
+		float[] dm;
+		if (mode == "capsize")
+		{
+			float q = Mathf.Abs(r0) > 10f ? Mathf.Sign(r0) : (port >= stbd ? 1f : -1f);
+			pc.T = new float[6] { 0f, 0.3f, 0.55f, 0.7f, 0.85f, 1f };
+			dm = new float[6] { 0f, -0.005f, -0.01f, -0.02f, -0.03f, -0.6f };
+			pc.P = new float[6] { p0, p0 * 0.5f, Rnd(3f), Rnd(5f), Rnd(8f), s * 25f };
+			pc.R = new float[6] { r0, q * 20f, q * 55f, q * 110f, q * 165f, q * 178f };
+			pc.dur = CapsizeTime * sizeK;
+			how = "capsizes to " + (q > 0f ? "port" : "starboard") + ", floats keel-up, then goes";
+		}
+		else if (mode == "plunge" || mode == "magplunge")
+		{
+			if (mode == "magplunge" && p != null)
+			{
+				s = p.z >= 0f ? 1f : -1f;     // goes down by the end that blew up
+			}
+			bool fast = mode == "magplunge";
+			pc.T = fast ? new float[5] { 0f, 0.15f, 0.5f, 0.8f, 1f } : new float[5] { 0f, 0.45f, 0.75f, 0.9f, 1f };
+			dm = fast ? new float[5] { 0f, -0.03f, -0.08f, -0.2f, -0.8f } : new float[5] { 0f, -0.015f, -0.04f, -0.12f, -0.75f };
+			pc.P = fast ? new float[5] { p0, s * 10f, s * 25f, s * 50f, s * 70f } : new float[5] { p0, s * 6f, s * 18f, s * 40f, s * 62f };
+			pc.R = new float[5] { r0, r0 * 0.6f + Rnd(6f), Rnd(12f), Rnd(15f), Rnd(20f) };
+			pc.dur = (fast ? MagTime * 1.5f : PlungeTime) * sizeK;
+			how = (fast ? "blows up and plunges " : "plunges ") + (s > 0f ? "bow first, stern rising" : "stern first, bow rising");
+		}
+		else
+		{
+			pc.T = new float[4] { 0f, 0.6f, 0.85f, 1f };
+			dm = new float[4] { 0f, -0.025f, -0.06f, -0.7f };
+			pc.P = new float[4] { p0, p0 + Rnd(2f), s * 12f, s * 45f };
+			pc.R = new float[4] { r0, r0 + Rnd(5f), Rnd(15f), Rnd(20f) };
+			pc.dur = SettleTime * sizeK * (ds.scuttled ? 1.3f : 1f);
+			how = "settles low in the water, then goes down by the " + (s > 0f ? "bow" : "stern");
+		}
+		pc.dur *= UnityEngine.Random.Range(0.85f, 1.2f);
+		pc.D = new float[dm.Length];
+		for (int i = 0; i < dm.Length; i++)
+		{
+			pc.D[i] = y0 + dm[i] * w.L;
+		}
+		pc.yawDrift = Rnd(8f);
+		pc.pivotRest = w.u.transform.position - root.position - w.baseRel;
+		pc.pivotRest.y = 0f;
+		pc.pitch = p0;
+		pc.roll = r0;
+		pc.y = y0;
+		return how;
+	}
+
+	// sigma = +1: this piece is the bow side of the break (its free end is the bow), -1: the stern side.
+	private static void MakeSplitPiece(Wreck w, Piece pc, float cut, float sigma, float lenFrac, float baseTime, float p0, float r0)
+	{
+		Transform tr = w.u.transform;
+		pc.pivotZ = cut;
+		pc.sigma = sigma;
+		pc.lenFrac = Mathf.Max(0.05f, lenFrac);
+		float f = Mathf.Clamp(lenFrac / 0.5f, 0.3f, 1.6f);
+		float hs = Mathf.Min(f, 1f);
+		pc.T = new float[5] { 0f, 0.08f, 0.45f, 0.8f, 1f };
+		float[] dm = new float[5] { 0f, -0.03f, -0.07f, -0.18f, -0.9f };
+		float[] h = new float[4] { 0f, 0.06f * hs, 0.13f * hs, 0.18f * hs };
+		pc.P = new float[5];
+		pc.P[0] = p0;
+		for (int i = 1; i < 4; i++)
+		{
+			float th = Mathf.Asin(Mathf.Clamp((h[i] - dm[i]) / pc.lenFrac, 0f, 0.985f)) * Mathf.Rad2Deg;
+			pc.P[i] = -sigma * Mathf.Min(th, 85f);
+		}
+		pc.P[4] = -sigma * (pc.lenFrac < 0.35f ? 85f : 65f);
+		float rr = Rnd(30f);
+		if (Mathf.Abs(rr) < 8f)
+		{
+			rr = 8f * Mathf.Sign(rr + 0.001f);
+		}
+		pc.R = new float[5] { r0, rr * 0.3f, rr * 0.6f, rr, rr * 1.3f };
+		Vector3 pivotWorld = tr.TransformPoint(new Vector3(0f, 0f, cut));
+		pc.D = new float[5];
+		for (int i = 0; i < 5; i++)
+		{
+			pc.D[i] = pivotWorld.y + dm[i] * w.L;
+		}
+		pc.dur = baseTime * Mathf.Clamp(0.6f + 0.4f * f, 0.6f, 1.3f) * UnityEngine.Random.Range(0.85f, 1.15f);
+		pc.sep = sigma * 0.05f * w.L;
+		pc.lat = Rnd(0.02f * w.L);
+		pc.yawDrift = Rnd(12f);
+		pc.pivotRest = pivotWorld - root.position - w.baseRel;
+		pc.pivotRest.y = 0f;
+		pc.pitch = p0;
+		pc.roll = r0;
+		pc.y = pivotWorld.y;
+		pc.debrisFrom = 0.3f;
+	}
+
+	// ================= every frame =================
+
+	private static bool TickWreck(Wreck w, float dt)
+	{
+		w.age += dt;
+		Unit u = w.u;
+		bool unitAlive = u != null && ((Component)u).gameObject.activeInHierarchy;
+		Piece up = null;
+		for (int i = 0; i < w.pieces.Count; i++)
+		{
+			if (w.pieces[i].isUnit)
+			{
+				up = w.pieces[i];
+			}
+		}
+		if (unitAlive && up != null && !up.done)
+		{
+			// the stock code still moves the ship forward (it coasts to a stop): keep that part
+			Vector3 now = ((Component)u).transform.position - root.position;
+			Vector3 d = now - w.lastRel;
+			d.y = 0f;
+			if (d.magnitude < 5f)
+			{
+				w.baseRel += d;
+			}
+		}
+		bool any = false;
+		for (int i = 0; i < w.pieces.Count; i++)
+		{
+			Piece pc = w.pieces[i];
+			if (pc.done)
+			{
+				continue;
+			}
+			if (pc.tr == null || (pc.isUnit && !unitAlive))
+			{
+				pc.done = true;
+				continue;
+			}
+			any = true;
+			TickPiece(w, pc, dt);
+		}
+		if (unitAlive)
+		{
+			w.lastRel = ((Component)u).transform.position - root.position;
+		}
+
+		// debris comes up as the ship goes under, oil keeps leaking
+		if (up != null && w.debrisLeft > 0)
+		{
+			float tFrom = up.debrisFrom;
+			if (up.t >= tFrom || up.done)
+			{
+				w.debrisTimer -= dt;
+				if (w.debrisTimer <= 0f)
+				{
+					float span = Mathf.Max(10f, up.dur * (1.1f - tFrom));
+					w.debrisTimer = span / Mathf.Max(1, w.debrisLeft) * UnityEngine.Random.Range(0.3f, 1.2f);
+					Vector3 c = root.position + w.baseRel + Quaternion.Euler(0f, w.yaw0, 0f) * new Vector3(Rnd(0.4f * w.L), 0f, Rnd(0.45f * w.L));
+					SpawnBit(c, new Vector3(Rnd(0.05f), 0f, Rnd(0.05f)), false, w.L, -1);
+					w.debrisLeft--;
+				}
+			}
+		}
+		if (w.slick != null && w.slick.open)
+		{
+			if (clock >= w.slick.nextBlob && w.slick.blobs.Count < w.slick.maxBlobs)
+			{
+				w.slick.nextBlob = clock + UnityEngine.Random.Range(15f, 40f);
+				Vector3 c = root.position + w.baseRel + Quaternion.Euler(0f, w.yaw0, 0f) * new Vector3(Rnd(0.5f * w.L), 0f, Rnd(0.8f * w.L));
+				AddBlob(w.slick, c);
+			}
+			if (!any || w.slick.blobs.Count >= w.slick.maxBlobs)
+			{
+				w.slick.open = any;
+			}
+		}
+		if (!any && w.debrisLeft > 0)
+		{
+			return true;   // keep feeding the debris for a while after the ship is gone
+		}
+		if (!any && w.debrisLeft <= 0)
+		{
+			if (w.slick != null)
+			{
+				w.slick.open = false;
+			}
+			return false;
+		}
+		return true;
+	}
+
+	private static void TickPiece(Wreck w, Piece pc, float dt)
+	{
+		pc.age += dt;
+		float hogK = Hog(pc);
+		if (pc.hog <= 0f || pc.age > HogRise + HogHold + HogFall)
+		{
+			pc.t += dt / Mathf.Max(1f, pc.dur);   // the sinking starts once the break has slammed back down
+		}
+		float k = Mathf.Clamp01(pc.t);
+		float targetPitch = Key(pc.T, pc.P, k);
+		float targetRoll = Key(pc.T, pc.R, k);
+		float y = Key(pc.T, pc.D, k);
+		if (hogK != 0f)
+		{
+			// the break lifts and the free end stays in the water: this half tips down towards its free end, then smashes back
+			float a = pc.hog * hogK;
+			targetPitch += pc.sigma * a;
+			y += pc.lenFrac * w.L * Mathf.Sin(a * Mathf.Deg2Rad);
+		}
+		if (pc.hog > 0f && !pc.splashed && pc.isUnit && pc.age >= HogRise + HogHold + HogFall * 0.8f)
+		{
+			pc.splashed = true;
+			Vector3 at = root.position + w.baseRel + pc.pivotRest;
+			at.y = pc.y;
+			Fx("splashLarge", at, 1.4f, 20f);
+		}
+		if (pc.t >= 1f)
+		{
+			// past the scripted part: it slides on down, faster and faster
+			pc.sinkV = Mathf.Min(1.5f, pc.sinkV + dt * 0.25f);
+			pc.extra += pc.sinkV * dt;
+			y -= pc.extra;
+		}
+		if (pc.grounded)
+		{
+			pc.groundTime += dt;
+			float rest = Mathf.Sign(pc.pitch) * Mathf.Min(Mathf.Abs(pc.pitch), pc.lenFrac < 0.99f ? 15f : 6f);
+			targetPitch = Mathf.MoveTowards(pc.pitch, rest, 1.5f * dt);
+			targetRoll = pc.roll;
+		}
+		pc.pitch = targetPitch;
+		pc.roll = targetRoll;
+		if (w.hasFloor)
+		{
+			float clear = w.draft + 0.1f + 0.06f * w.L * Mathf.Abs(Signed(pc.roll)) / 180f;
+			if (pc.pivotZ == 0f && pc.lenFrac >= 0.99f)
+			{
+				clear += 0.5f * w.L * Mathf.Abs(Mathf.Sin(pc.pitch * Mathf.Deg2Rad));
+			}
+			float minY = w.floorY + clear;
+			if (y < minY)
+			{
+				y = minY;
+				if (!pc.grounded && pc.t > 0.3f)
+				{
+					pc.grounded = true;
+					Pooled("floorDust", root.position + w.baseRel + pc.pivotRest + new Vector3(0f, w.floorY, 0f));
+					Log(w.name + (pc.isUnit ? "" : " (broken-off piece)") + " hits the seabed at " + (-w.floorY * 10f).ToString("F0") + " m and comes to rest");
+				}
+			}
+		}
+		pc.y = y;
+		float ease = Smooth(Mathf.Clamp01(pc.t * 1.5f));
+		float yaw = w.yaw0 + pc.yawDrift * ease;
+		Quaternion rot = Quaternion.Euler(pc.pitch, yaw, pc.roll);
+		Vector3 pivot = root.position + w.baseRel + pc.pivotRest + Quaternion.Euler(0f, w.yaw0, 0f) * new Vector3(pc.lat * ease, 0f, pc.sep * ease);
+		pivot.y = y;
+		Vector3 pos = pivot - rot * new Vector3(0f, 0f, pc.pivotZ * w.scale);
+		pc.tr.position = pos;
+		pc.tr.rotation = rot;
+
+		if (pc.grounded && pc.groundTime > 40f)
+		{
+			pc.done = true;
+			return;
+		}
+		float top = y + pc.lenFrac * w.L * Mathf.Abs(Mathf.Sin(pc.pitch * Mathf.Deg2Rad)) + 0.15f * w.L;
+		if (pc.t >= 1f && top < -2f)
+		{
+			pc.done = true;
+			if (pc.isUnit)
+			{
+				// deep enough to be out of sight: the stock code switches the ship off below -40
+				pc.tr.position = new Vector3(pos.x, -45f, pos.z);
+			}
+			else
+			{
+				DestroyPiece(pc);
+			}
+		}
+	}
+
+	// ================= the broken-off half =================
+
+	// cut is in the unit's local z. With a kit, the model is cut at the kit's two edges (model z = kit.cut +- kit.band) and the torn parts are added;
+	// without one, it is cut at the break itself and the cut edge is left open.
+	private static Transform BuildClone(Wreck w, float cut, bool detachFore, List<Mesh> made, ModWreckArt.Kit kit, out int sliced, out int copied)
+	{
+		sliced = 0;
+		copied = 0;
+		Transform src = w.u.transform;
+		Transform graphic = w.u.unitGraphic != null ? w.u.unitGraphic.transform : null;
+		if (graphic == null)
+		{
+			kit = null;
+		}
+		GameObject go = new GameObject("ModWreck " + w.u.unitData.unitName + (detachFore ? " bow" : " stern"));
+		go.transform.SetParent(root, false);
+		go.transform.position = src.position;
+		go.transform.rotation = src.rotation;
+		Vector3 rs = root.lossyScale;
+		Vector3 ss = src.lossyScale;
+		go.transform.localScale = new Vector3(ss.x / Mathf.Max(0.0001f, rs.x), ss.y / Mathf.Max(0.0001f, rs.y), ss.z / Mathf.Max(0.0001f, rs.z));
+		// level of detail: always show the full model from here on (the far models would show the whole ship)
+		LODGroup[] lg = ((Component)src).GetComponentsInChildren<LODGroup>(true);
+		List<Renderer> far = new List<Renderer>();
+		for (int i = 0; i < lg.Length; i++)
+		{
+			LOD[] lods = lg[i].GetLODs();
+			for (int j = 1; j < lods.Length; j++)
+			{
+				if (lods[j].renderers != null)
+				{
+					far.AddRange(lods[j].renderers);
+				}
+			}
+			lg[i].enabled = false;
+		}
+		Matrix4x4 toLocal = kit != null ? graphic.worldToLocalMatrix : src.worldToLocalMatrix;
+		// planes in the space of toLocal: the detached side keeps z >= cutFore (bow) or z <= cutAft (stern)
+		float cutFore = kit != null ? kit.cut + kit.band : cut;
+		float cutAft = kit != null ? kit.cut - kit.band : cut;
+		float cutMid = kit != null ? kit.cut : cut;
+		MeshRenderer[] rends = ((Component)src).GetComponentsInChildren<MeshRenderer>(false);
+		int det = detachFore ? 1 : -1;
+		int parts = 0;
+		for (int i = 0; i < rends.Length; i++)
+		{
+			MeshRenderer r = rends[i];
+			if (r == null || !((Renderer)r).enabled || InEffect(((Component)r).transform, src))
+			{
+				continue;
+			}
+			if (far.Contains((Renderer)r))
+			{
+				((Renderer)r).enabled = false;
+				continue;
+			}
+			MeshFilter mf = ((Component)r).GetComponent<MeshFilter>();
+			if (mf == null || mf.sharedMesh == null)
+			{
+				continue;
+			}
+			Matrix4x4 m = toLocal * ((Component)r).transform.localToWorldMatrix;
+			int where;
+			float mz;
+			if (kit != null && ModWreckArt.Moving(kit, ((Component)r).transform, graphic, out mz))
+			{
+				where = mz >= cutMid ? 1 : -1;      // turrets, guns, directors: whole, with the half they stand on
+			}
+			else
+			{
+				float minZ;
+				float maxZ;
+				ZRange(mf.sharedMesh.bounds, m, out minZ, out maxZ);
+				where = maxZ <= cutAft ? -1 : (minZ >= cutFore ? 1 : 0);
+			}
+			if (where == -det)
+			{
+				continue;
+			}
+			Mesh forClone = mf.sharedMesh;
+			if (where == det)
+			{
+				((Renderer)r).enabled = false;
+			}
+			else
+			{
+				// the unit keeps its side, the copy gets the other side
+				Mesh keep = ModWreckArt.Clip(mf.sharedMesh, m, detachFore ? cutAft : cutFore, !detachFore);
+				Mesh part = keep != null ? ModWreckArt.Clip(mf.sharedMesh, m, detachFore ? cutFore : cutAft, detachFore) : null;
+				if (keep != null && part != null)
+				{
+					made.Add(part);
+					mf.sharedMesh = keep;
+					forClone = part;
+					sliced++;
+				}
+				else
+				{
+					copied++;
+				}
+			}
+			GameObject c = new GameObject(((UnityEngine.Object)r).name);
+			c.transform.SetParent(go.transform, false);
+			c.transform.localPosition = src.InverseTransformPoint(((Component)r).transform.position);
+			c.transform.localRotation = Quaternion.Inverse(src.rotation) * ((Component)r).transform.rotation;
+			Vector3 ls = ((Component)r).transform.lossyScale;
+			c.transform.localScale = new Vector3(ls.x / Mathf.Max(0.0001f, ss.x), ls.y / Mathf.Max(0.0001f, ss.y), ls.z / Mathf.Max(0.0001f, ss.z));
+			MeshFilter nf = c.AddComponent<MeshFilter>();
+			nf.sharedMesh = forClone;
+			MeshRenderer nr = c.AddComponent<MeshRenderer>();
+			((Renderer)nr).sharedMaterials = ((Renderer)r).sharedMaterials;
+			((Renderer)nr).shadowCastingMode = ((Renderer)r).shadowCastingMode;
+			((Renderer)nr).receiveShadows = ((Renderer)r).receiveShadows;
+			parts++;
+		}
+		if (parts == 0)
+		{
+			UnityEngine.Object.Destroy(go);
+			return null;
+		}
+		if (kit != null)
+		{
+			// the torn parts: the unit's side under its own model, the copy's side under a stand-in for the model root
+			List<GameObject> kitParts = new List<GameObject>();
+			GameObject gc = new GameObject("ModBreak model");
+			gc.transform.SetParent(go.transform, false);
+			gc.transform.localPosition = src.InverseTransformPoint(graphic.position);
+			gc.transform.localRotation = Quaternion.Inverse(src.rotation) * graphic.rotation;
+			Vector3 gs = graphic.lossyScale;
+			gc.transform.localScale = new Vector3(gs.x / Mathf.Max(0.0001f, ss.x), gs.y / Mathf.Max(0.0001f, ss.y), gs.z / Mathf.Max(0.0001f, ss.z));
+			int a = ModWreckArt.AddKit(kit, !detachFore, graphic, src, kitParts);
+			int b = ModWreckArt.AddKit(kit, detachFore, gc.transform, src, kitParts);
+			Log(w.name + " pre-made break " + kit.file + ": torn parts " + a + " on the ship, " + b + " on the broken-off half");
+		}
+		return go.transform;
+	}
+
+	// A mesh that belongs to a fire, smoke or explosion stuck on the ship, not to the ship itself.
+	private static bool InEffect(Transform t, Transform shipRoot)
+	{
+		while (t != null && t != shipRoot)
+		{
+			if (((Component)t).GetComponent<ParticleSystem>() != null)
+			{
+				return true;
+			}
+			t = t.parent;
+		}
+		return false;
+	}
+
+	private static void CloneEffects(Wreck w, Transform clone, float cut, bool detachFore)
+	{
+		Vector3 local = new Vector3(0f, 0.05f * w.L / w.scale, cut + (detachFore ? 0.03f : -0.03f) * w.L / w.scale);
+		GameObject f = Fx("fireAndSmoke", clone.TransformPoint(local), 1.5f, 0f);
+		if (f != null)
+		{
+			f.transform.SetParent(clone, true);
+			attached.Add(f);
+		}
+		GameObject b = Fx("sinking_bubbles", clone.position, 1f, 0f);
+		if (b != null)
+		{
+			b.transform.SetParent(clone, true);
+			b.transform.localRotation = Quaternion.identity;
+		}
+	}
+
+	private static void DestroyPiece(Piece pc)
+	{
+		if (pc.tr != null && !pc.isUnit)
+		{
+			UnityEngine.Object.Destroy(((Component)pc.tr).gameObject);
+		}
+		for (int i = 0; i < pc.made.Count; i++)
+		{
+			if (pc.made[i] != null)
+			{
+				UnityEngine.Object.Destroy(pc.made[i]);
+			}
+		}
+		pc.made.Clear();
+		pc.tr = null;
+	}
+
+	// Stop scripting a wreck (restart or error). physics = hand the ship back to the stock physics.
+	private static void ReleaseWreck(Wreck w, bool physics)
+	{
+		for (int i = 0; i < w.pieces.Count; i++)
+		{
+			if (!w.pieces[i].isUnit)
+			{
+				DestroyPiece(w.pieces[i]);
+			}
+		}
+		if (physics && w.u != null && w.u.unitRigidbody != null)
+		{
+			w.u.unitRigidbody.isKinematic = false;
+		}
+	}
+
+	private static Mesh Slice(Mesh src, Matrix4x4 m, float cut, bool keepFore)
+	{
+		if (unreadable.Contains(src))
+		{
+			return null;
+		}
+		Vector3[] v = src.vertices;
+		if (v == null || v.Length == 0)
+		{
+			unreadable.Add(src);
+			return null;
+		}
+		float[] z = new float[v.Length];
+		for (int i = 0; i < v.Length; i++)
+		{
+			z[i] = m.MultiplyPoint3x4(v[i]).z;
+		}
+		Mesh o = new Mesh();
+		o.name = src.name + (keepFore ? " bow" : " stern");
+		o.vertices = v;
+		Vector3[] nrm = src.normals;
+		if (nrm != null && nrm.Length == v.Length)
+		{
+			o.normals = nrm;
+		}
+		Vector4[] tg = src.tangents;
+		if (tg != null && tg.Length == v.Length)
+		{
+			o.tangents = tg;
+		}
+		Vector2[] uv = src.uv;
+		if (uv != null && uv.Length == v.Length)
+		{
+			o.uv = uv;
+		}
+		Vector2[] uv2 = src.uv2;
+		if (uv2 != null && uv2.Length == v.Length)
+		{
+			o.uv2 = uv2;
+		}
+		Color32[] col = src.colors32;
+		if (col != null && col.Length == v.Length)
+		{
+			o.colors32 = col;
+		}
+		int subs = src.subMeshCount;
+		o.subMeshCount = subs;
+		for (int s = 0; s < subs; s++)
+		{
+			int[] tri = src.GetTriangles(s);
+			List<int> keep = new List<int>(tri.Length);
+			for (int j = 0; j + 2 < tri.Length; j += 3)
+			{
+				float cz = (z[tri[j]] + z[tri[j + 1]] + z[tri[j + 2]]) / 3f;
+				if ((cz >= cut) == keepFore)
+				{
+					keep.Add(tri[j]);
+					keep.Add(tri[j + 1]);
+					keep.Add(tri[j + 2]);
+				}
+			}
+			o.SetTriangles(keep.ToArray(), s);
+		}
+		o.RecalculateBounds();
+		return o;
+	}
+
+	private static void ZRange(Bounds b, Matrix4x4 m, out float minZ, out float maxZ)
+	{
+		minZ = float.MaxValue;
+		maxZ = float.MinValue;
+		Vector3 c = b.center;
+		Vector3 e = b.extents;
+		for (int i = 0; i < 8; i++)
+		{
+			Vector3 p = c + new Vector3((i & 1) == 0 ? -e.x : e.x, (i & 2) == 0 ? -e.y : e.y, (i & 4) == 0 ? -e.z : e.z);
+			float z = m.MultiplyPoint3x4(p).z;
+			minZ = Mathf.Min(minZ, z);
+			maxZ = Mathf.Max(maxZ, z);
+		}
+	}
+
+	// ================= explosions =================
+
+	// A broken back sets off both magazines: the fore one just after the torpedo, the aft one a moment later. Each is sized by its shells.
+	private static void BlowMagazines(Unit u, DamageableSea ds, Vector3 keelWorld)
+	{
+		CellVariable fore = null;
+		CellVariable aft = null;
+		float fz = float.MinValue;
+		float az = float.MaxValue;
+		if (ds.cellVariables != null)
+		{
+			foreach (KeyValuePair<string, CellVariable> kv in ds.cellVariables)
+			{
+				CellVariable cv = kv.Value;
+				if (cv == null || cv.parentCell == null || cv.parentCell.cellType != CellType.Magazine)
+				{
+					continue;
+				}
+				float z = Utilities.GetCellPositionInUnitLocalSpace(cv.parentCell, u).z;
+				if (z > fz)
+				{
+					fz = z;
+					fore = cv;
+				}
+				if (z < az)
+				{
+					az = z;
+					aft = cv;
+				}
+			}
+		}
+		Transform tr = ((Component)u).transform;
+		if (fore == null)
+		{
+			// no magazine squares on this ship: everything aboard goes up at the break
+			MagBlast(u, keelWorld, ModWreckArt.MagazineLoad(u, ds, null), 0.2f, "all its ammunition (no magazines)");
+			return;
+		}
+		MagBlast(u, tr.TransformPoint(Utilities.GetCellPositionInUnitLocalSpace(fore.parentCell, u)), ModWreckArt.MagazineLoad(u, ds, fore), 0.25f, "fore magazine " + fore.parentCell.cellCoords);
+		ds.SetFire(fore);
+		if (aft != fore)
+		{
+			MagBlast(u, tr.TransformPoint(Utilities.GetCellPositionInUnitLocalSpace(aft.parentCell, u)), ModWreckArt.MagazineLoad(u, ds, aft), 0.25f + AftMagDelay * UnityEngine.Random.Range(0.8f, 1.3f), "aft magazine " + aft.parentCell.cellCoords);
+			ds.SetFire(aft);
+		}
+	}
+
+	// One magazine going up at world point at, delay battle seconds from now. Its size comes from the load; the game's own blast effects
+	// are added to it, scaled to match, and a big one leaves the game's fire and smoke burning on the ship.
+	private static void MagBlast(Unit u, Vector3 at, ModWreckArt.MagLoad ld, float delay, string what)
+	{
+		float R = ModWreckArt.BlastSize(ld);
+		bool art = ModWreckArt.BoomReady();
+		if (art)
+		{
+			ModWreckArt.ExplodeLoad(at, ((Component)u).transform.position.y, ld, delay, root, u);
+		}
+		bool big = R >= ModWreckArt.BigBlast;
+		Log(Name(u) + " " + what + ": " + ld.Text() + " -> blast " + Mathf.RoundToInt(R * 10f) + " m" + (big ? " (big: black cloud and smoke until the ship is under)" : ""));
+		Transform tr = ((Component)u).transform;
+		float L = (u.unitData.dimensions.z > 0.1f ? u.unitData.dimensions.z : u.unitData.length * 0.1f) * tr.lossyScale.z;
+		if (R >= 4f)
+		{
+			Timed m = new Timed();
+			m.at = clock + delay;
+			m.rel = at - root.position;
+			m.fx = HasFx("explosionMagazine") ? "explosionMagazine" : "explosionLarge";
+			m.scale = art ? R * 0.1f : R * 0.18f;
+			m.life = 30f;
+			timed.Add(m);
+		}
+		int n = big ? UnityEngine.Random.Range(3, 6) : (R >= 6f ? 1 : 0);
+		for (int i = 0; i < n; i++)
+		{
+			Timed e = new Timed();
+			e.at = clock + delay + UnityEngine.Random.Range(0.3f, 4f);
+			e.rel = at + tr.forward * Rnd(0.15f * L) + tr.right * Rnd(0.03f * L) - root.position;
+			e.fx = "explosionLarge";
+			e.scale = UnityEngine.Random.Range(0.9f, 1.6f) * Mathf.Clamp(R / 16f, 0.5f, 1.5f);
+			e.life = 25f;
+			timed.Add(e);
+		}
+		if (big)
+		{
+			GameObject smoke = Fx("fireAndSmoke", at, Mathf.Clamp(R / 16f, 0.5f, 2f) * 2f, 240f);
+			if (smoke != null)
+			{
+				smoke.transform.SetParent(tr, true);
+				attached.Add(smoke);
+			}
+		}
+	}
+
+	private static bool HasFx(string key)
+	{
+		Library lib = Library.instance;
+		GameObject g;
+		return lib != null && lib.particleEffectsDictionary != null && lib.particleEffectsDictionary.TryGetValue(key, out g) && g != null;
+	}
+
+	// A copy of one of the game's effects that is ours (not pooled), so it can be scaled. life 0 = lives as long as its parent.
+	private static GameObject Fx(string key, Vector3 at, float scale, float life)
+	{
+		if (!HasFx(key))
+		{
+			return null;
+		}
+		GameObject g = UnityEngine.Object.Instantiate<GameObject>(Library.instance.particleEffectsDictionary[key], at, Quaternion.identity);
+		if (root != null)
+		{
+			g.transform.SetParent(root, true);
+		}
+		if (Mathf.Abs(scale - 1f) > 0.01f)
+		{
+			ParticleSystem[] ps = g.GetComponentsInChildren<ParticleSystem>(true);
+			for (int i = 0; i < ps.Length; i++)
+			{
+				ParticleSystem.MainModule mm = ps[i].main;
+				mm.scalingMode = ParticleSystemScalingMode.Hierarchy;
+			}
+			g.transform.localScale = Vector3.one * scale;
+		}
+		if (life > 0f)
+		{
+			UnityEngine.Object.Destroy(g, life);
+		}
+		return g;
+	}
+
+	private static void Pooled(string key, Vector3 at)
+	{
+		if (HasFx(key))
+		{
+			ObjectPoolManager.CreatePooled(Library.instance.particleEffectsDictionary[key], at, Quaternion.Euler(-90f, 0f, 0f));
+		}
+	}
+
+	// ================= debris =================
+
+	// kind -1 = random
+	private static void SpawnBit(Vector3 at, Vector3 vel, bool flying, float L, int kind)
+	{
+		if (!Debris)
+		{
+			return;
+		}
+		while (bits.Count >= DebrisTotalMax && bits.Count > 0)
+		{
+			if (bits[0].tr != null)
+			{
+				UnityEngine.Object.Destroy(((Component)bits[0].tr).gameObject);
+			}
+			bits.RemoveAt(0);
+		}
+		if (kind < 0)
+		{
+			float r = UnityEngine.Random.value;
+			kind = r < 0.35f ? 0 : (r < 0.5f ? 1 : (r < 0.62f ? 2 : (r < 0.8f ? 3 : (r < 0.9f ? 4 : 5))));
+		}
+		float k = DebrisScale * Mathf.Clamp(L / 11f, 0.8f, 1.5f);
+		GameObject g;
+		Vector3 size;
+		Mesh model = ModDebrisArt.Ready() ? ModDebrisArt.Pick(kind, flying) : null;
+		if (model != null)
+		{
+			// Blender model: real size x ModDebrisArt.Scale, a bit bigger on a big ship like the plain boxes
+			g = new GameObject();
+			g.AddComponent<MeshFilter>().sharedMesh = model;
+			g.AddComponent<MeshRenderer>();
+			float ms = ModDebrisArt.Scale * k;
+			size = model.bounds.size * ms;
+			g.name = "ModDebris";
+			g.transform.SetParent(root, false);
+			g.transform.localScale = Vector3.one * ms;
+			g.transform.position = at;
+			MeshRenderer mr2 = g.GetComponent<MeshRenderer>();
+			((Renderer)mr2).sharedMaterial = ModDebrisArt.Mat();
+			((Renderer)mr2).shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+			Bit b2 = new Bit();
+			b2.tr = g.transform;
+			b2.rel = at - root.position;
+			b2.vel = vel;
+			b2.flying = flying;
+			b2.life = DebrisLife * UnityEngine.Random.Range(0.7f, 1.3f);
+			b2.halfH = size.y * 0.5f;
+			b2.phase = UnityEngine.Random.value * 6.28f;
+			b2.rest = Quaternion.Euler(Rnd(5f), UnityEngine.Random.Range(0f, 360f), Rnd(5f));
+			b2.spin = flying ? UnityEngine.Random.insideUnitSphere * 400f : Vector3.zero;
+			g.transform.rotation = flying ? UnityEngine.Random.rotation : b2.rest;
+			bits.Add(b2);
+			return;
+		}
+		if (kind == 2)
+		{
+			g = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+			size = new Vector3(0.06f, 0.045f, 0.06f) * k;
+		}
+		else
+		{
+			g = GameObject.CreatePrimitive(PrimitiveType.Cube);
+			if (kind == 0 || kind == 5)
+			{
+				size = new Vector3(UnityEngine.Random.Range(0.06f, 0.12f), 0.03f, UnityEngine.Random.Range(0.35f, 0.7f)) * k;
+			}
+			else if (kind == 1)
+			{
+				float c = UnityEngine.Random.Range(0.08f, 0.16f);
+				size = new Vector3(c, c * 0.8f, c) * k;
+			}
+			else if (kind == 3)
+			{
+				size = new Vector3(UnityEngine.Random.Range(0.15f, 0.3f), 0.02f, UnityEngine.Random.Range(0.2f, 0.5f)) * k;
+			}
+			else
+			{
+				size = new Vector3(0.15f, 0.04f, 0.25f) * k;
+			}
+		}
+		Collider col = g.GetComponent<Collider>();
+		if (col != null)
+		{
+			UnityEngine.Object.DestroyImmediate(col);
+		}
+		g.name = "ModDebris";
+		g.transform.SetParent(root, false);
+		g.transform.localScale = size;
+		g.transform.position = at;
+		MeshRenderer mr = g.GetComponent<MeshRenderer>();
+		Material mat = DebrisMat(kind);
+		if (mat != null)
+		{
+			((Renderer)mr).sharedMaterial = mat;
+		}
+		else
+		{
+			((Renderer)mr).material.color = DebrisColours[kind];
+		}
+		((Renderer)mr).shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+		Bit b = new Bit();
+		b.tr = g.transform;
+		b.rel = at - root.position;
+		b.vel = vel;
+		b.flying = flying;
+		b.life = DebrisLife * UnityEngine.Random.Range(0.7f, 1.3f);
+		b.halfH = size.y * (kind == 2 ? 1f : 0.5f);
+		b.phase = UnityEngine.Random.value * 6.28f;
+		b.rest = Quaternion.Euler(kind == 2 ? 90f : Rnd(6f), UnityEngine.Random.Range(0f, 360f), Rnd(6f));
+		b.spin = flying ? UnityEngine.Random.insideUnitSphere * 400f : Vector3.zero;
+		g.transform.rotation = flying ? UnityEngine.Random.rotation : b.rest;
+		bits.Add(b);
+	}
+
+	private static bool TickBit(Bit b, float dt)
+	{
+		if (b.tr == null)
+		{
+			return false;
+		}
+		b.age += dt;
+		Vector3 world = root.position + b.rel;
+		float wave = Wave(world.x, world.z);
+		if (b.flying)
+		{
+			b.vel.y -= 0.981f * dt;
+			b.rel += b.vel * dt;
+			b.tr.position = root.position + b.rel;
+			b.tr.rotation = Quaternion.Euler(b.spin * dt) * b.tr.rotation;
+			if (b.rel.y + root.position.y <= wave && b.vel.y < 0f)
+			{
+				b.flying = false;
+				b.vel = new Vector3(b.vel.x * 0.1f, 0f, b.vel.z * 0.1f);
+				Pooled("splashTiny", root.position + b.rel);
+			}
+			return true;
+		}
+		b.vel *= Mathf.Clamp01(1f - 0.01f * dt);
+		b.rel += new Vector3(b.vel.x, 0f, b.vel.z) * dt;
+		if (b.age > b.life)
+		{
+			b.sink += 0.01f * dt;
+			if (b.sink > 0.3f)
+			{
+				UnityEngine.Object.Destroy(((Component)b.tr).gameObject);
+				return false;
+			}
+		}
+		float bob = Mathf.Sin(clock * 0.9f + b.phase) * 0.01f;
+		b.rel.y = wave - root.position.y - b.halfH * 0.4f + bob - b.sink;
+		b.tr.position = root.position + b.rel;
+		b.tr.rotation = b.rest * Quaternion.Euler(Mathf.Sin(clock * 0.7f + b.phase) * 4f, 0f, Mathf.Cos(clock * 0.6f + b.phase) * 4f);
+		return true;
+	}
+
+	private static Material DebrisMat(int kind)
+	{
+		if (debrisMats == null)
+		{
+			debrisMats = new Material[DebrisColours.Length];
+		}
+		if (debrisMats[kind] != null)
+		{
+			return debrisMats[kind];
+		}
+		Shader sh = Shader.Find("Standard");
+		if (sh == null)
+		{
+			sh = Shader.Find("Legacy Shaders/Diffuse");
+		}
+		if (sh == null)
+		{
+			sh = Shader.Find("Diffuse");
+		}
+		if (sh == null)
+		{
+			return null;
+		}
+		Material m = new Material(sh);
+		m.color = DebrisColours[kind];
+		if (m.HasProperty("_Glossiness"))
+		{
+			m.SetFloat("_Glossiness", kind == 3 ? 0.3f : 0.05f);
+		}
+		debrisMats[kind] = m;
+		return m;
+	}
+
+	// ================= oil =================
+
+	private static float TypeOil(UnitSubType t)
+	{
+		if (t == UnitSubType.Oiler)
+		{
+			return 2.5f;
+		}
+		if (t == UnitSubType.Merchant)
+		{
+			return 1.3f;
+		}
+		if (t == UnitSubType.Battleship || t == UnitSubType.Battlecruiser || t == UnitSubType.Aircraft_Carrier)
+		{
+			return 1.4f;
+		}
+		return 1f;
+	}
+
+	private static void AddBlob(Slick s, Vector3 at)
+	{
+		Material mat = OilMat();
+		if (mat == null)
+		{
+			return;
+		}
+		GameObject g = new GameObject("ModOil");
+		g.transform.SetParent(root, false);
+		g.transform.rotation = Quaternion.Euler(0f, UnityEngine.Random.Range(0f, 360f), 0f);
+		g.AddComponent<MeshFilter>().sharedMesh = OilQuad();
+		MeshRenderer r = g.AddComponent<MeshRenderer>();
+		MeshRenderer sheen = null;
+		if (ModDebrisArt.OilReady())
+		{
+			// one of the Blender oil shapes, and its rainbow sheen on a second square just above it
+			int shape = UnityEngine.Random.Range(0, ModDebrisArt.OilCount());
+			mat = ModDebrisArt.OilMat(shape, OilQueue);
+			Material sm = ModDebrisArt.SheenMat(shape, OilQueue);
+			if (sm != null)
+			{
+				GameObject sg = new GameObject("ModOilSheen");
+				sg.transform.SetParent(g.transform, false);
+				sg.transform.localPosition = new Vector3(0f, 0.002f, 0f);
+				sg.AddComponent<MeshFilter>().sharedMesh = OilQuad();
+				sheen = sg.AddComponent<MeshRenderer>();
+				((Renderer)sheen).sharedMaterial = sm;
+				((Renderer)sheen).shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+				((Renderer)sheen).receiveShadows = false;
+			}
+		}
+		((Renderer)r).sharedMaterial = mat;
+		((Renderer)r).shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+		((Renderer)r).receiveShadows = false;
+		Blob b = new Blob();
+		b.sheen = sheen;
+		b.tr = g.transform;
+		b.r = r;
+		b.rel = at - root.position;
+		b.start = OilStart * s.L * s.sizeMul;
+		b.max = UnityEngine.Random.Range(1.2f, 2f) * s.L * s.sizeMul;
+		b.grow = OilSpreadTime * UnityEngine.Random.Range(0.7f, 1.3f);
+		g.transform.localScale = Vector3.one * b.start;
+		s.blobs.Add(b);
+		if (s.fire && s.fires.Count < 3 && (s.fires.Count == 0 || UnityEngine.Random.value < 0.4f))
+		{
+			GameObject f = Fx("fireAndSmoke", at, s.fires.Count == 0 ? 2f : 1.3f, 0f);
+			if (f != null)
+			{
+				s.fires.Add(f);
+				if (s.fireEnd <= 0f)
+				{
+					s.fireEnd = clock + UnityEngine.Random.Range(300f, 900f);
+				}
+			}
+		}
+	}
+
+	private static bool TickSlick(Slick s, float dt)
+	{
+		s.age += dt;
+		if (s.fireEnd > 0f && clock > s.fireEnd)
+		{
+			for (int i = 0; i < s.fires.Count; i++)
+			{
+				if (s.fires[i] != null)
+				{
+					UnityEngine.Object.Destroy(s.fires[i]);
+				}
+			}
+			s.fires.Clear();
+			s.fireEnd = -1f;
+		}
+		float fade = 1f;
+		if (s.age > OilLife - 600f)
+		{
+			fade = Mathf.Clamp01((OilLife - s.age) / 600f);
+		}
+		if (s.age > OilLife && !s.open)
+		{
+			for (int i = 0; i < s.blobs.Count; i++)
+			{
+				if (s.blobs[i].tr != null)
+				{
+					UnityEngine.Object.Destroy(((Component)s.blobs[i].tr).gameObject);
+				}
+			}
+			for (int i = 0; i < s.fires.Count; i++)
+			{
+				if (s.fires[i] != null)
+				{
+					UnityEngine.Object.Destroy(s.fires[i]);
+				}
+			}
+			return false;
+		}
+		if (mpb == null)
+		{
+			mpb = new MaterialPropertyBlock();
+		}
+		for (int i = 0; i < s.blobs.Count; i++)
+		{
+			Blob b = s.blobs[i];
+			if (b.tr == null)
+			{
+				continue;
+			}
+			b.age += dt;
+			float k = Mathf.Clamp01(b.age / b.grow);
+			k = 1f - (1f - k) * (1f - k);
+			float size = Mathf.Lerp(b.start, b.max, k);
+			b.tr.localScale = Vector3.one * size;
+			Vector3 w = root.position + b.rel;
+			w.y = Wave(w.x, w.z) + 0.03f + 0.003f * i;
+			b.tr.position = w;
+			float a = OilAlpha * Mathf.Clamp01(b.age / 30f) * fade;
+			mpb.SetColor("_Color", new Color(0.045f, 0.04f, 0.035f, a));
+			((Renderer)b.r).SetPropertyBlock(mpb);
+			if (b.sheen != null)
+			{
+				// additive: the colour's brightness is the strength (Particles/Additive doubles _TintColor)
+				float sa = ModDebrisArt.SheenAlpha * a / Mathf.Max(0.01f, OilAlpha);
+				mpb.SetColor("_TintColor", new Color(0.5f * sa, 0.5f * sa, 0.5f * sa, 0.5f));
+				((Renderer)b.sheen).SetPropertyBlock(mpb);
+				mpb.Clear();
+			}
+		}
+		return true;
+	}
+
+	// A flat 1 x 1 square lying on the water, with white vertex colours (the sprite shader needs them).
+	private static Mesh OilQuad()
+	{
+		if (oilQuad != null)
+		{
+			return oilQuad;
+		}
+		Mesh m = new Mesh();
+		m.name = "ModOilQuad";
+		m.vertices = new Vector3[4]
+		{
+			new Vector3(-0.5f, 0f, -0.5f),
+			new Vector3(0.5f, 0f, -0.5f),
+			new Vector3(-0.5f, 0f, 0.5f),
+			new Vector3(0.5f, 0f, 0.5f)
+		};
+		m.uv = new Vector2[4]
+		{
+			new Vector2(0f, 0f),
+			new Vector2(1f, 0f),
+			new Vector2(0f, 1f),
+			new Vector2(1f, 1f)
+		};
+		m.normals = new Vector3[4] { Vector3.up, Vector3.up, Vector3.up, Vector3.up };
+		m.colors = new Color[4] { Color.white, Color.white, Color.white, Color.white };
+		m.triangles = new int[6] { 0, 2, 1, 2, 3, 1 };
+		m.RecalculateBounds();
+		oilQuad = m;
+		return m;
+	}
+
+	private static Material OilMat()
+	{
+		if (oilMat != null)
+		{
+			return oilMat;
+		}
+		Shader sh = Shader.Find("Sprites/Default");
+		if (sh == null)
+		{
+			sh = Shader.Find("Particles/Alpha Blended");
+		}
+		if (sh == null)
+		{
+			sh = Shader.Find("UI/Default");
+		}
+		if (sh == null)
+		{
+			Log("no transparent shader found: oil slicks are off");
+			Oil = false;
+			return null;
+		}
+		oilMat = new Material(sh);
+		oilMat.mainTexture = OilTex();
+		oilMat.color = new Color(0.045f, 0.04f, 0.035f, OilAlpha);
+		oilMat.renderQueue = OilQueue;
+		return oilMat;
+	}
+
+	private static Texture2D OilTex()
+	{
+		if (oilTex != null)
+		{
+			return oilTex;
+		}
+		int n = 128;
+		Texture2D t = new Texture2D(n, n, TextureFormat.ARGB32, false);
+		t.wrapMode = TextureWrapMode.Clamp;
+		float ox = UnityEngine.Random.Range(0f, 100f);
+		float oy = UnityEngine.Random.Range(0f, 100f);
+		Color[] px = new Color[n * n];
+		float h = (n - 1) * 0.5f;
+		for (int y = 0; y < n; y++)
+		{
+			for (int x = 0; x < n; x++)
+			{
+				float dx = (x - h) / h;
+				float dy = (y - h) / h;
+				float d = Mathf.Sqrt(dx * dx + dy * dy);
+				float ang = Mathf.Atan2(dy, dx);
+				float edge = 0.62f + 0.3f * Mathf.PerlinNoise(Mathf.Cos(ang) * 1.6f + ox, Mathf.Sin(ang) * 1.6f + oy);
+				float a = Mathf.Clamp01((edge - d) / 0.3f);
+				a *= 0.7f + 0.3f * Mathf.PerlinNoise(x * 0.07f + ox, y * 0.07f + oy);
+				px[y * n + x] = new Color(1f, 1f, 1f, a);
+			}
+		}
+		t.SetPixels(px);
+		t.Apply();
+		oilTex = t;
+		return t;
+	}
+
+	// ================= helpers =================
+
+	private static bool EnsureRunner()
+	{
+		if (runner != null && root != null)
+		{
+			return true;
+		}
+		Transform parent = null;
+		if (PrefabBuilder.instance != null && PrefabBuilder.instance.childTransform != null)
+		{
+			parent = PrefabBuilder.instance.childTransform;
+		}
+		GameObject go = new GameObject("ModSinkFx");
+		if (parent != null)
+		{
+			go.transform.SetParent(parent, false);
+		}
+		root = go.transform;
+		runner = go.AddComponent<ModSinkFx>();
+		ModSinkFx.OnTick = Tick;
+		ModWreckArt.StillSinking = StillSinking;
+		// a new battle: everything from the last one went with it
+		wrecks.Clear();
+		bits.Clear();
+		slicks.Clear();
+		timed.Clear();
+		unreadable.Clear();
+		attached.Clear();
+		ModWreckArt.Clear();
+		return true;
+	}
+
+	private static Wreck Find(DamageableSea ds)
+	{
+		for (int i = 0; i < wrecks.Count; i++)
+		{
+			if (wrecks[i].ds == ds)
+			{
+				return wrecks[i];
+			}
+		}
+		return null;
+	}
+
+	private static bool Breaks(UnitSubType t)
+	{
+		switch (t)
+		{
+		case UnitSubType.Submarine:
+			return false;
+		case UnitSubType.Destroyer:
+			return BreakDestroyers;
+		case UnitSubType.Destroyer_Escort:
+			return BreakEscorts;
+		case UnitSubType.Merchant:
+		case UnitSubType.Oiler:
+			return BreakMerchants;
+		case UnitSubType.Light_Cruiser:
+			return BreakCruisers;
+		default:
+			return BreakOthers;
+		}
+	}
+
+	private static void AddCells(List<string> cells, UnitData ud, List<string> add)
+	{
+		for (int i = 0; i < add.Count; i++)
+		{
+			if (ud.cellDictionary.ContainsKey(add[i]) && !cells.Contains(add[i]))
+			{
+				cells.Add(add[i]);
+			}
+		}
+	}
+
+	private static float Key(float[] T, float[] V, float t)
+	{
+		int n = T.Length;
+		if (t <= T[0])
+		{
+			return V[0];
+		}
+		for (int i = 0; i < n - 1; i++)
+		{
+			if (t <= T[i + 1])
+			{
+				float f = (t - T[i]) / Mathf.Max(0.0001f, T[i + 1] - T[i]);
+				return Mathf.Lerp(V[i], V[i + 1], Smooth(f));
+			}
+		}
+		return V[n - 1];
+	}
+
+	// Torpedo break kick: 0 -> 1 (lift), hold, then down past 0 to -0.3 (the smash) and back to 0.
+	private static float Hog(Piece pc)
+	{
+		if (pc.hog <= 0f)
+		{
+			return 0f;
+		}
+		float a = pc.age;
+		if (a < HogRise)
+		{
+			return Smooth(a / HogRise);
+		}
+		a -= HogRise;
+		if (a < HogHold)
+		{
+			return 1f;
+		}
+		a -= HogHold;
+		if (a < HogFall)
+		{
+			float u = a / HogFall;
+			return 1f - 1.3f * u * u;
+		}
+		a -= HogFall;
+		if (a < 1f)
+		{
+			return -0.3f * (1f - Smooth(a));
+		}
+		return 0f;
+	}
+
+	private static float Smooth(float f)
+	{
+		return f * f * (3f - 2f * f);
+	}
+
+	private static float Signed(float a)
+	{
+		a %= 360f;
+		if (a > 180f)
+		{
+			a -= 360f;
+		}
+		if (a < -180f)
+		{
+			a += 360f;
+		}
+		return a;
+	}
+
+	private static float Rnd(float r)
+	{
+		return UnityEngine.Random.Range(0f - r, r);
+	}
+
+	private static float Wave(float x, float z)
+	{
+		Ocean o = Ocean.Instance;
+		if (o == null)
+		{
+			return 0f;
+		}
+		return o.QueryWaves(x, z);
+	}
+
+	private static string Name(Unit u)
+	{
+		return u.unitData.unitName + " (" + u.unitData.unitSubtype + ", " + (u.faction == Faction.Player ? "ours" : "enemy") + ")";
+	}
+
+	private static void Message(Unit u, string text)
+	{
+		try
+		{
+			MessageLog.instance.SendMessageToLog("MagExplosion", text, LogMessageType.Combat, true, u);
+		}
+		catch
+		{
+		}
+	}
+
+	private static void Log(string s)
+	{
+		if (LogOn)
+		{
+			Debug.Log((object)("[SINK] " + s));
+		}
+	}
+
+	private static void Fail(string where, Exception ex)
+	{
+		failed = true;
+		Debug.LogError((object)("[SINK] " + where + " failed, ship sinking is back to the stock game for this session: " + ex.Message + " " + ex.StackTrace));
+		for (int i = 0; i < wrecks.Count; i++)
+		{
+			try
+			{
+				ReleaseWreck(wrecks[i], true);
+			}
+			catch
+			{
+			}
+		}
+		wrecks.Clear();
+	}
+}
