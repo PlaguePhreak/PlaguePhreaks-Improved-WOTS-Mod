@@ -14,7 +14,7 @@ The tester keys are still in (F9, F4, F3). The CTM ship pack is not included.
   - `ModAssets`: parachutes, airmen and plane wreck parts
   - `unit/sea/allUnitsList.txt` and `campaign/campaign001`, `campaign002` ship lists: Nebraska (1944) removed
   - `campaign/pacificwar`, `maps/pacificwar`, `language/.../pacificwar`: the Pacific War campaign (experimental)
-  - `language/english/campaign/campaigns.txt`: the campaign list, with the Pacific War named "Experimental. WIP might not work"
+  - `language/english/campaign/campaigns.txt`: the campaign list (Aaron's own, 29 Oct), with the Pacific War named "Experimental. WIP might not work"
 - `CHANGELOG_0.30_for_chat.txt`: the short changelog for the tester chat.
 
 ## Install (fresh or over an older version)
@@ -34,10 +34,10 @@ If you had the old `War on the Sea\ModAssets` folder from 0.29.4 or older, you c
 
 You already have most of the art. What is new for you:
 
-1. Put the DLL in `Managed\` (step 2 and 3 above).
-2. Copy `override\unit` and `override\campaign\campaign001`, `campaign002` from this folder into your override folder (the Nebraska removal). Also copy `pacificwar\seaUnits.txt` from the `nebraska_removal` pack if you haven't installed it.
-3. Rename the Pacific campaign. Open your `campaigns.txt` (the one in `override\language\english\campaign\`, or the game's own one if you have no override copy). Find the line that starts with `pacificwar=The Pacific War=` and change `The Pacific War` to `Experimental. WIP might not work`. Leave the rest of the line as it is. Save.
-   Don't copy this pack's `campaigns.txt` over yours if your campaign descriptions are newer than 0.26. This pack's file uses the 0.26 descriptions.
+1. Put the DLL in `Managed\` (steps 2 and 3 above). That's the only step left for you.
+2. Already done on your PC: Nebraska removed from your override `unit\sea\allUnitsList.txt` and the 3 campaign `seaUnits.txt` files. Your old files are in `backup_before_nebraska_removal\` in this folder.
+3. Already done on your PC: the Pacific campaign is renamed in your `override\language\english\campaign\campaigns.txt`, only that one line changed. Your old file is `campaigns_before_0.30.txt` in this folder.
+4. You already have all the art from 0.29 to 0.31.14, so you don't need to copy the `override` folder yourself. The full pack for testers is the `v0.30_mega_patch_01.7z.001` ... set next to this folder: open `.001` with 7-Zip and it unpacks the whole release.
 
 ## Notes
 
