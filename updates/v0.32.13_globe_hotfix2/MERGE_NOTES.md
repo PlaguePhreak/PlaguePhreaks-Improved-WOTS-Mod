@@ -1,3 +1,6 @@
+## 0.32.13 (base change!)
+Built on the tester hotfix 2 DLL 091a6546 (= 0.30 Mega Patch 01 + fuel hotfix + hotfix 2 14 fixes + 0.30.1 low flight), NOT on 0.32.12. All globe hooks re-applied with the Cecil patcher (HOOKS_GEO, HOOKS_GLOBE, HOOKS_BATTLE, HOOKS_BATTLE2; the fuel hook is already in that base). ModGlobe changes: OnDestroy() destroys root/blocker/button and clears inst (fixes blank icons when a second campaign is opened in one sitting); AddEntry forces icon alpha 1. Decompile diff vs 0.32.12 = only the hotfix 2 / low-flight changes; vs hotfix 2 = only the globe hooks and classes.
+
 ## 0.32.12
 - No new hooks. ModGlobe.BuildRibbon returns early when mapPixelWidth/240 > 359 degrees or Theatre is false. MenuGlobe default false; the MenuSystem.Start hook from 0.32.11 is NOT in this DLL (built on 0.32.10).
 
