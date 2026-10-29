@@ -5,7 +5,7 @@ using WorldMapStrategyKit;
 
 // 0.31 enemy scout patrols on the campaign map.
 // Waves spread over the flying hours; in each, every enemy airfield fans out single planes on evenly spaced bearings
-// (search planes first, then bombers, then fighters). Each flies out, crosses to the next bearing, then home. A sighting is held for the report delay;
+// (flying boats and floatplane scouts only). Each flies out, crosses to the next bearing, then home. A sighting is held for the report delay;
 // if the scout is shot down first, the report never reaches the enemy. On harder steps the scout shadows its find.
 public static class ModEnemyScouts
 {
@@ -74,6 +74,8 @@ public static class ModEnemyScouts
 				ModEnemyCampaign.Reset();
 				lastWave = -1;
 				ModEnemyAI.Log("campaign map started, Campaign difficulty " + ModEnemyAI.StepNames[ModEnemyAI.CampaignStep()]);
+				ModEnemyAI.FixLocations();
+				ModEnemyAI.EnsureFloatplanes();
 			}
 			ModEnemyAI.FixLocations();
 			Steer();
@@ -445,7 +447,7 @@ public static class ModEnemyScouts
 		return Mathf.Max(0, num2 - ScoutsOut(ml, i));
 	}
 
-	// best scout type: search planes first, then bombers (keeping one at home), then fighters (keeping two)
+	// scout type: only flying boats and floatplane/scout aircraft fly searches, the most plentiful one first
 	private static int ScoutTypeAt(MapLocation ml)
 	{
 		List<string> airTypesAtLocation = CampaignManager.instance.GetAirTypesAtLocation(ml);
@@ -453,40 +455,21 @@ public static class ModEnemyScouts
 		{
 			return -1;
 		}
+		int result = -1;
+		int num = 0;
 		for (int i = 0; i < airTypesAtLocation.Count; i++)
 		{
-			if (ModEnemyAI.IsSearchType(airTypesAtLocation[i]) && OnGround(ml, i) > 0)
+			if (ModEnemyAI.IsScoutPlane(airTypesAtLocation[i]))
 			{
-				return i;
-			}
-		}
-		int num = -1;
-		int num2 = 1;
-		for (int j = 0; j < airTypesAtLocation.Count; j++)
-		{
-			UnitData value;
-			if (!ModEnemyAI.IsSearchType(airTypesAtLocation[j]) && EngagementManager.instance.unitDataDictionary.TryGetValue(airTypesAtLocation[j], out value) && value.unitSubtype != UnitSubType.Fighter)
-			{
-				int num3 = OnGround(ml, j);
-				if (num3 > num2)
+				int num2 = OnGround(ml, i);
+				if (num2 > num)
 				{
-					num2 = num3;
-					num = j;
+					num = num2;
+					result = i;
 				}
 			}
 		}
-		if (num >= 0)
-		{
-			return num;
-		}
-		for (int k = 0; k < airTypesAtLocation.Count; k++)
-		{
-			if (OnGround(ml, k) > 2)
-			{
-				return k;
-			}
-		}
-		return -1;
+		return result;
 	}
 
 	private static List<MapLocation> Bases()

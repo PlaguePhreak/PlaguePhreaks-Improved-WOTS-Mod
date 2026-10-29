@@ -510,7 +510,7 @@ public static class ModEnemyCampaign
 			for (int j = 0; j < airTypesAtLocation.Count; j++)
 			{
 				UnitData value;
-				if (!ModEnemyAI.IsSearchType(airTypesAtLocation[j]) && EngagementManager.instance.unitDataDictionary.TryGetValue(airTypesAtLocation[j], out value) && ModEnemyScouts.OnGround(ml, j) > 0)
+				if (!ModEnemyAI.IsScoutPlane(airTypesAtLocation[j]) && EngagementManager.instance.unitDataDictionary.TryGetValue(airTypesAtLocation[j], out value) && ModEnemyScouts.OnGround(ml, j) > 0)
 				{
 					if (value.unitSubtype == UnitSubType.Fighter)
 					{

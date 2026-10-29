@@ -411,4 +411,134 @@ public static class ModEnemyAI
 			Debug.LogError((object)("[EAI] FixLocations failed: " + ex));
 		}
 	}
+
+	// ---- floatplane scouts at every enemy airfield (0.31.6) ----
+	// planes per airfield level 1-5 for the added floatplane type
+	private static readonly int[] FloatNumbers = new int[5] { 2, 3, 4, 6, 6 };
+
+	// well known floatplane and scout prefabs, tried first; any other Scout-type plane of the right nation is used after them
+	private static readonly string[] FloatPrefer = new string[10] { "e13a", "f1m", "e7k", "e8n", "e16a", "os2u", "soc", "so3c", "kingfisher", "seagull" };
+
+	public static bool IsScoutPlane(string prefab)
+	{
+		if (IsSearchType(prefab))
+		{
+			return true;
+		}
+		UnitData value;
+		return !string.IsNullOrEmpty(prefab) && EngagementManager.instance.unitDataDictionary.TryGetValue(prefab, out value) && value.unitSubtype == UnitSubType.Scout;
+	}
+
+	private static string FindFloatplane(int nation)
+	{
+		List<string> list = new List<string>();
+		foreach (KeyValuePair<string, UnitData> item in EngagementManager.instance.unitDataDictionary)
+		{
+			if (item.Value != null && item.Value.unitSubtype == UnitSubType.Scout && item.Value.nationIndex == nation && !IsSearchType(item.Key))
+			{
+				list.Add(item.Key);
+			}
+		}
+		if (list.Count == 0)
+		{
+			return null;
+		}
+		list.Sort(StringComparer.Ordinal);
+		Log("floatplane scouts in the game for this side: " + string.Join(", ", list.ToArray()));
+		for (int i = 0; i < FloatPrefer.Length; i++)
+		{
+			for (int j = 0; j < list.Count; j++)
+			{
+				if (list[j].ToLowerInvariant().StartsWith(FloatPrefer[i]))
+				{
+					return list[j];
+				}
+			}
+		}
+		return list[0];
+	}
+
+	// called once when the map starts: if the enemy's airfield list has no floatplane scout, add one (new and saved campaigns)
+	public static void EnsureFloatplanes()
+	{
+		try
+		{
+			CampaignManager instance = CampaignManager.instance;
+			CampaignData campaignData = instance.campaignData;
+			if (campaignData.aircraft1 == null || campaignData.aircraft1.Count == 0 || campaignData.aircraft1Numbers == null || campaignData.nations1 == null)
+			{
+				return;
+			}
+			for (int i = 0; i < campaignData.aircraft1.Count; i++)
+			{
+				UnitData value;
+				if (EngagementManager.instance.unitDataDictionary.TryGetValue(campaignData.aircraft1[i], out value) && value.unitSubtype == UnitSubType.Scout)
+				{
+					return;
+				}
+			}
+			string text = (campaignData.nations1.Contains("japan") ? "japan" : (campaignData.nations1.Contains("usa") ? "usa" : null));
+			if (text == null)
+			{
+				return;
+			}
+			string text2 = FindFloatplane((int)(Country)Enum.Parse(typeof(Country), text));
+			if (text2 == null)
+			{
+				Log("no floatplane scout for " + text + " in the game; airfields scout with their flying boats only");
+				return;
+			}
+			if (!Ready(text2, text))
+			{
+				return;
+			}
+			int count = campaignData.aircraft1.Count;
+			int num = campaignData.aircraft1Numbers.Count / count;
+			List<int> list = new List<int>();
+			for (int j = 0; j < num; j++)
+			{
+				for (int k = 0; k < count; k++)
+				{
+					list.Add(campaignData.aircraft1Numbers[j * count + k]);
+				}
+				list.Add(FloatNumbers[Mathf.Clamp(j, 0, FloatNumbers.Length - 1)]);
+			}
+			campaignData.aircraft1 = new List<string>(campaignData.aircraft1);
+			campaignData.aircraft1.Add(text2);
+			campaignData.aircraft1Numbers = list;
+			int[] array = new int[Mathf.Max(8, count + 1)];
+			if (campaignData.replenishDailyAircraft1 != null)
+			{
+				Array.Copy(campaignData.replenishDailyAircraft1, array, Mathf.Min(campaignData.replenishDailyAircraft1.Length, array.Length));
+			}
+			array[count] = 1;
+			campaignData.replenishDailyAircraft1 = array;
+			int num2 = 0;
+			for (int l = 0; l < instance.landMapLocations.Count; l++)
+			{
+				MapLocation mapLocation = instance.landMapLocations[l];
+				if (mapLocation.currentFaction != 1 || (mapLocation.aircraft1 != null && mapLocation.aircraft1.Count > 0))
+				{
+					continue;
+				}
+				if (mapLocation.inTheAir != null && mapLocation.inTheAir.Count == count)
+				{
+					mapLocation.inTheAir.Add(0);
+				}
+				if (mapLocation.destroyedAir != null && mapLocation.destroyedAir.Count == count)
+				{
+					mapLocation.destroyedAir.Add(0);
+				}
+				if (mapLocation.airfieldLevel > 0)
+				{
+					num2++;
+				}
+			}
+			Log("enemy airfields get " + text2 + " floatplane scouts (" + string.Join("/", Array.ConvertAll(FloatNumbers, (int n) => n.ToString())) + " by airfield level), " + num2 + " airfields");
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError((object)("[EAI] floatplanes failed: " + ex));
+		}
+	}
 }
