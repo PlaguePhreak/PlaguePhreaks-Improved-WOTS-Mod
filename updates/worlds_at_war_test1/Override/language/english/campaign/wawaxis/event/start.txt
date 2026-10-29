@@ -1,0 +1,5 @@
+WORLDS AT WAR: THE AXIS
+
+December 1941. Japan has struck Pearl Harbor and the Axis fleets hold Europe's coasts. Cut the Allied sea lanes in every ocean and take their great bases before their shipyards outbuild you.
+
+This is a test build of the whole-world campaign. The Atlantic and Mediterranean are populated with placeholder ships until British, German and Italian units exist.

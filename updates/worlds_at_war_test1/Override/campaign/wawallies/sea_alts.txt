@@ -1,0 +1,14 @@
+﻿//When selecting ships for sea missions, if cannot find a vessel, will check alternates
+//unitDesignation,Alternate1,Alternate2=etc...
+//Oiler & Merchant are considered unlimited/unnamed and will always select a random unit of the correcponding unitSubtype and generate the first instance of that class
+Submarine
+Destroyer_Escort=Destroyer
+Destroyer=Destroyer_Escort
+Light_Cruiser=Destroyer=Destroyer_Escort
+Heavy_Cruiser=Light_Cruiser=Destroyer=Destroyer_Escort
+Battlecruiser=Battleship=Heavy_Cruiser=Light_Cruiser=Destroyer=Destroyer_Escort
+Battleship=Battlecruiser=Heavy_Cruiser=Light_Cruiser=Destroyer=Destroyer_Escort
+Light_Carrier=Aircraft_Carrier
+Aircraft_Carrier=Light_Carrier
+Oiler
+Merchant

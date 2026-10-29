@@ -1,0 +1,2 @@
+wawallies=Worlds at War: Allies=8,12,1941=December 1941. The war is now truly a world war. Hold the sea lanes in every ocean, break the Axis fleets and carry the war to Truk, Taranto and Wilhelmshaven.=forceSettings=2,2,2,2,2,2,2,2,2,2
+wawaxis=Worlds at War: Axis=8,12,1941=December 1941. Japan has struck Pearl Harbor and the Axis fleets hold Europe's coasts. Cut the Allied sea lanes in every ocean and take their great bases before their shipyards outbuild you.=forceSettings=2,2,2,2,2,2,2,2,2,2

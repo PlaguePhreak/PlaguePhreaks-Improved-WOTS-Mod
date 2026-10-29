@@ -1,0 +1,1 @@
+{"nextAction":"SUMMARY","header":"Defeat","imagePath":"","content":"<size=18><b>DEFEAT</b></size>\nYou have lost every home port in the Pacific. The fleet has nowhere left to go."}
