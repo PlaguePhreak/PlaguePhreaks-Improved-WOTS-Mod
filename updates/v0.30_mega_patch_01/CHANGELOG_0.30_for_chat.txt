@@ -1,0 +1,44 @@
+Plague's Better WOTS mod - 0.30 "Mega Patch 01"
+
+The biggest update so far. Please send output_log.txt if anything breaks.
+
+ALLIED AI (Allied campaign)
+- Royal Australian Navy task forces sail and fight on your side, shown in yellow. They patrol, attack enemy ships they can beat, escort your merchants and the supply convoy, and go home to refit.
+- RAN merchants bring supplies from Cooktown to your ports that run short.
+- Your starting RAN force is handed to them in the first 2 days.
+- You can't order them around. Click one to see its ships and job.
+- When they meet the enemy you choose Engage or the new sea Auto resolve. Their battles give no command points.
+
+ENEMY AI REWORK
+- The enemy follows the difficulty settings, from Very Easy to Elite. Elite fights like a real commander.
+- Floatplanes and flying boats scout from every enemy airfield, and a pop-up tells you when you've been spotted. Shoot the scout down fast and the report is lost.
+- Strikes gather and arrive together, sized to their target.
+- The enemy hunts you harder on the map, and in battle presses home and finishes cripples.
+- More aircraft types at enemy airfields (new campaigns).
+- Can be switched off in Mod Options.
+
+BAIL-OUTS AND RESCUES
+- Downed airmen show up on the campaign map. Send a flying boat, floatplane or ship to pick them up, or use the new auto rescue button.
+
+FIRES
+- Real 3D animated ship fires that grow with every burning compartment, light up the sea and send up black smoke.
+- Shell and bomb hits burst in 3D fire and sparks.
+
+BREAK-UP AND SINKING
+- A magazine blast can tear any ship apart, even a battleship.
+- Every surface ship has torn, burnt break pieces.
+- Wrecks and broken halves sink on real physics: they flood, list, roll over or stand on end. No two sinkings look the same.
+
+SHIP HANDLING
+- Real turning circles, rudder lag and momentum for every ship. Judge it at x1 or x2 speed.
+
+ALSO
+- CHANGE LOG button in the main menu, and the logbook covers all of this.
+- Nebraska (1944) removed.
+- The Pacific War campaign is in as "Experimental. WIP might not work". Expect problems.
+
+FIXES
+- The supply convoy now actually sails to your port.
+- The battle message log no longer carries over between battles.
+
+Tester keys are still in: F9 reveal enemies, F4 survivor event, F3 developer view.

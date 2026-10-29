@@ -1,0 +1,494 @@
+=== PAGE 1: WHAT'S NEW ===
+VERSION 0.30: MEGA PATCH 01
+The biggest update so far. In short: friendly RAN task forces that fight on their own, a much smarter enemy that scales with the difficulty, downed airmen you can rescue, real fires, ships that handle like the real thing, and ships that break up and sink on real physics. Each part has its own page in this book.
+
+Allied AI (Allied campaign)
+Royal Australian Navy groups sail and fight on your side, shown in yellow. They patrol, attack enemy ships they can beat, escort your exposed merchants and the supply convoy, and RAN merchants carry supplies from Cooktown to your ports that run short. The RAN force you start with is handed to them. You can't give them orders. Click one to see its ships and job. See ENEMY AND ALLIED AI.
+
+Enemy AI rework
+The enemy now follows the difficulty settings (Very Easy, Easy, Balanced, Hard, Elite). Floatplanes and flying boats fan out from every enemy airfield on scout patrols, and a pop-up tells you when one has spotted you. Strikes gather and arrive together, sized to the ships they go for. On the map the enemy hunts you harder; in battle its ships press home, spread their fire and finish cripples. On Elite it fights like a real commander. New campaigns give enemy airfields more aircraft types. Switches are in Mod Options. See ENEMY AND ALLIED AI.
+
+Bail-outs and rescues
+Airmen who bail out over the sea show up on the campaign map as an orange aircrew marker. Send a flying boat, a floatplane or a ship to pick them up, or switch on auto rescue with the new button under the fuel button. See EVENTS.
+
+Fires
+Burning ships show real 3D animated flames and a smoke column. One burning compartment is a small fire; more grow it into a roaring blaze that lights up the ship and the sea. Shell and bomb hits burst in 3D fire, smoke and sparks. See REPAIR AND DAMAGE.
+
+Ship handling
+Every ship turns on a real turning circle, the rudder takes time to bite, and ships carry their way: cut the engines and she coasts on for minutes. See FUEL AND SHIPS.
+
+Break-up and sinking
+A magazine blast can now tear any ship apart, even a battleship, and every surface ship has torn, burnt break pieces. Wrecks and broken halves sink on real physics: water floods in, and they list, roll over, or stand on end before they go. Torpedo hits use the game's own big splash. See SINKING AND EXPLOSIONS.
+
+Also in 0.30
+The supply convoy now really sails to your port (it used to sit still) and is shown in yellow. The battle message log starts empty in every new battle. The air auto resolve window matches the game's look, and a new sea auto resolve covers battles of your allies. The main menu has a CHANGE LOG button. Nebraska (1944) is gone from the ship lists. The Pacific War campaign is in as an early test, named "Experimental. WIP might not work".
+
+VERSION 0.29: SHIPS GO DOWN FOR REAL
+Ships sink the way their flooding takes them. A torpedo can break a destroyer's back, magazine blasts are as big as what is in them, with new HMS Barham style explosions, floating wreckage and oil slicks. Shot-down planes shed their real wings, tails and engines, and crews bail out by parachute. Your ships answer your controls again with enemy planes near, fewer planes blow up in the air, and torpedo bombers stay at 800 m until the attack.
+
+VERSION 0.28: AIR COMBAT UPDATE
+All 135 aircraft have their own flight, toughness, guns, armour and real fuel. New manoeuvres, formation flying, damage that changes how a plane flies, and planes that leave at bingo fuel or when out of ammunition. Fly your own plane with G and a chase camera with C. Air auto resolve with points and dice. The flight model runs on battle time, so x8 and x10 fly the same as x1.
+
+VERSION 0.26 AND 0.27: THE FLIGHT MODEL
+Dives gain speed and climbs lose it, planes stall, flaps come out for hard turns. Pilot ranks from Green to Elite, real dogfight moves, and pilots who judge energy: boom and zoom, turn fight or disengage.
+
+VERSION 0.25: THE NEW GUINEA FRONT
+Ten new map locations along Papua New Guinea, a historical aircraft mix at every base, much bigger starting fleets, 10 new formations, and new campaign names and win conditions. See MAP AND AIR BASES and STARTING FORCES.
+
+VERSION 0.21 TO 0.24
+0.24: 84 RamZ warships and 93 RamZ aircraft, plus 20 ships and 22 aircraft from the TTE team. 0.23: a limited merchant fleet from the TTE team. 0.22: garrisons eat supplies, the Admiralty supply convoy, and this book. 0.21: faster ship buying, torpedo duds, glancing hits and the fuel overlay.
+
+ON THE WAY (planned, NOT in the game yet)
+The Pacific War: finishing the new, bigger campaign map.
+Free flight: planes that do not always fly along their nose, so loops, inverted flight and real spins.
+Plane-to-plane collisions back on, retuned.
+Pilots who keep their experience from battle to battle in a campaign.
+Air auto resolve: a beaten bomber strike turns back.
+Enemy bombers that press on through losses, and enemy fighters that cover their bombers first.
+Enemy flying boats that rescue their own airmen.
+Air range and timers: realistic launch, landing and rearming times so an airfield or carrier cannot launch non-stop.
+A rule so a merchant or oiler in first place does not make a whole task force retreat.
+Towing: crippled ships taken in tow, in battle and on the map.
+More ships: Aegon's CTM pack of 86 Japanese ships.
+Being looked at: crash and ditching effects for planes, and hit marks and scorching on ship models.
+
+The full list is in the Change Log file.
+
+=== PAGE 2: EVENTS ===
+Survivors event
+Every few days a ship is reported sunk somewhere on the campaign map. Sail a task force to the lifebuoy marker within 24 hours to save the survivors. Your own men refill your crews without losing experience. Enemy survivors become prisoners (command points).
+
+Supply convoy event
+Every 20-30 days the Admiralty sends a supply convoy. It appears on the northern edge of the map and sails to your home port by itself, shown in yellow. You can't move it. If it stops, it is told to sail again. When it has unloaded it leaves the map. The enemy knows where it is for the first 6 hours.
+
+The convoy has 1 light cruiser leading, 1-3 destroyers, and 6-12 cargo ships (troops, supplies, engineering and an oiler, the rest random). It sails in its own formation, Supply Event. The cargo is never less than 2,000 troops, 2,000 supplies, 100 engineering and 100 fuel. At 12 km from port the cargo is unloaded.
+
+Ships that are sunk take their cargo with them, so you only get what survives. Do not lose it.
+
+Downed airmen
+Airmen who bail out over the sea show up on the campaign map as an orange aircrew marker, and they last about 36 hours. Send a flying boat (PBY, PBM, Mavis, Emily, Sunderland: 10 seats) or a floatplane (1 seat) to the marker. It picks them up and flies home. A ship that sails to the marker picks them up too. Each airman saved gives 0.25 command points. Enemy airmen are taken prisoner by ships, like ship survivors.
+
+Auto rescue
+The 4th button in the top-left column of the campaign map (under BOOK, BELL and FUEL) switches auto rescue on or off; it is lit orange when on, and starts off. When on, the nearest of your airfields with a free flying boat in range sends one (two for a crew over 10 men) to each new aircrew marker, during flying hours only. Floatplanes, ship survivors and enemy airmen are still up to you.
+
+=== PAGE 3: SUPPLY ===
+Troop supplies
+Every day each location with troops spends 3% of its troop number in supplies. A garrison that runs dry slowly loses troops. The location panel shows how many days of supply are left.
+
+AI convoys
+The AI sends convoys to its outposts that are running low. You can sink them.
+
+Numbers
+Weekly supplies at home ports are 6,000. Outposts start with 1 supply per troop.
+
+=== PAGE 4: CUSTOM SHIPS ===
+RamZ Catalogue Ships
+84 ships from RamZ's public Unit Catalog (thank you, RamZ!), listed by ship class. Nebraska (1944) was taken out in 0.30: a carrier-battleship hybrid did not fit the mod's realism. Their model, weapons and names are RamZ's work. Only Japan, USA and Australia are used.
+
+Battleships
+USA: Iowa (1944), Iowa (1945), Nevada, North Carolina, South Dakota.
+Japan: Fuso, Kongo, Satsuma, Yamato.
+
+Battlecruisers
+USA: Constellation.
+
+Aircraft Carriers
+USA: Enterprise, Essex, Hornet, Lexington, Midway (1945), Midway (1946), Ranger, Saratoga (1942), Saratoga (1944), Yorktown.
+Australia: Colossus.
+Japan: G14, G15, Shokaku, Taiho, Zuikaku.
+
+Light Carriers
+USA: Independence, Saipan, Sangamon.
+
+Heavy Cruisers
+USA: Alaska, Baltimore, Des Moines, New Orleans(1945), Portland, Puerto Rico, Wichita.
+Australia: County.
+Japan: Aoba, Maya, Mogami, Myoko, Tone.
+
+Light Cruisers
+USA: Atlanta (1942), Atlanta (1944), Austin, Cleveland, Oakland (1943), Oakland (1945), St. Louis, Worcester.
+Australia: Leander, Perth.
+Japan: Agano, Agano-Kai, Isuzu.
+
+Destroyers
+USA: Benson, Fletcher (1942), Fletcher (1943), Gearing, Mahan, Porter (1942), Porter (1944), Somers, Sumner.
+Australia: Battle, N Class, T,U,V Class.
+Japan: Akizuki, Ayanami, Kagero, Kitakaze, Shimakaze, Shiratsuyu, Yugumo.
+
+Destroyer Escorts
+USA: Rudderow, Tacoma.
+Japan: Chidori, Mutsuki.
+
+Submarines
+USA: Balao, Balao GUPPY, Gato, Salmon.
+Japan: Type B3.
+
+TTE Warships
+20 more ships from the TTE team, used with credit to them.
+Battleships: Colorado, New Mexico, Pennsylvania, Tennessee.
+Aircraft carriers: Hiyo.
+Light carriers: Akitsu Maru, Bogue, Chitose, Hosho, Kamikawa Maru, Nisshin, Ryuho, Taiyo.
+Light cruisers: Kitakami, Omaha, Yubari.
+Destroyers: Tribal, Clemson & Wickes.
+Submarines: Type-A, Type-C.
+
+TTE Merchant Ships
+23 merchant ships, transports, a hospital ship, an oiler (Patapsco) and a destroyer escort (Manley) from the TTE team, in limited pools of 10-30 of each type for each side. They are used with credit to the TTE team. The stock merchants (C3 Cargo, Nippon Maru, Kamogawa Maru) are unlimited, so convoys can still form when the pools run out. The AI builds its convoys from a random mix of merchants and oilers, new ones included.
+
+=== PAGE 5: CUSTOM AIRCRAFT ===
+RamZ Catalogue Aircraft
+93 aircraft from RamZ's public Unit Catalog (plus 3 British types that his new Australian carriers use). Japan, USA and Australia only.
+
+USA
+A-26C-45 Invader
+A2D-1 Skyshark
+AD-2 Skyraider
+AM-1 Mauler
+AU-1 Corsair
+B-17G Flying Fortress
+B-25J-20 Mitchell
+B-26B Marauder
+B-29A Superfortress
+BTD-1 Destroyer
+F2A-3 Buffalo
+F2G-1 Corsair
+F2G-2 Corsair
+F4F-3 Wildcat
+F4F-4 Wildcat
+F4U-1A Corsair
+F4U-1D Corsair
+F4U-2 Corsair
+F4U-4 Corsair
+F4U-4B Corsair
+F6F-3 Hellcat
+F6F-5 Hellcat
+F6F-5N Hellcat
+F7F-3 Tigercat
+F8F-1B Bearcat
+FM-2 Wildcat
+OS2U-3 Kingfisher
+P-38G-10 Lightning
+P-38J-15 Lightning
+P-38K-1 Lightning
+P-38L-5 Lightning
+P-39D Airacobra
+P-40F-10 Warhawk
+P-43A-1 Lancer
+P-47D-28 Thunderbolt
+P-47M-1 Thunderbolt
+P-47N-15 Thunderbolt
+P-51D-20 Mustang
+P-51H-5 Mustang
+P-61C-1 Black Widow
+P-63C-5 Kingcobra
+P-82B Twin Mustang
+PB4Y-2 Privateer
+PBJ-1J Mitchell
+PV-2D Harpoon
+SB2C-1C Helldiver
+SB2C-4 Helldiver
+SB2U-3 Vindicator
+SBD-3 Dauntless
+SBD-5 Dauntless
+SBD-6 Dauntless
+SOC-1 Seagull
+TBD-1 Devastator
+TBF-1C Avenger
+TBM-3 Avenger
+
+Australia
+Beaufighter Mk VIc
+Corsair F Mk II
+Firebrand TF Mk IV
+Walrus Mk I
+
+Japan
+A6M2 Mod 21
+A6M3 Mod 22a
+A6M3 Mod 32
+A6M5 Mod 52a
+A6M5 Mod 52c
+A6M6 Mod 53c
+A7M1 Sam
+A7M2 Sam
+A8K1
+B5N2 Kate
+B6N2a Jill
+B7A2 Grace
+D3A1 Val
+D3A2 Val
+D4Y1-C Judy
+D4Y2 Judy
+D4Y3a Judy
+D4Y5 Judy
+E13A1 Jake
+G8N1 Rita
+J5N2 Tenrai
+J6K1 Jinpu
+J7W1 Shinden
+Ki-100
+Ki-67 Otsu
+Ki-83
+Ki-84 Frank
+Ki-87
+Ki-94-II
+N1K1 Rex
+N1K1-Ja George
+N1K2-Ja Shiden-Kai
+P1Y1 Ginga
+R2Y2 Keiun
+
+TTE Aircraft
+22 aircraft from the TTE team, used with credit to them.
+USA
+A-20G Havoc
+B-24D Liberator
+B-25J Mitchell
+J2F-5 Duck
+P-38E Lightning
+P-39D Airacobra
+PBM-3 Mariner
+PBY-5a Catalina
+
+Australia
+Beaufighter Mk21
+Beaufort MkI
+Kittyhawk MkIA
+Sunderland MkIII
+
+Japan
+A5M4 Claude
+A6M2-N Rufe
+E14Y Glen
+G3M2 Nell
+H6K4 Mavis
+H8K2 Emily
+J1N1 Gekko
+Ki-43-II Hayabusa
+Ki-45 Toryu
+Ki-49-IIb Donryu
+
+
+=== PAGE 6: MAP AND AIR BASES ===
+New locations (0.25)
+Ten new places on the map. Start a new campaign to see them.
+
+Held at the start
+Lae: Japanese forward air base opposite Port Moresby.
+Buna: Japanese beachhead for the push over the Kokoda Track.
+Gasmata: small Japanese airstrip on the south coast of New Britain.
+Cairns: Allied port and flying boat base on the Queensland coast.
+Horn Island: Allied fighter strip guarding the Torres Strait.
+
+Empty, capture them
+Finschhafen, Kiriwina, Madang, Wewak and Manus Island start with nobody in them. Either side can take them.
+
+Aircraft at each base
+Each location has its own mix of historical aircraft for each side. A base holds up to 6 types. Air base level 1 gives 1 type, level 5 gives all of them.
+Aircraft per type rise with the air base level, from 4 up to a cap: fighters 24, single-engine bombers 20, twin-engine types 16, heavy bombers 12, floatplanes 12, flying boats 8.
+The mix follows whoever holds the base now. Take a base and it flies your planes.
+
+Floatplane bases
+Some bases have no runway worth the name and fly only floatplanes and flying boats, such as Shortland Islands, Santa Isabel (Rekata Bay), Malaita and Rennell. They cannot field fighters, so guard them with ships.
+
+Good to know
+Only 1942-43 aircraft are used, because a base list does not change with the date. Japan flies its own types, the Allies fly US types, and Australian types mix in at Port Moresby, Milne Bay and the Queensland bases.
+
+=== PAGE 7: STARTING FORCES ===
+Why so many task forces (0.25.2)
+Ships have to be ordered and the wait times are somewhat long, so both sides start with a real fleet. The campaign is made for about 200 to 400 days of play. Start a NEW campaign to see it.
+
+Allies (Counterattack on the Australian Front)
+Enterprise Carrier Force: Enterprise with a battleship, cruisers and destroyers, modelled on Task Force 16.
+Washington Surface Action Group: two battleships, Washington and South Dakota, with cruisers and destroyers.
+San Francisco Cruiser Force and Astoria Cruiser Force.
+Australia Surface Force: HMAS Australia, Canberra and Hobart with destroyers, near Port Moresby. Since 0.30 it is handed to the Allied AI in the first 2 days and sails as RAN CRUISER FORCE (yellow).
+4 destroyer patrols and 3-4 submarines.
+
+Japan (Defending Japan's Southwest Pacific Interests)
+Shokaku Carrier Force: both Shokaku and Zuikaku with a battleship, cruisers and destroyers, modelled on the Carrier Striking Force.
+Kongo Surface Action Group: Kongo and Fuso with heavy cruisers and destroyers.
+Chokai Cruiser Force and Suzuya Cruiser Force.
+4 destroyer patrols and 3-4 submarines.
+
+Names
+Your forces are named after their lead ship. A destroyer patrol has 2-3 destroyers picked at random and is named after the first one, such as Farragut Destroyer Patrol. The enemy gets matching forces, but they are not named.
+
+The 10 new formations
+9 Escorted Wedge, 10 Escorted Box, 11 Escorted Diamond, 12 Escorted Ring, 13 Escorted Echelon, 14 Escorted Double Column, 15 Kido Butai (2 Carriers), 16 Kido Butai (4 Carriers), 17 Surface Action Line, 18 Supply Event.
+
+Who goes where
+Ship 1 is the leader. Ships 2-5 take the big-ship places (carriers, battleships, heavy cruisers). Places 6-8 are destroyers at the front and 9-10 on the flanks. Spare ships go astern. List the ships in that order in your task force. In Kido Butai (4 Carriers) list the 4 carriers first.
+
+Merchants and oilers
+They retreat when a fight starts and would take the whole task force with them, so none of the starting forces or the supply convoy has one in first place. A rule that covers every task force is planned, but not built yet.
+
+Ship names and positions for the forces come from my reading of the history. If a ship or a force looks wrong, tell me.
+
+=== PAGE 8: REPAIR AND DAMAGE ===
+Lasting damage
+Knocked-out equipment stays broken until you get to a port.
+
+Damaged ships
+Damaged ships slow their task force. Ships can list and capsize, and counter-flooding helps.
+
+Damage control
+Works on the most urgent job first, and fires being fought can't spread. Colours: yellow light damage, orange heavy damage, red knocked out (fixable at sea), black destroyed or needs a port, grey patched as far as it can go (needs a port). Engine rooms can always be repaired at sea, but only back to 50% health and half power until a port repair.
+
+Fires
+Fires burn in real 3D: animated flames from the side, round ragged blazes when seen from above, and a smoke plume. A single burning compartment is a small fire. The more compartments burn, the bigger it grows, up to a roaring blaze that glows, lights up the ship and the sea around it, and sends up a black smoke column.
+
+Hits
+Shell and bomb hits on ships burst in 3D fire, smoke, flying chunks and sparks, sized by the damage they do. Bombs make bigger bursts, armour-piercing shells smaller ones.
+
+=== PAGE 9: SINKING AND EXPLOSIONS ===
+How ships sink
+Since 0.30 wrecks sink on real physics, not a script. The hull is made of cells that float, fill with water and pass it on. A ship holed on one side takes water on that side, lists and can roll over. A ship holed at one end goes down by that end while the other end rises. A ship that floods evenly settles lower and lower, then goes. In shallow water the wreck comes to rest on the seabed and can stick out of the water. No two sinkings look the same. Submarines keep the game's own sinking.
+
+Broken backs
+A torpedo that breaks the keel of a destroyer or escort sets off both magazines and splits the ship in two. The middle kicks up and smashes back down. Then each half floods through its torn end on the same physics: the broken ends go down, bow and stern rise, and they stand on end before they slide under. Torpedo break-back is for destroyers and escorts only.
+
+Break pieces
+Every surface ship has torn, crumpled and burnt break pieces: near the bow, midships and near the stern (137 bigger ships plus the 50 destroyers and escorts). Turrets and guns go down whole with their piece.
+
+Magazines
+A magazine blast is as big as what is in it: how full it is, HE or AP shells, AA rounds cooking off with pops and sparks, star shells flying out burning white. A flooded magazine only half goes off, with a burst of steam. A nearly empty magazine (under 5% of its shells) cannot blow a ship apart. A magazine at least a quarter full is lethal to any ship, even a battleship: it sinks her, and most of the time blows her in half or blows off the bow or stern. The fuller the magazine, the likelier the break.
+
+Explosions
+Big blasts are in the style of the HMS Barham film: a huge fireball, a towering black cloud, fire jets, flying black wreckage and sparks. Only big blasts leave smoke, and it clears about half a minute after the ship is under. A torpedo hit throws up the game's own big splash, made larger, not a fireball.
+
+Wreckage and oil
+Wreckage floats up where a ship sinks: planks, crates, drums, rafts, life rings, a capsized boat, burnt timber. An explosion throws some of it into the air. Oil spreads from the wreck to 1.2 to 2 ship lengths over about 4 minutes and fades after about 45 minutes. An oiler's slick is bigger and often burns, and a ship that blew up can leave burning oil.
+
+=== PAGE 10: CREWS AND VETERANCY ===
+Veterancy
+Only counts from real fights (an enemy has to be there, and something has to be sunk or shot down).
+
+Crews
+Every ship has its real crew size (hover over a ship to see Men). Ships lose men from hits, fires and flooding, and losing men costs progress towards the next rank. Ships below 80% crew reload and repair slower and have fewer damage control parties.
+
+Recruits
+Taking on new recruits at port (Rearm) resets your progress, or drops a rank.
+
+=== PAGE 11: FUEL AND SHIPS ===
+Fuel overlay
+Click the fuel barrel button (or press F11 on the campaign map). Every task force of yours gets a label with days of fuel left and speed (orange below 5 days, red below 3). The selected one gets a ring showing how far it sails in 1 day.
+
+Ordering ships
+Ships have to be ordered and built, with build times and deposits. After you order a ship, the name list moves on to the next ship of that class you can still buy.
+
+Task forces
+Up to 20 ships, new formations and bigger AI fleets. Several task forces can join the same battle (pincers).
+
+Ship handling
+Every ship turns on a real WW2 turning circle for its type: destroyers turn tight, battleships and carriers swing slowly and wide. The rudder and the swing take time to build, and hard turns cost speed. Ships carry their way: cut the engines and a big ship coasts on for minutes. Judge turns at x1 or x2 speed, because x10 makes a one minute turn look like six seconds.
+
+=== PAGE 12: ENEMY AND ALLIED AI ===
+Difficulty
+The enemy follows the game's two difficulty settings, with the steps Very Easy, Easy, Balanced, Hard and Elite. Campaign Difficulty (set when the campaign starts) sets how the enemy acts on the map; Combat Difficulty sets how it fights in battle. Every step changes something, and Elite fights like a real commander who coordinates and attacks without mercy or hesitation. Mod Options has a section Enemy AI with a switch for the whole rework (off = the old enemy) and one for the scout pop-up.
+
+Enemy scouts
+Every enemy airfield sends floatplanes and flying boats out on scout patrols, many single planes fanned out, at the first flying hour and at midday. Bases get floatplane scouts added, saved campaigns too. When a scout spots you, a pop-up names the force, and enemy HQ reacts after a delay: shoot the scout down first and the report is lost. On the lower steps scouts stay home in rain and storms.
+
+Enemy strikes
+Strike groups gather at a rally point and attack together, and waves from different bases time their arrival. The size of a strike follows its target: a few planes for a destroyer, a whole wing for a battleship group. Fighter cover over enemy ships is sized to the group. Search planes are never sent on strikes. New campaigns give every enemy airfield more aircraft types.
+
+Enemy on the map
+It chases further and with less of a size advantage, remembers you for longer and searches where it last saw you. On Elite it sends a surface group straight at any force it spots.
+
+Enemy in battle
+AI fleets hold formation and coordinate torpedo attacks. Ships rethink more often and, from Balanced up, no longer turn away after the first hit. Fire is spread over your ships, and from Hard up cripples are finished first. Retreating ships lay smoke. Some enemy pilots are one rank better. On Elite the whole force only runs when it is down to a third of your strength. Far-away task forces head straight for you instead of sailing in circles. Subs ambush from further out and come back for more.
+
+Allied AI (Allied campaign only)
+Royal Australian Navy groups sail on your side, shown in yellow: RAN CRUISER FORCE, RAN DESTROYER FORCE and, from 3 months in, sometimes RAN CARRIER FORCE (Colossus). The first comes 3 to 7 days in from Cooktown (or Port Moresby or Milne Bay), with at most 2 at a time and a new one 15 to 25 days after one is lost. They patrol, attack enemy ships within 250 km they can beat, send carrier strikes, escort the supply convoy and your exposed merchant groups, and go home to refit when damaged or after 12 days at sea.
+
+RAN merchants
+When one of your ports is short of supplies or fuel, RAN MERCHANTS (borrowed US transports and oilers with a RAN destroyer) load cargo from Cooktown's stock, sail there and unload. They never carry troops or take a port.
+
+Your allies and you
+You can't give orders to a yellow group. Click it to see its ships, damage, job, days at sea, planes and cargo. When it meets the enemy you choose ENGAGE (you command the RAN ships in that battle) or AUTO RESOLVE, which opens the sea resolve window with a chance bar. Battles your allies fight give no command points. Their messages appear in the Admiralty tab.
+
+=== PAGE 13: AIR ===
+Strikes
+Up to 72 planes per side. Mixed strike packages arrive in one wave. Strikes fly in at cruise speed, flights staggered, with the fighters above and behind their bombers. Real steep dive bombing with dive brakes. Torpedo planes run up one side of the enemy fleet, each half gathers off its own bow, and they all attack together (hammer and anvil). They stay at 800 m until the attack. A strike switches to a carrier or battleship if it spots one before its attack starts. Fighters only strafe small ships.
+
+Flight model
+Dives gain speed, climbs lose it, planes stall, flaps come out for hard turns, controls are heavy at speed. Every aircraft has its own table: top speed, corner speed, stall, turn rates, climb, roll, dive limit and where its guns converge.
+
+Fighters
+Pilots judge energy (height plus speed) and choose: boom and zoom, turn fight with flaps, or disengage. Manoeuvres: yo-yos, wingover, lag roll, Immelmann, split-S, barrel rolls, scissors, decoy, Thach weave, sandwich, wingman cover. Escorts protect their bombers and fly 400 m above them. CAP follows its carrier. Pilot rank (Green to Elite) sets how well they fly and how fast they react.
+
+Damage
+Every plane type has its own toughness and armour, and guns do damage by calibre. Damage changes how a plane flies: a bad engine, torn wings, a damaged tail, fuel leaks and fires, parts falling off. A plane held far above its structural speed in a dive loses its wings.
+
+Shot down
+A shot-down plane breaks apart for real: 119 planes drop their own wings, ailerons, tailplanes, rudders, booms and engines, which fall at real speed, splash into the sea and float for a moment. At most 38% blow up in the air (more often when burning or still carrying bombs or a torpedo). The crew bail out and drift down into the sea under a parachute, and can be rescued from the campaign map (see EVENTS).
+
+Fuel and leaving
+Aircraft carry their real fuel (minutes at full power from the internal tanks, cruise burns a third). At 10% (bingo), out of ammunition, or too damaged, a plane leaves the battle and cruises to the edge of the area. Fighters let a leaving plane go while others are still fighting.
+
+Air auto resolve
+An air meeting can be settled from a window in the game's own style that shows your chance of victory, using points and dice. It pulls in every air group within 50 km on both sides; enemies nobody has spotted show as unknown aircraft.
+
+Fly it yourself
+Press G on a selected plane to take the stick (keys on the page BATTLE UI AND KEYS), and C for a chase camera behind its tail. Moving a slider on your own plane takes it off its route, formation or attack. The speed and height sliders show km/h or mph, from just above the stall to the plane's top speed and ceiling.
+
+Collisions
+Plane-to-plane collisions are switched off in this build.
+
+Readout
+F8 in battle shows the selected plane: speed, height, energy, damage, fuel and what the pilot is doing.
+
+=== PAGE 14: TORPEDOES ===
+Duds
+Historical dud rates (US Mark 13/14/15 fail often, Mark 18 about 10%, Japanese torpedoes 3-6%). Only active when the game's dud torpedoes option is on.
+
+Glancing hits
+Torpedoes that hit a ship at under 15 degrees bounce off and keep running. Early US torpedoes also dud more on a square 90 degree hit. Bounces show in the Hit log.
+
+High hits
+Torpedoes that hit high on a ship now always do damage.
+
+Splash
+A torpedo hit throws up the game's own big splash, made two and a half times larger.
+
+Broken backs
+A torpedo that breaks the keel of a destroyer or escort sets off both magazines and splits the ship in two. Bigger ships do not break from torpedoes, but a magazine blast can tear any ship apart. See the page SINKING AND EXPLOSIONS.
+
+=== PAGE 15: BATTLE UI AND KEYS ===
+Message log tabs (battle)
+General, Hit log and Crew. Press F2 or click a tab. All three start empty in every new battle.
+
+Group orders (battle)
+Ctrl+A all ships, Ctrl+D destroyers, Ctrl+C cruisers, Ctrl+B battleships and carriers. Ctrl+Shift+1-5 saves the ticked ships as a group, Ctrl+1-5 selects it again.
+
+Minimap (battle)
+Torpedo tracks, smoke, lookout and radar rings, enemy last-seen markers. Buttons above the map toolbar, or F11 for all.
+
+Fly your own plane (battle)
+Select one of your planes and press G to take the stick, G again to give it back. The game's own keys fly it: A and D bank and turn, W and S pitch the nose (let go to hold your height), R and E throttle. Left Shift fires the guns. J split-S, K Immelmann, U barrel roll. A small flight panel shows the plane's readings and has quick speed and height buttons; I hides it. Press C for the chase camera behind the plane's tail; it follows its pitch and roll.
+
+Main menu
+The CHANGE LOG button at the top right opens the list of what changed in this version.
+
+Keys
+F8 battle: flight readout of the selected plane. G battle: fly the selected plane. C battle: chase camera. I battle: hide the flight panel. F11 campaign map: fuel overlay. F11 battle: minimap layers. F2 battle: message log tab.
+Testers: F9 reveal enemies (map), F4 create a survivor event (map), F3 developer view (battle).
+
+=== PAGE 16: CREDITS ===
+Custom ships
+All custom merchant ships in the game (merchants, transports, hospital ship, oilers and the destroyer escort) are from the TTE team and are used with credit to them. They are not the work of the mod author.
+The TTE mod is about 4 years old and the team is no longer active. Their assets are used with credit, and will be removed at the request of any TTE member.
+
+RamZ
+Thank you to RamZ for his public Unit Catalog: the 84 warships and 93 aircraft in v0.24, and (as far as we know) some of the TTE merchant ships. They are his work, not the work of the mod author.
+
+Inspiration
+The events and the survivors system were inspired by Kiko. The Hit log is a copy of the idea from the ADBA Mod Team's Hitlog.
+
+Ideas
+The fuel system and fuel fires are Kiko's idea. Parts falling off damaged planes is Avaricles' idea. The new explosions are modelled on the film of HMS Barham blowing up in 1941.
+
+Models
+The broken ship ends, floating wreckage, oil slicks, parachutes and airmen were made for the mod in Blender. The fire animation comes from a fire simulation made for the mod. The plane wreck parts are cut from each plane's own model.
+
