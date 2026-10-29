@@ -1,0 +1,478 @@
+using System;
+using UnityEngine;
+
+// 0.29.6: the auto resolve window now borrows the game's own look. Panel, header bar,
+// buttons, fonts and text colours come from the same interface/styles.txt entries the
+// campaign panels use (UIStyle.instance.stylesDictionary), so a UI reskin follows too.
+// If the game style is not ready yet, a plain dark look in the same layout is used.
+public class ModAirResolveWindow : MonoBehaviour
+{
+	// text roles: 0 title (header bar), 1 section heads, 2 body, 3 big line, 4 button text
+	private GUIStyle[] text;
+
+	private GUIStyle[] shade;
+
+	private Vector2[] shadeOff;
+
+	private int[] baseSize;
+
+	private GUIStyle panel;
+
+	private GUIStyle header;
+
+	private GUIStyle[] button;
+
+	private Color panelTint = Color.white;
+
+	private Color headerTint = Color.white;
+
+	private Color[] buttonTint;
+
+	private Texture2D white;
+
+	private bool gameLook;
+
+	private bool built;
+
+	private int tries;
+
+	private bool[] outline;
+
+	private float nextTry;
+
+	private float s = 1f;
+
+	private static readonly string[] RollLabels = new string[4] { "Attacked!", "Defended", "Shot down", "Score" };
+
+	private void OnGUI()
+	{
+		if (!ModAirResolve.windowOpen && ModAirResolve.resultText == null)
+		{
+			return;
+		}
+		if (!built || (!gameLook && tries < 5 && Time.realtimeSinceStartup >= nextTry))
+		{
+			Build();
+		}
+		s = Mathf.Max(0.75f, (float)Screen.height / 1080f);
+		for (int i = 0; i < text.Length; i++)
+		{
+			text[i].fontSize = Mathf.RoundToInt((float)baseSize[i] * s);
+			if (shade[i] != null)
+			{
+				shade[i].fontSize = text[i].fontSize;
+			}
+		}
+		GUI.depth = -1000;
+		float num = 640f * s;
+		float num2 = 500f * s;
+		Rect r = new Rect(((float)Screen.width - num) * 0.5f, ((float)Screen.height - num2) * 0.5f, num, num2);
+		Rect r2 = new Rect(r.x, r.y, r.width, 42f * s);
+		if (Event.current.type == EventType.Repaint)
+		{
+			Draw(r, panel, panelTint);
+			Draw(r2, header, headerTint);
+		}
+		Label(new Rect(r2.x + 16f * s, r2.y, r2.width - 32f * s, r2.height), "Auto resolve: air engagement", 0);
+		GUILayout.BeginArea(new Rect(r.x + 18f * s, r2.yMax + 12f * s, r.width - 36f * s, r.height - r2.height - 30f * s));
+		if (ModAirResolve.windowOpen)
+		{
+			Offer(r.width - 36f * s);
+		}
+		else
+		{
+			Result();
+		}
+		GUILayout.EndArea();
+	}
+
+	private void Offer(float w)
+	{
+		GUILayout.BeginHorizontal();
+		GUILayout.BeginVertical(GUILayout.Width(w * 0.48f));
+		LayoutLabel("Our aircraft", 1);
+		LayoutLabel(ModAirResolve.DescribeSide(playerSide: true).TrimEnd(), 2);
+		GUILayout.Space(4f * s);
+		LayoutLabel(ModAirResolve.PointsLine(playerSide: true).Replace("\n", "   "), 1);
+		GUILayout.EndVertical();
+		GUILayout.FlexibleSpace();
+		GUILayout.BeginVertical(GUILayout.Width(w * 0.48f));
+		LayoutLabel("Enemy aircraft", 1);
+		LayoutLabel(ModAirResolve.DescribeSide(playerSide: false).TrimEnd(), 2);
+		GUILayout.Space(4f * s);
+		LayoutLabel(ModAirResolve.PointsLine(playerSide: false).Replace("\n", "   "), 1);
+		GUILayout.EndVertical();
+		GUILayout.EndHorizontal();
+		GUILayout.Space(10f * s);
+		Line();
+		GUILayout.Space(10f * s);
+		if (ModAirResolve.noFight)
+		{
+			LayoutLabel(ModAirResolve.Band(), 3);
+		}
+		else
+		{
+			LayoutLabel("Chance of victory: " + ModAirResolve.chance.ToString("F0") + "%  (" + ModAirResolve.Band() + ")", 3);
+			Meter(ModAirResolve.chance / 100f);
+			GUILayout.Space(8f * s);
+			LayoutLabel("Expected losses: about " + ModAirResolve.expectedLossPlayer.ToString("F1") + " of ours, " + ModAirResolve.expectedLossEnemy.ToString("F1") + " of theirs.", 2);
+			GUILayout.Space(4f * s);
+			LayoutLabel("Points: gun damage + toughness x armour for every plane. Resolve rolls the dice (attacked, defended, shot down) for each side; the higher total x points wins.", 2);
+		}
+		GUILayout.FlexibleSpace();
+		GUILayout.BeginHorizontal();
+		if (Button("Resolve"))
+		{
+			ModAirResolve.windowOpen = false;
+			ModAirResolve.Resolve();
+		}
+		GUILayout.Space(12f * s);
+		if (Button("Fight it out"))
+		{
+			ModAirResolve.Close();
+		}
+		GUILayout.EndHorizontal();
+	}
+
+	private void Result()
+	{
+		string text = ModAirResolve.resultText ?? "";
+		string text2 = null;
+		if (text.StartsWith("VICTORY. "))
+		{
+			text2 = "Victory";
+			text = text.Substring(9);
+		}
+		else if (text.StartsWith("DEFEAT. "))
+		{
+			text2 = "Defeat";
+			text = text.Substring(8);
+		}
+		if (text2 != null)
+		{
+			LayoutLabel(text2, 3);
+			GUILayout.Space(6f * s);
+		}
+		if (ModAirResolve.rollText != null)
+		{
+			Row("", "Ours", "Enemy", 1);
+			string[] array = ModAirResolve.rollText.Split(new char[1] { '\n' });
+			for (int i = 0; i < array.Length; i++)
+			{
+				string text3 = array[i];
+				int num = text3.IndexOf("  --  ");
+				string text4 = ((num >= 0) ? text3.Substring(0, num) : text3);
+				string c = ((num >= 0) ? text3.Substring(num + 6).Trim() : "");
+				string text5 = "";
+				for (int j = 0; j < RollLabels.Length; j++)
+				{
+					if (text4.StartsWith(RollLabels[j]))
+					{
+						text5 = RollLabels[j].TrimEnd(new char[1] { '!' });
+						text4 = text4.Substring(RollLabels[j].Length);
+						break;
+					}
+				}
+				Row(text5, text4.Trim(), c, 2);
+			}
+			GUILayout.Space(10f * s);
+			Line();
+			GUILayout.Space(10f * s);
+		}
+		LayoutLabel(text, 2);
+		GUILayout.FlexibleSpace();
+		GUILayout.BeginHorizontal();
+		GUILayout.FlexibleSpace();
+		if (Button("OK", 200f * s))
+		{
+			ModAirResolve.resultText = null;
+			ModAirResolve.rollText = null;
+		}
+		GUILayout.FlexibleSpace();
+		GUILayout.EndHorizontal();
+	}
+
+	private void Row(string a, string b, string c, int role)
+	{
+		GUILayout.BeginHorizontal();
+		GUILayout.BeginHorizontal(GUILayout.Width(150f * s));
+		LayoutLabel(a, 1);
+		GUILayout.EndHorizontal();
+		GUILayout.BeginHorizontal(GUILayout.Width(210f * s));
+		LayoutLabel(b, role);
+		GUILayout.EndHorizontal();
+		LayoutLabel(c, role);
+		GUILayout.EndHorizontal();
+	}
+
+	private void LayoutLabel(string t, int role)
+	{
+		GUIContent val = new GUIContent(t);
+		Rect rectFor = GUILayoutUtility.GetRect(val, text[role]);
+		Label(rectFor, t, role);
+	}
+
+	private void Label(Rect r, string t, int role)
+	{
+		if (shade[role] != null)
+		{
+			float num = Mathf.Max(1f, Mathf.Abs(shadeOff[role].x) * s);
+			float num2 = Mathf.Max(1f, Mathf.Abs(shadeOff[role].y) * s);
+			if (outline[role])
+			{
+				GUI.Label(new Rect(r.x + num, r.y + num2, r.width, r.height), t, shade[role]);
+				GUI.Label(new Rect(r.x - num, r.y + num2, r.width, r.height), t, shade[role]);
+				GUI.Label(new Rect(r.x + num, r.y - num2, r.width, r.height), t, shade[role]);
+				GUI.Label(new Rect(r.x - num, r.y - num2, r.width, r.height), t, shade[role]);
+			}
+			else
+			{
+				GUI.Label(new Rect(r.x + num, r.y + num2, r.width, r.height), t, shade[role]);
+			}
+		}
+		GUI.Label(r, t, text[role]);
+	}
+
+	private void Line()
+	{
+		Rect rect = GUILayoutUtility.GetRect(1f, Mathf.Max(1f, 2f * s), GUILayout.ExpandWidth(true));
+		if (Event.current.type == EventType.Repaint)
+		{
+			Color color = text[1].normal.textColor;
+			color.a *= 0.35f;
+			Fill(rect, color);
+		}
+	}
+
+	private void Meter(float f)
+	{
+		Rect rect = GUILayoutUtility.GetRect(1f, 10f * s, GUILayout.ExpandWidth(true));
+		if (Event.current.type == EventType.Repaint)
+		{
+			Color color = text[1].normal.textColor;
+			Fill(rect, new Color(0f, 0f, 0f, 0.45f));
+			Fill(new Rect(rect.x, rect.y, rect.width * Mathf.Clamp01(f), rect.height), color);
+		}
+	}
+
+	private bool Button(string t, float width = 0f)
+	{
+		GUIContent val = new GUIContent(t);
+		Rect rect = ((width > 0f) ? GUILayoutUtility.GetRect(val, text[4], GUILayout.Width(width), GUILayout.Height(40f * s)) : GUILayoutUtility.GetRect(val, text[4], GUILayout.Height(40f * s), GUILayout.ExpandWidth(true)));
+		bool flag = rect.Contains(Event.current.mousePosition);
+		int num = ((!flag) ? 0 : (Input.GetMouseButton(0) ? 2 : 1));
+		if (Event.current.type == EventType.Repaint)
+		{
+			Draw(rect, button[num], buttonTint[num]);
+		}
+		Label(rect, t, 4);
+		return GUI.Button(rect, GUIContent.none, GUIStyle.none);
+	}
+
+	private void Draw(Rect r, GUIStyle st, Color tint)
+	{
+		Color color = GUI.color;
+		GUI.color = tint;
+		st.Draw(r, false, false, false, false);
+		GUI.color = color;
+	}
+
+	private void Fill(Rect r, Color c)
+	{
+		Color color = GUI.color;
+		GUI.color = c;
+		GUI.DrawTexture(r, white);
+		GUI.color = color;
+	}
+
+	private void Build()
+	{
+		built = true;
+		gameLook = false;
+		tries++;
+		nextTry = Time.realtimeSinceStartup + 2f;
+		if (white == null)
+		{
+			white = new Texture2D(1, 1);
+			white.SetPixel(0, 0, Color.white);
+			white.Apply();
+		}
+		Plain();
+		try
+		{
+			if (UIStyle.instance == null || UIStyle.instance.stylesDictionary == null || AssetLoader.instance == null)
+			{
+				return;
+			}
+			int num = 0;
+			InteractableStyle value;
+			if (UIStyle.instance.stylesDictionary.TryGetValue("CombatContainer", out value) && Bg(value, 0, out panel))
+			{
+				panelTint = value.spriteBaseColor;
+				num++;
+			}
+			if (UIStyle.instance.stylesDictionary.TryGetValue("CombatHeaderBar", out value) && Bg(value, 0, out header))
+			{
+				headerTint = value.spriteBaseColor;
+				num++;
+			}
+			if (UIStyle.instance.stylesDictionary.TryGetValue("CombatTextButton", out value) && Bg(value, 0, out button[0]))
+			{
+				if (value.transitionType != "Color" && value.spritePaths.Length >= 3)
+				{
+					if (!Bg(value, 1, out button[1]))
+					{
+						button[1] = button[0];
+					}
+					if (!Bg(value, 2, out button[2]))
+					{
+						button[2] = button[0];
+					}
+					for (int i = 0; i < 3; i++)
+					{
+						buttonTint[i] = value.spriteBaseColor;
+					}
+				}
+				else
+				{
+					button[1] = button[0];
+					button[2] = button[0];
+					Color color = value.spriteBaseColor;
+					for (int j = 0; j < 3; j++)
+					{
+						buttonTint[j] = ((value.spriteColors != null && value.spriteColors.Length > j) ? (color * (Color)value.spriteColors[j]) : color);
+					}
+				}
+				SetFont(value, 4, TextAnchor.MiddleCenter);
+				num++;
+			}
+			if (UIStyle.instance.stylesDictionary.TryGetValue("CampaignHeaderText", out value))
+			{
+				SetFont(value, 0, TextAnchor.MiddleLeft);
+				num++;
+			}
+			if (UIStyle.instance.stylesDictionary.TryGetValue("CampaignHighlightText", out value))
+			{
+				SetFont(value, 1, TextAnchor.UpperLeft);
+				SetFont(value, 3, TextAnchor.UpperLeft);
+				baseSize[3] = Mathf.Max(baseSize[3], baseSize[1] + 6);
+				text[3].fontStyle = FontStyle.Bold;
+				num++;
+			}
+			if (UIStyle.instance.stylesDictionary.TryGetValue("CampaignRegularText", out value))
+			{
+				SetFont(value, 2, TextAnchor.UpperLeft);
+				num++;
+			}
+			gameLook = num == 6;
+			Debug.Log("[AUTORESOLVE] window style: " + (gameLook ? "game look" : ("plain look (" + num + "/6 game styles found)")));
+		}
+		catch (Exception ex)
+		{
+			Debug.LogWarning("[AUTORESOLVE] game style not used: " + ex.Message);
+			Plain();
+		}
+	}
+
+	private void Plain()
+	{
+		text = new GUIStyle[5];
+		shade = new GUIStyle[5];
+		shadeOff = new Vector2[5];
+		outline = new bool[5];
+		baseSize = new int[5] { 20, 16, 15, 22, 16 };
+		Color[] array = new Color[5]
+		{
+			Color.white,
+			new Color(0.95f, 0.78f, 0.4f, 1f),
+			new Color(0.88f, 0.9f, 0.93f, 1f),
+			new Color(0.95f, 0.78f, 0.4f, 1f),
+			Color.white
+		};
+		for (int i = 0; i < 5; i++)
+		{
+			text[i] = new GUIStyle(GUI.skin.label);
+			text[i].normal.textColor = array[i];
+			text[i].wordWrap = i >= 1 && i <= 3;
+			text[i].padding = new RectOffset(0, 0, 0, 0);
+			text[i].margin = new RectOffset(0, 0, 0, 0);
+		}
+		text[0].alignment = TextAnchor.MiddleLeft;
+		text[0].fontStyle = FontStyle.Bold;
+		text[3].fontStyle = FontStyle.Bold;
+		text[4].alignment = TextAnchor.MiddleCenter;
+		panel = Solid(new Color(0.07f, 0.09f, 0.11f, 0.96f));
+		header = Solid(new Color(0.14f, 0.18f, 0.22f, 1f));
+		panelTint = Color.white;
+		headerTint = Color.white;
+		button = new GUIStyle[3]
+		{
+			Solid(new Color(0.18f, 0.23f, 0.28f, 1f)),
+			Solid(new Color(0.26f, 0.33f, 0.4f, 1f)),
+			Solid(new Color(0.12f, 0.15f, 0.18f, 1f))
+		};
+		buttonTint = new Color[3] { Color.white, Color.white, Color.white };
+	}
+
+	private GUIStyle Solid(Color c)
+	{
+		Texture2D val = new Texture2D(1, 1);
+		val.SetPixel(0, 0, c);
+		val.Apply();
+		GUIStyle val2 = new GUIStyle();
+		val2.normal.background = val;
+		return val2;
+	}
+
+	private bool Bg(InteractableStyle st, int i, out GUIStyle g)
+	{
+		g = null;
+		if (st.spritePaths == null || st.spritePaths.Length <= i)
+		{
+			return false;
+		}
+		Vector4 border = ((st.spriteBorders != null && st.spriteBorders.Length != 0) ? st.spriteBorders[0] : Vector4.zero);
+		Sprite val = AssetLoader.instance.ImportBorderedSprite(st.spritePaths[i], st.spritePixelsPerUnit, border, false);
+		if (val == null || val.texture == null)
+		{
+			return false;
+		}
+		Texture2D texture = val.texture;
+		g = new GUIStyle();
+		if (Mathf.Abs(val.textureRect.width - (float)texture.width) > 1f || Mathf.Abs(val.textureRect.height - (float)texture.height) > 1f)
+		{
+			// sprite sits in an atlas: IMGUI can't cut it out, so use a flat fill tinted the same
+			g.normal.background = white;
+			return true;
+		}
+		texture.wrapMode = TextureWrapMode.Clamp;
+		g.normal.background = texture;
+		Vector4 border2 = val.border;
+		g.border = new RectOffset((int)border2.x, (int)border2.z, (int)border2.w, (int)border2.y);
+		return true;
+	}
+
+	private void SetFont(InteractableStyle st, int role, TextAnchor anchor)
+	{
+		Font[] fonts = UIStyle.instance.fonts;
+		if (fonts != null && st.font >= 0 && st.font < fonts.Length && fonts[st.font] != null)
+		{
+			text[role].font = fonts[st.font];
+		}
+		text[role].normal.textColor = st.fontColor;
+		text[role].fontStyle = FontStyle.Normal;
+		text[role].alignment = anchor;
+		if (st.fontSize > 0)
+		{
+			baseSize[role] = Mathf.Clamp(st.fontSize, 12, 40);
+		}
+		shade[role] = null;
+		outline[role] = !st.dropShadow;
+		if (st.dropShadow || st.fontOutlineThickness != Vector2.zero)
+		{
+			shade[role] = new GUIStyle(text[role]);
+			shade[role].normal.textColor = st.fontOutlineColor;
+			shadeOff[role] = ((st.fontOutlineThickness != Vector2.zero) ? st.fontOutlineThickness : new Vector2(1f, -1f));
+		}
+	}
+}

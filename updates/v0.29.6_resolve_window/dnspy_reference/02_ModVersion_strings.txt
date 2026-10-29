@@ -1,0 +1,15 @@
+ModVersion
+0.29.5
+---
+0.29.6
+===
+ModVersion
+Plague's Better WOTS mod\n<color=#E0B030>Version 0.29.5</color>
+---
+Plague's Better WOTS mod\n<color=#E0B030>Version 0.29.6</color>
+===
+ModVersion
+<color=#E0B030><b>0.29.5</b></color> ships go down like the real thing, planes break up:\n- Torpedo hits throw up huge towers of water\n- A broken back sets off both magazines: two huge blasts, then it splits\n- Magazine blasts as big as the shells in them: full, empty, AA, star shells\n- Big magazine blasts sink the ship, often blowing off bow or stern\n- Ships capsize, plunge by the bow or stern, or settle, by their flooding\n- Real floating wreckage and wide, spreading oil slicks where ships sink\n- Shot planes shed real wings, tails, engines; crews bail out by parachute\n- Your ships answer your controls again; fewer planes explode\n- Mod models now live in StreamingAssets/override/ModAssets\n- Plus the 0.28 air combat update (0.28.18 and hotfix)
+---
+<color=#E0B030><b>0.29.6</b></color> ships go down like the real thing, planes break up:\n- Torpedo hits throw up huge towers of water\n- A broken back sets off both magazines: two huge blasts, then it splits\n- Magazine blasts as big as the shells in them: full, empty, AA, star shells\n- Big magazine blasts sink the ship, often blowing off bow or stern\n- Ships capsize, plunge by the bow or stern, or settle, by their flooding\n- Real floating wreckage and wide, spreading oil slicks where ships sink\n- Shot planes shed real wings, tails, engines; crews bail out by parachute\n- Your ships answer your controls again; fewer planes explode\n- Mod models now live in StreamingAssets/override/ModAssets\n- Air auto resolve window restyled to match the game\n- Plus the 0.28 air combat update (0.28.18 and hotfix)
+===
