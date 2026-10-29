@@ -1,0 +1,2225 @@
+using System;
+using System.Collections.Generic;
+using System.Reflection;
+using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.Rendering;
+using UnityEngine.UI;
+using WorldMapStrategyKit;
+
+public class ModGlobe : MonoBehaviour
+{
+	private class Entry
+	{
+		public Vector3 dir;
+
+		public RectTransform rect;
+
+		public Image icon;
+
+		public Text label;
+
+		public Text shadow;
+
+		public GameObject go;
+
+		public GameObjectAnimator goa;
+
+		public Vector2 screen;
+
+		public bool shown;
+
+		public bool always;
+	}
+
+	public static bool Enabled = true;
+
+	public static KeyCode Key = KeyCode.F10;
+
+	public static float Radius = 100f;
+
+	public static float ZoomMin = 1.3f;
+
+	public static float ZoomMax = 4.5f;
+
+	public static float ZoomStart = 2.8f;
+
+	public static float ZoomStep = 0.12f;
+
+	public static float DragSpeed = 0.22f;
+
+	public static float KeySpeed = 45f;
+
+	public static bool DayNight = true;
+
+	public static KeyCode SunKey = KeyCode.N;
+
+	public static bool MapLabels = true;
+
+	public static float MapLabelScale = 540f;
+
+	public static float Night = 0.16f;
+
+	public static float Twilight = 0.1f;
+
+	public static bool MenuGlobe = false;
+
+	public static float MenuSpin = 1.5f;
+
+	public static float MenuLat = 18f;
+
+	public static float MenuZoom = 2.4f;
+
+	public static float UtcOffsetHours = 99f;
+
+	public static float MarkerSize = 0.014f;
+
+	public static bool AutoDropToMap = true;
+
+	public static bool ShowMarkers = true;
+
+	public static float IconPx = 22f;
+
+	public static float LabelZoom = 2.2f;
+
+	public static int LabelPx = 12;
+
+	public static bool OpenOnScrollOut = true;
+
+	public static bool on;
+
+	private static ModGlobe inst;
+
+	private static bool menuPending;
+
+	private bool menu;
+
+	private RenderTexture menuRt;
+
+	private RawImage menuRaw;
+
+	private MenuSystem menuSys;
+
+	private const float Far = -300000f;
+
+	private Camera cam;
+
+	private GameObject root;
+
+	private GameObject globeObj;
+
+	private GameObject starsObj;
+
+	private GameObject haloObj;
+
+	private GameObject ribbonObj;
+
+	private GameObject blocker;
+
+	private Mesh globeMesh;
+
+	private Vector3[] globeNormals;
+
+	private int[] globeTris;
+
+	private List<int> frontTris = new List<int>();
+
+	private Vector3 lastCamPos = new Vector3(1E+09f, 0f, 0f);
+
+	private Color[] globeColors;
+
+	private Shader shader;
+
+	private Texture2D white;
+
+	private Material ribbonMat;
+
+	private List<Vector3> ribbonDirs = new List<Vector3>();
+
+	private Color[] ribbonColors;
+
+	private List<Entry> entries = new List<Entry>();
+
+	private RectTransform overlay;
+
+	private Font font;
+
+	private float dist;
+
+	private float viewLat;
+
+	private float viewLon;
+
+	private Vector3 lastMouse;
+
+	private bool dragging;
+
+	private float lastSwitch = -10f;
+
+	public static float SwitchCooldown = 0.8f;
+
+	public static float DropZoom = 0.4f;
+
+	private float sunTimer;
+
+	private float markerTimer;
+
+	public static bool Clicks = true;
+
+	public static float PickPx = 16f;
+
+	public static float RouteWidth = 0.005f;
+
+	private int downButton = -1;
+
+	private Vector3 downPos;
+
+	private Entry hover;
+
+	private GameObject routeObj;
+
+	private Mesh routeMesh;
+
+	private int routeSig = -1;
+
+	private Vector2 lastRouteMouse = new Vector2(9f, 9f);
+
+	private static MethodInfo miRoute;
+
+	public static bool Theatre = true;
+
+	public static bool Rings = true;
+
+	public static bool FuelRings = true;
+
+	public static bool Weather = true;
+
+	public static bool Notes = true;
+
+	public static float RingWidth = 0.003f;
+
+	public static float WeatherAlpha = 0.7f;
+
+	private GameObject ringObj;
+
+	private Mesh ringMesh;
+
+	private int ringSig = -1;
+
+	private GameObject weatherRoot;
+
+	private List<MeshRenderer> weatherPatches = new List<MeshRenderer>();
+
+	private List<Vector3> weatherDirs = new List<Vector3>();
+
+	private int weatherSig = -1;
+
+	private float weatherTimer;
+
+	private bool built;
+
+	private bool reported;
+
+	private bool buttonReported;
+
+	private GameObject buttonObject;
+
+	private GameObject sunButton;
+
+	private Image sunBack;
+
+	private Image buttonBack;
+
+	private bool savedDrag;
+
+	private bool savedZoom;
+
+	private bool savedKeys;
+
+	private bool savedOk;
+
+	private Vector3 centre => new Vector3(menu ? 80000f : 0f, -300000f, 0f);
+
+	public static void Ensure(Component host)
+	{
+		try
+		{
+			if (host != null && host.gameObject.GetComponent<ModGlobe>() == null)
+			{
+				host.gameObject.AddComponent<ModGlobe>();
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[GLOBE] could not add: " + ex.Message);
+		}
+	}
+
+	private void Awake()
+	{
+		if (menuPending)
+		{
+			menu = true;
+			menuPending = false;
+		}
+		else
+		{
+			inst = this;
+		}
+	}
+
+	private void OnDisable()
+	{
+		try
+		{
+			if (menu)
+			{
+				if (cam != null)
+				{
+					cam.enabled = false;
+				}
+				if (root != null)
+				{
+					root.SetActive(value: false);
+				}
+			}
+			else if (on)
+			{
+				Off();
+			}
+		}
+		catch (Exception)
+		{
+		}
+	}
+
+	private void OnDestroy()
+	{
+		try
+		{
+			if (root != null)
+			{
+				UnityEngine.Object.Destroy(root);
+			}
+			if (blocker != null)
+			{
+				UnityEngine.Object.Destroy(blocker);
+			}
+			if (buttonObject != null)
+			{
+				UnityEngine.Object.Destroy(buttonObject);
+			}
+			if (sunButton != null)
+			{
+				UnityEngine.Object.Destroy(sunButton);
+			}
+			if (menuRt != null)
+			{
+				menuRt.Release();
+				UnityEngine.Object.Destroy(menuRt);
+			}
+			if (inst == this)
+			{
+				inst = null;
+			}
+		}
+		catch (Exception)
+		{
+		}
+	}
+
+	private void OnEnable()
+	{
+		try
+		{
+			if (menu && built)
+			{
+				if (root != null)
+				{
+					root.SetActive(value: true);
+				}
+				if (cam != null)
+				{
+					cam.enabled = true;
+				}
+			}
+		}
+		catch (Exception)
+		{
+		}
+	}
+
+	public static void Menu(MenuSystem ms)
+	{
+		try
+		{
+			if (!(ms == null) && MenuGlobe && !(ms.gameObject.GetComponent<ModGlobe>() != null))
+			{
+				menuPending = true;
+				ModGlobe modGlobe = ms.gameObject.AddComponent<ModGlobe>();
+				menuPending = false;
+				modGlobe.menu = true;
+				modGlobe.menuSys = ms;
+				Debug.Log("[GLOBE] main menu globe added");
+			}
+		}
+		catch (Exception ex)
+		{
+			menuPending = false;
+			Debug.LogError("[GLOBE] menu copy could not be added: " + ex.Message);
+		}
+	}
+
+	private void DriveMenu()
+	{
+		if (!MenuGlobe || menuSys == null)
+		{
+			return;
+		}
+		if (!built)
+		{
+			Build(null);
+			int width = Mathf.Max(256, Mathf.RoundToInt((float)Screen.width * 0.6f));
+			int height = Mathf.Max(256, Screen.height);
+			menuRt = new RenderTexture(width, height, 16);
+			menuRt.Create();
+			cam.targetTexture = menuRt;
+			cam.depth = -50f;
+			viewLat = MenuLat;
+			viewLon = 150f;
+			dist = MenuZoom * Radius;
+			root.SetActive(value: true);
+			cam.enabled = true;
+			Place();
+			Shade(DateTime.UtcNow, 0f);
+			Debug.Log("[GLOBE] menu globe drawing into a " + width + "x" + height + " picture");
+		}
+		try
+		{
+			if (menuRaw == null && menuSys.menuStaticBackground != null)
+			{
+				menuRaw = menuSys.menuStaticBackground.transform.parent.GetComponent<RawImage>();
+			}
+			if (menuRaw != null)
+			{
+				if (menuRaw.texture != menuRt)
+				{
+					menuRaw.texture = menuRt;
+				}
+				if (!menuRaw.enabled)
+				{
+					menuRaw.enabled = true;
+				}
+				if (menuRaw.color != Color.white)
+				{
+					menuRaw.color = Color.white;
+				}
+			}
+			if (menuSys.videoPlayer != null && menuSys.videoPlayer.gameObject.activeSelf)
+			{
+				menuSys.videoPlayer.gameObject.SetActive(value: false);
+			}
+			if (menuSys.menuStaticBackground != null && menuSys.menuStaticBackground.gameObject.activeSelf)
+			{
+				menuSys.menuStaticBackground.gameObject.SetActive(value: false);
+			}
+		}
+		catch (Exception)
+		{
+		}
+		if (!root.activeSelf)
+		{
+			root.SetActive(value: true);
+		}
+		if (!cam.enabled)
+		{
+			cam.enabled = true;
+		}
+		float unscaledDeltaTime = Time.unscaledDeltaTime;
+		viewLon += MenuSpin * unscaledDeltaTime;
+		while (viewLon >= 360f)
+		{
+			viewLon -= 360f;
+		}
+		viewLat = MenuLat;
+		dist = MenuZoom * Radius;
+		Place();
+		sunTimer -= unscaledDeltaTime;
+		if (sunTimer <= 0f)
+		{
+			sunTimer = 2f;
+			Shade(DateTime.UtcNow, 0f);
+		}
+		Facing();
+	}
+
+	private void Update()
+	{
+		try
+		{
+			if (menu)
+			{
+				DriveMenu();
+				return;
+			}
+			CampaignInterface instance = CampaignInterface.instance;
+			if (!(instance == null) && !(CampaignManager.instance == null) && Enabled)
+			{
+				if (buttonObject == null)
+				{
+					BuildButton(instance);
+				}
+				if (Input.GetKeyDown(Key))
+				{
+					Toggle();
+				}
+				if (on && Input.GetKeyDown(SunKey))
+				{
+					ToggleSun();
+				}
+				if (sunButton != null && sunButton.activeSelf != on)
+				{
+					sunButton.SetActive(on);
+				}
+				if (sunBack != null)
+				{
+					sunBack.color = (DayNight ? new Color(0.5f, 0.3f, 0.08f, 0.95f) : new Color(0.07f, 0.12f, 0.19f, 0.92f));
+				}
+				if (buttonBack != null)
+				{
+					buttonBack.color = (on ? new Color(0.5f, 0.3f, 0.08f, 0.95f) : new Color(0.07f, 0.12f, 0.19f, 0.92f));
+				}
+				if (on)
+				{
+					Drive(instance);
+				}
+				else if (OpenOnScrollOut)
+				{
+					ScrollOut(instance);
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			if (!reported)
+			{
+				reported = true;
+				Debug.LogError("[GLOBE] failed: " + ex.ToString());
+			}
+			try
+			{
+				if (on)
+				{
+					Off();
+				}
+			}
+			catch (Exception)
+			{
+			}
+		}
+	}
+
+	public static void ToggleSun()
+	{
+		DayNight = !DayNight;
+		if (inst != null)
+		{
+			inst.sunTimer = 0f;
+		}
+		Debug.Log("[GLOBE] day/night " + (DayNight ? "on" : "off"));
+	}
+
+	public static void Toggle()
+	{
+		if (!(inst == null))
+		{
+			if (on)
+			{
+				inst.Off();
+			}
+			else
+			{
+				inst.On();
+			}
+		}
+	}
+
+	private void On()
+	{
+		On(float.NaN, float.NaN);
+	}
+
+	private void On(float startLat, float startLon)
+	{
+		CampaignInterface instance = CampaignInterface.instance;
+		CampaignData campaignData = CampaignManager.instance.campaignData;
+		if (instance == null || campaignData == null || campaignData.mapOriginXY == null || campaignData.mapOriginXY.Length < 2)
+		{
+			Debug.Log("[GLOBE] no campaign map");
+			return;
+		}
+		if (!built)
+		{
+			Build(campaignData);
+		}
+		viewLat = (float.IsNaN(startLat) ? ((float)ModGeo.Lat(campaignData, 0f)) : startLat);
+		viewLon = (float.IsNaN(startLon) ? ((float)ModGeo.Lon(campaignData, 0f)) : startLon);
+		dist = Mathf.Clamp(ZoomStart, ZoomMin, ZoomMax) * Radius;
+		WMSK map = instance.map;
+		if (map != null)
+		{
+			savedDrag = map.allowUserDrag;
+			savedZoom = map.allowUserZoom;
+			savedKeys = map.allowUserKeys;
+			savedOk = true;
+			map.allowUserDrag = false;
+			map.allowUserZoom = false;
+			map.allowUserKeys = false;
+		}
+		root.SetActive(value: true);
+		cam.enabled = true;
+		if (blocker != null)
+		{
+			blocker.SetActive(value: true);
+		}
+		on = true;
+		sunTimer = 0f;
+		markerTimer = 0f;
+		lastCamPos = new Vector3(1E+09f, 0f, 0f);
+		Place();
+		Debug.Log("[GLOBE] on, view " + viewLat.ToString("0.0") + " " + viewLon.ToString("0.0") + ", map zoom level " + ((map != null) ? map.GetZoomLevel().ToString("0.000") : "?") + " (min " + ((map != null) ? map.zoomMinDistance.ToString("0.000") : "?") + " max " + ((map != null) ? map.zoomMaxDistance.ToString("0.000") : "?") + ")");
+	}
+
+	private void Off()
+	{
+		on = false;
+		dragging = false;
+		downButton = -1;
+		try
+		{
+			SetHover(null, CampaignInterface.instance);
+		}
+		catch (Exception)
+		{
+		}
+		routeSig = -1;
+		ringSig = -1;
+		weatherSig = -1;
+		if (cam != null)
+		{
+			cam.enabled = false;
+		}
+		if (root != null)
+		{
+			root.SetActive(value: false);
+		}
+		if (blocker != null)
+		{
+			blocker.SetActive(value: false);
+		}
+		CampaignInterface instance = CampaignInterface.instance;
+		if (savedOk && instance != null && instance.map != null)
+		{
+			instance.map.allowUserDrag = savedDrag;
+			instance.map.allowUserZoom = savedZoom;
+			instance.map.allowUserKeys = savedKeys;
+		}
+		Debug.Log("[GLOBE] off");
+	}
+
+	private void ScrollOut(CampaignInterface ci)
+	{
+		WMSK map = ci.map;
+		if (map == null || !map.allowUserZoom || Time.unscaledTime - lastSwitch < SwitchCooldown)
+		{
+			return;
+		}
+		float num = Outward(map);
+		if (num <= 0.0001f || map.GetZoomLevel() < map.zoomMaxDistance - 0.02f)
+		{
+			return;
+		}
+		try
+		{
+			if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
+			{
+				return;
+			}
+		}
+		catch (Exception)
+		{
+		}
+		CampaignData campaignData = CampaignManager.instance.campaignData;
+		float startLat = float.NaN;
+		float startLon = float.NaN;
+		if (map.GetCurrentMapLocation(out var location))
+		{
+			startLat = (float)ModGeo.Lat(campaignData, location.y);
+			startLon = (float)ModGeo.Lon(campaignData, location.x);
+		}
+		lastSwitch = Time.unscaledTime;
+		On(startLat, startLon);
+	}
+
+	private static float Outward(WMSK map)
+	{
+		float axis = Input.GetAxis("Mouse ScrollWheel");
+		if (map == null || !map.invertZoomDirection)
+		{
+			return axis;
+		}
+		return 0f - axis;
+	}
+
+	private void Drive(CampaignInterface ci)
+	{
+		if (!CampaignManager.instance.gameObject.activeInHierarchy)
+		{
+			Off();
+			return;
+		}
+		bool flag = OverGameUi();
+		if (!flag && (Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(1)))
+		{
+			dragging = true;
+			lastMouse = Input.mousePosition;
+			downButton = ((!Input.GetMouseButtonDown(0)) ? 1 : 0);
+			downPos = Input.mousePosition;
+		}
+		if (downButton >= 0 && Input.GetMouseButtonUp(downButton))
+		{
+			bool flag2 = (Input.mousePosition - downPos).magnitude < 6f;
+			int button = downButton;
+			downButton = -1;
+			if (flag2 && Clicks && !flag)
+			{
+				Click(ci, button);
+			}
+		}
+		if (!Input.GetMouseButton(0) && !Input.GetMouseButton(1))
+		{
+			dragging = false;
+		}
+		if (dragging)
+		{
+			Vector3 mousePosition = Input.mousePosition;
+			float num = DragSpeed * dist / (ZoomStart * Radius);
+			viewLon -= (mousePosition.x - lastMouse.x) * num;
+			viewLat -= (mousePosition.y - lastMouse.y) * num;
+			lastMouse = mousePosition;
+		}
+		float unscaledDeltaTime = Time.unscaledDeltaTime;
+		if (Input.GetKey(KeyCode.LeftArrow))
+		{
+			viewLon -= KeySpeed * unscaledDeltaTime;
+		}
+		if (Input.GetKey(KeyCode.RightArrow))
+		{
+			viewLon += KeySpeed * unscaledDeltaTime;
+		}
+		if (Input.GetKey(KeyCode.UpArrow))
+		{
+			viewLat += KeySpeed * unscaledDeltaTime;
+		}
+		if (Input.GetKey(KeyCode.DownArrow))
+		{
+			viewLat -= KeySpeed * unscaledDeltaTime;
+		}
+		for (viewLat = Mathf.Clamp(viewLat, -85f, 85f); viewLon < 0f; viewLon += 360f)
+		{
+		}
+		while (viewLon >= 360f)
+		{
+			viewLon -= 360f;
+		}
+		float num2 = (flag ? 0f : Outward(ci.map));
+		if (num2 < -0.0001f)
+		{
+			if (dist <= ZoomMin * Radius + 0.01f && AutoDropToMap && Time.unscaledTime - lastSwitch >= SwitchCooldown)
+			{
+				DropToMap(ci);
+				return;
+			}
+			dist *= 1f - ZoomStep;
+		}
+		else if (num2 > 0.0001f)
+		{
+			dist *= 1f + ZoomStep;
+		}
+		dist = Mathf.Clamp(dist, ZoomMin * Radius, ZoomMax * Radius);
+		Place();
+		sunTimer -= unscaledDeltaTime;
+		if (sunTimer <= 0f)
+		{
+			sunTimer = 0.5f;
+			Shade(ci);
+		}
+		markerTimer -= unscaledDeltaTime;
+		if (markerTimer <= 0f)
+		{
+			markerTimer = 1f;
+			Markers(ci);
+		}
+		Facing();
+		if (Clicks)
+		{
+			Hover(ci, flag);
+			RouteMouse(ci, flag);
+			RouteLines(ci);
+			Cursor(ci, flag);
+		}
+		if (Rings || FuelRings)
+		{
+			RingLines(ci);
+		}
+		if (Weather)
+		{
+			WeatherPatches(ci);
+		}
+	}
+
+	private void Cursor(CampaignInterface ci, bool overUi)
+	{
+		if (!overUi && !(ci.map == null))
+		{
+			CampaignData campaignData = CampaignManager.instance.campaignData;
+			if (MouseMapPoint(campaignData, out var p, out var _) && InMap(p))
+			{
+				ci.map.cursorLocation = new Vector3(p.x, p.y, 0f);
+			}
+		}
+	}
+
+	private void AddRing(List<Vector3> v, List<Color> col, List<int> tri, Vector3 c, float ang, float w, float lift, Color color, Vector3 camDir, float limit)
+	{
+		Vector3 vector = Vector3.Cross(c, Vector3.up);
+		if (vector.sqrMagnitude < 1E-06f)
+		{
+			vector = Vector3.Cross(c, Vector3.right);
+		}
+		vector.Normalize();
+		Vector3 normalized = Vector3.Cross(c, vector).normalized;
+		float num = Mathf.Cos(ang);
+		float num2 = Mathf.Sin(ang);
+		int num3 = Mathf.Clamp(Mathf.RoundToInt(ang * 57.29578f * 6f), 24, 160);
+		int count = v.Count;
+		for (int i = 0; i <= num3; i++)
+		{
+			float f = (float)i / (float)num3 * (float)Math.PI * 2f;
+			Vector3 normalized2 = (c * num + (vector * Mathf.Cos(f) + normalized * Mathf.Sin(f)) * num2).normalized;
+			v.Add(normalized2 * (lift + w));
+			v.Add(normalized2 * (lift - w));
+			Color item = color;
+			item.a = ((Vector3.Dot(normalized2, camDir) > limit) ? color.a : 0f);
+			col.Add(item);
+			col.Add(item);
+		}
+		for (int j = 0; j < num3; j++)
+		{
+			int num4 = count + j * 2;
+			int item2 = num4 + 1;
+			int item3 = num4 + 2;
+			int item4 = num4 + 3;
+			tri.Add(num4);
+			tri.Add(item3);
+			tri.Add(item2);
+			tri.Add(item2);
+			tri.Add(item3);
+			tri.Add(item4);
+		}
+	}
+
+	private void RingLines(CampaignInterface ci)
+	{
+		MapRadii instance = MapRadii.instance;
+		CampaignManager instance2 = CampaignManager.instance;
+		List<MeshRenderer> list = ((instance != null) ? instance.mapRadiiMeshRenderers : null);
+		int num = 23;
+		if (list != null)
+		{
+			for (int i = 0; i < list.Count; i++)
+			{
+				MeshRenderer meshRenderer = list[i];
+				if (meshRenderer == null)
+				{
+					num *= 31;
+					continue;
+				}
+				bool flag = meshRenderer.enabled && meshRenderer.gameObject.activeInHierarchy;
+				num = num * 31 + (flag ? 1 : 0);
+				num = num * 31 + Mathf.RoundToInt(meshRenderer.transform.localScale.y * 100f);
+			}
+		}
+		GameObjectAnimator gameObjectAnimator = null;
+		MobileMapObject mobileMapObject = null;
+		if (FuelRings && ModTFOverlay.on && ci.currentMapObject != null && ci.currentMapObject.mobileMapObject != null && ci.currentMapObject.mobileMapObject.type == 0 && instance2.playerMobile != null && instance2.playerMobile.Contains(ci.currentMapObject))
+		{
+			gameObjectAnimator = ci.currentMapObject;
+			mobileMapObject = gameObjectAnimator.mobileMapObject;
+			num = num * 31 + gameObjectAnimator.GetInstanceID();
+			num = num * 31 + Mathf.RoundToInt(mobileMapObject.fuelUsedDays * 20f) + Mathf.RoundToInt(mobileMapObject.speed * 10f);
+			num = num * 31 + Mathf.RoundToInt(gameObjectAnimator.currentMap2DLocation.x * 2000f) + Mathf.RoundToInt(gameObjectAnimator.currentMap2DLocation.y * 2000f);
+		}
+		num = num * 31 + Mathf.RoundToInt(viewLat * 4f);
+		num = num * 31 + Mathf.RoundToInt(viewLon * 4f);
+		num = num * 31 + Mathf.RoundToInt(dist);
+		if (num == ringSig)
+		{
+			return;
+		}
+		ringSig = num;
+		if (ringMesh == null)
+		{
+			ringMesh = new Mesh();
+			ringMesh.MarkDynamic();
+			ringObj = MeshObj("Rings", ringMesh, white, Color.white, 3004);
+		}
+		if (list == null)
+		{
+			list = new List<MeshRenderer>();
+		}
+		if (instance2.landMapLocations == null || instance2.landMapLocations.Count == 0)
+		{
+			ringMesh.Clear();
+			ringObj.SetActive(value: false);
+			return;
+		}
+		CampaignData campaignData = instance2.campaignData;
+		Vector3 normalized = (cam.transform.position - centre).normalized;
+		float limit = Radius / dist;
+		float num2 = Radius * RingWidth * Mathf.Clamp(dist / (ZoomStart * Radius), 0.25f, 1.5f);
+		float num3 = Radius * 1.0035f;
+		double num4 = ModGeo.Radius(campaignData);
+		List<Vector3> list2 = new List<Vector3>();
+		List<int> list3 = new List<int>();
+		List<Color> list4 = new List<Color>();
+		int count = instance2.landMapLocations.Count;
+		int num5 = 0;
+		while (Rings && num5 < list.Count)
+		{
+			MeshRenderer meshRenderer2 = list[num5];
+			if (!(meshRenderer2 == null) && meshRenderer2.enabled && meshRenderer2.gameObject.activeInHierarchy)
+			{
+				float y = meshRenderer2.transform.localScale.y;
+				if (!(y <= 0.0001f))
+				{
+					MapLocation mapLocation = instance2.landMapLocations[num5 % count];
+					if (!(mapLocation == null))
+					{
+						float num6 = y / 400f * campaignData.mapWidthMetres;
+						float ang = (float)((double)num6 / num4);
+						Color color = new Color(1f, 1f, 1f, 0.5f);
+						try
+						{
+							if (meshRenderer2.sharedMaterial != null && meshRenderer2.sharedMaterial.HasProperty("_Color"))
+							{
+								color = meshRenderer2.sharedMaterial.color;
+							}
+						}
+						catch (Exception)
+						{
+						}
+						if (color.a < 0.35f)
+						{
+							color.a = 0.35f;
+						}
+						if (num5 >= count)
+						{
+							color = new Color(color.r, color.g, color.b, color.a * 0.6f);
+						}
+						Vector3 c = Dir((float)ModGeo.Lat(campaignData, mapLocation.locationPosition.y), (float)ModGeo.Lon(campaignData, mapLocation.locationPosition.x));
+						AddRing(list2, list4, list3, c, ang, num2, num3, color, normalized, limit);
+					}
+				}
+			}
+			num5++;
+		}
+		if (gameObjectAnimator != null)
+		{
+			float num7 = Mathf.Max(0f, 10f - mobileMapObject.fuelUsedDays);
+			Vector3 c2 = Dir((float)ModGeo.Lat(campaignData, gameObjectAnimator.currentMap2DLocation.y), (float)ModGeo.Lon(campaignData, gameObjectAnimator.currentMap2DLocation.x));
+			float num8 = Mathf.Min(ModTFOverlay.ringDays, num7) * 86400f * mobileMapObject.speed;
+			float num9 = num7 * 86400f * mobileMapObject.speed;
+			if (num8 > 1f)
+			{
+				AddRing(list2, list4, list3, c2, (float)((double)num8 / num4), num2, num3 * 1.0005f, new Color(1f, 0.6f, 0.1f, 0.8f), normalized, limit);
+			}
+			if (num9 > num8 + 1f)
+			{
+				AddRing(list2, list4, list3, c2, (float)Math.Min((double)num9 / num4, Math.PI * 49.0 / 50.0), num2 * 0.7f, num3 * 1.0005f, new Color(1f, 0.3f, 0.2f, 0.6f), normalized, limit);
+			}
+		}
+		ringMesh.Clear();
+		if (list2.Count == 0)
+		{
+			ringObj.SetActive(value: false);
+			return;
+		}
+		ringMesh.vertices = list2.ToArray();
+		ringMesh.colors = list4.ToArray();
+		ringMesh.triangles = list3.ToArray();
+		ringMesh.RecalculateBounds();
+		ringObj.SetActive(value: true);
+	}
+
+	private void WeatherPatches(CampaignInterface ci)
+	{
+		WeatherManager instance = WeatherManager.instance;
+		if (instance == null || instance.weatherMeshes == null || instance.weatherMeshes.Count == 0)
+		{
+			if (weatherRoot != null)
+			{
+				weatherRoot.SetActive(value: false);
+			}
+			return;
+		}
+		CampaignData campaignData = CampaignManager.instance.campaignData;
+		if (weatherRoot == null)
+		{
+			weatherRoot = new GameObject("Weather");
+			weatherRoot.transform.SetParent(root.transform, worldPositionStays: false);
+		}
+		while (weatherPatches.Count < instance.weatherMeshes.Count)
+		{
+			int count = weatherPatches.Count;
+			MeshRenderer meshRenderer = instance.weatherMeshes[count];
+			Vector3 vector = ((meshRenderer != null) ? meshRenderer.transform.localPosition : Vector3.zero);
+			float num = vector.x / 200f;
+			float num2 = vector.y / 100f;
+			float num3 = 0.05f;
+			Mesh mesh = new Mesh();
+			List<Vector3> list = new List<Vector3>();
+			List<Vector2> list2 = new List<Vector2>();
+			List<int> list3 = new List<int>();
+			int num4 = 4;
+			for (int i = 0; i <= num4; i++)
+			{
+				for (int j = 0; j <= num4; j++)
+				{
+					float x = num - num3 + 2f * num3 * (float)j / (float)num4;
+					float y = num2 - num3 + 2f * num3 * (float)i / (float)num4;
+					Vector3 vector2 = Dir((float)ModGeo.Lat(campaignData, y), (float)ModGeo.Lon(campaignData, x));
+					list.Add(vector2 * Radius * 1.0025f);
+					list2.Add(new Vector2((float)j / (float)num4, (float)i / (float)num4));
+				}
+			}
+			for (int k = 0; k < num4; k++)
+			{
+				for (int l = 0; l < num4; l++)
+				{
+					int num5 = k * (num4 + 1) + l;
+					int item = num5 + 1;
+					int num6 = num5 + num4 + 1;
+					int item2 = num6 + 1;
+					list3.Add(num5);
+					list3.Add(num6);
+					list3.Add(item);
+					list3.Add(item);
+					list3.Add(num6);
+					list3.Add(item2);
+				}
+			}
+			mesh.vertices = list.ToArray();
+			mesh.uv = list2.ToArray();
+			mesh.triangles = list3.ToArray();
+			mesh.RecalculateBounds();
+			GameObject gameObject = MeshObj("Cell" + count, mesh, null, Color.white, 3003);
+			gameObject.transform.SetParent(weatherRoot.transform, worldPositionStays: false);
+			weatherPatches.Add(gameObject.GetComponent<MeshRenderer>());
+			weatherDirs.Add(Dir((float)ModGeo.Lat(campaignData, num2), (float)ModGeo.Lon(campaignData, num)));
+		}
+		weatherTimer -= Time.unscaledDeltaTime;
+		if (weatherTimer <= 0f)
+		{
+			weatherTimer = 1f;
+			int num7 = 29;
+			for (int m = 0; m < instance.weatherMeshes.Count; m++)
+			{
+				MeshRenderer meshRenderer2 = instance.weatherMeshes[m];
+				bool flag = meshRenderer2 != null && meshRenderer2.enabled && meshRenderer2.gameObject.activeInHierarchy;
+				num7 = num7 * 31 + (flag ? 1 : 0);
+				num7 = num7 * 31 + ((flag && meshRenderer2.sharedMaterial != null) ? meshRenderer2.sharedMaterial.GetInstanceID() : 0);
+			}
+			if (num7 != weatherSig)
+			{
+				weatherSig = num7;
+				for (int n = 0; n < instance.weatherMeshes.Count && n < weatherPatches.Count; n++)
+				{
+					MeshRenderer meshRenderer3 = instance.weatherMeshes[n];
+					MeshRenderer meshRenderer4 = weatherPatches[n];
+					if (!(meshRenderer4.enabled = meshRenderer3 != null && meshRenderer3.enabled && meshRenderer3.gameObject.activeInHierarchy && meshRenderer3.sharedMaterial != null))
+					{
+						continue;
+					}
+					Material sharedMaterial = meshRenderer3.sharedMaterial;
+					Material sharedMaterial2 = meshRenderer4.sharedMaterial;
+					sharedMaterial2.mainTexture = sharedMaterial.mainTexture;
+					Color color = Color.white;
+					try
+					{
+						if (sharedMaterial.HasProperty("_Color"))
+						{
+							color = sharedMaterial.color;
+						}
+					}
+					catch (Exception)
+					{
+					}
+					color.a *= WeatherAlpha;
+					Tinted(sharedMaterial2, color);
+				}
+			}
+		}
+		Vector3 normalized = (cam.transform.position - centre).normalized;
+		float num8 = Radius / dist - 0.08f;
+		for (int num9 = 0; num9 < weatherPatches.Count; num9++)
+		{
+			bool flag3 = Vector3.Dot(weatherDirs[num9], normalized) > num8;
+			if (weatherPatches[num9].gameObject.activeSelf != flag3)
+			{
+				weatherPatches[num9].gameObject.SetActive(flag3);
+			}
+		}
+		if (!weatherRoot.activeSelf)
+		{
+			weatherRoot.SetActive(value: true);
+		}
+	}
+
+	private bool MouseMapPoint(CampaignData d, out Vector2 p, out Vector3 dir)
+	{
+		p = Vector2.zero;
+		dir = Vector3.zero;
+		if (cam == null)
+		{
+			return false;
+		}
+		Ray ray = cam.ScreenPointToRay(Input.mousePosition);
+		Vector3 vector = ray.origin - centre;
+		float num = Vector3.Dot(vector, ray.direction);
+		float num2 = Vector3.Dot(vector, vector) - Radius * Radius;
+		float num3 = num * num - num2;
+		if (num3 < 0f)
+		{
+			return false;
+		}
+		float num4 = 0f - num - Mathf.Sqrt(num3);
+		if (num4 < 0f)
+		{
+			return false;
+		}
+		dir = (ray.origin + ray.direction * num4 - centre).normalized;
+		float lat = Mathf.Asin(Mathf.Clamp(dir.y, -1f, 1f)) * 57.29578f;
+		float num5 = Mathf.Atan2(dir.z, dir.x) * 57.29578f;
+		if (num5 < 0f)
+		{
+			num5 += 360f;
+		}
+		p = MapPoint(d, lat, num5);
+		return true;
+	}
+
+	private static bool InMap(Vector2 p)
+	{
+		return p.x >= -0.5f && p.x <= 0.5f && p.y >= -0.5f && p.y <= 0.5f;
+	}
+
+	private Entry EntryUnderMouse()
+	{
+		Entry result = null;
+		float num = PickPx * PickPx;
+		Vector2 vector = Input.mousePosition;
+		for (int i = 0; i < entries.Count; i++)
+		{
+			Entry entry = entries[i];
+			if (entry.shown && !(entry.goa == null))
+			{
+				float sqrMagnitude = (entry.screen - vector).sqrMagnitude;
+				if (sqrMagnitude < num)
+				{
+					num = sqrMagnitude;
+					result = entry;
+				}
+			}
+		}
+		return result;
+	}
+
+	private void Hover(CampaignInterface ci, bool overUi)
+	{
+		Entry entry = ((overUi || dragging) ? null : EntryUnderMouse());
+		if (entry != hover)
+		{
+			SetHover(entry, ci);
+		}
+	}
+
+	private void SetHover(Entry e, CampaignInterface ci)
+	{
+		WMSK wMSK = ((ci != null) ? ci.map : null);
+		if (hover != null && hover.goa != null && wMSK != null && wMSK.OnVGOPointerExit != null)
+		{
+			wMSK.OnVGOPointerExit(hover.goa);
+		}
+		hover = e;
+		if (hover != null && hover.goa != null && wMSK != null && wMSK.OnVGOPointerEnter != null)
+		{
+			wMSK.OnVGOPointerEnter(hover.goa);
+		}
+	}
+
+	private void Click(CampaignInterface ci, int button)
+	{
+		WMSK map = ci.map;
+		if (map == null)
+		{
+			return;
+		}
+		CampaignData campaignData = CampaignManager.instance.campaignData;
+		Vector2 p;
+		Vector3 dir;
+		bool flag = MouseMapPoint(campaignData, out p, out dir);
+		if (button == 1)
+		{
+			if (ci.enablePlotCourse)
+			{
+				ci.enablePlotCourse = false;
+				ci.SetCampaignCursor();
+				if (TooltipManager.instance != null)
+				{
+					TooltipManager.instance.ClearToolTip();
+				}
+				ci.PlotMobileCourse();
+			}
+			return;
+		}
+		if (!ci.enablePlotCourse)
+		{
+			Entry entry = EntryUnderMouse();
+			if (entry != null && entry.goa != null)
+			{
+				if (map.OnVGOPointerDown != null)
+				{
+					map.OnVGOPointerDown(entry.goa);
+				}
+				markerTimer = 0f;
+				return;
+			}
+		}
+		if (ci.enablePlotCourse && ci.currentMapObject != null && flag && InMap(p))
+		{
+			ci.MoveMobileToDestination(ci.currentMapObject, p);
+			lastRouteMouse = new Vector2(9f, 9f);
+		}
+	}
+
+	private void RouteMouse(CampaignInterface ci, bool overUi)
+	{
+		if (overUi || (!ci.enablePlotCourse && !ci.enablePlotRuler) || (!ci.enablePlotRuler && ci.currentMapObject == null))
+		{
+			return;
+		}
+		CampaignData campaignData = CampaignManager.instance.campaignData;
+		if (MouseMapPoint(campaignData, out var p, out var _) && InMap(p) && !((p - lastRouteMouse).sqrMagnitude < 1E-10f))
+		{
+			lastRouteMouse = p;
+			if (miRoute == null)
+			{
+				miRoute = typeof(CampaignInterface).GetMethod("UpdateRoutePathLine", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+			}
+			if (miRoute != null)
+			{
+				miRoute.Invoke(ci, new object[2] { p.x, p.y });
+			}
+		}
+	}
+
+	private void RouteLines(CampaignInterface ci)
+	{
+		List<LineMarkerAnimator> pathlines = ci.pathlines;
+		int num = 17;
+		int num2 = 0;
+		if (pathlines != null)
+		{
+			for (int i = 0; i < pathlines.Count; i++)
+			{
+				LineMarkerAnimator lineMarkerAnimator = pathlines[i];
+				if (!(lineMarkerAnimator == null) && lineMarkerAnimator.path != null && lineMarkerAnimator.path.Length >= 2)
+				{
+					num2++;
+					num = num * 31 + lineMarkerAnimator.path.Length;
+					num = num * 31 + Mathf.RoundToInt(lineMarkerAnimator.path[0].x * 20000f);
+					num = num * 31 + Mathf.RoundToInt(lineMarkerAnimator.path[lineMarkerAnimator.path.Length - 1].y * 20000f);
+					num = num * 31 + Mathf.RoundToInt(lineMarkerAnimator.color.r * 10f + lineMarkerAnimator.color.g * 100f + lineMarkerAnimator.color.b * 1000f);
+				}
+			}
+		}
+		num = num * 31 + Mathf.RoundToInt(viewLat * 4f);
+		num = num * 31 + Mathf.RoundToInt(viewLon * 4f);
+		num = num * 31 + Mathf.RoundToInt(dist);
+		if (num == routeSig)
+		{
+			return;
+		}
+		routeSig = num;
+		if (routeMesh == null)
+		{
+			routeMesh = new Mesh();
+			routeMesh.MarkDynamic();
+			routeObj = MeshObj("Routes", routeMesh, white, Color.white, 3004);
+		}
+		if (num2 == 0)
+		{
+			routeMesh.Clear();
+			routeObj.SetActive(value: false);
+			return;
+		}
+		CampaignData campaignData = CampaignManager.instance.campaignData;
+		Vector3 normalized = (cam.transform.position - centre).normalized;
+		float num3 = Radius / dist;
+		float num4 = Radius * RouteWidth * Mathf.Clamp(dist / (ZoomStart * Radius), 0.25f, 1.5f);
+		float num5 = Radius * 1.004f;
+		List<Vector3> list = new List<Vector3>();
+		List<int> list2 = new List<int>();
+		List<Color> list3 = new List<Color>();
+		List<Vector3> list4 = new List<Vector3>();
+		for (int j = 0; j < pathlines.Count; j++)
+		{
+			LineMarkerAnimator lineMarkerAnimator2 = pathlines[j];
+			if (lineMarkerAnimator2 == null || lineMarkerAnimator2.path == null || lineMarkerAnimator2.path.Length < 2)
+			{
+				continue;
+			}
+			list4.Clear();
+			for (int k = 0; k < lineMarkerAnimator2.path.Length; k++)
+			{
+				Vector3 vector = Dir((float)ModGeo.Lat(campaignData, lineMarkerAnimator2.path[k].y), (float)ModGeo.Lon(campaignData, lineMarkerAnimator2.path[k].x));
+				if (list4.Count > 0)
+				{
+					Vector3 vector2 = list4[list4.Count - 1];
+					float num6 = Vector3.Angle(vector2, vector);
+					int num7 = Mathf.Min(64, Mathf.FloorToInt(num6 / 1.5f));
+					for (int l = 1; l <= num7; l++)
+					{
+						list4.Add(Vector3.Slerp(vector2, vector, (float)l / (float)(num7 + 1)).normalized);
+					}
+				}
+				list4.Add(vector);
+			}
+			Color color = lineMarkerAnimator2.color;
+			color.a = 1f;
+			int count = list.Count;
+			for (int m = 0; m < list4.Count; m++)
+			{
+				Vector3 vector3 = list4[m];
+				Vector3 vector4 = list4[Mathf.Min(m + 1, list4.Count - 1)];
+				Vector3 vector5 = list4[Mathf.Max(m - 1, 0)];
+				Vector3 vector6 = vector4 - vector5;
+				if (vector6.sqrMagnitude < 1E-12f)
+				{
+					vector6 = Vector3.Cross(vector3, Vector3.up);
+				}
+				Vector3 normalized2 = Vector3.Cross(vector3, vector6.normalized).normalized;
+				list.Add(vector3 * num5 + normalized2 * num4);
+				list.Add(vector3 * num5 - normalized2 * num4);
+				Color item = color;
+				item.a = ((Vector3.Dot(vector3, normalized) > num3) ? 1f : 0f);
+				list3.Add(item);
+				list3.Add(item);
+			}
+			for (int n = 0; n < list4.Count - 1; n++)
+			{
+				int num8 = count + n * 2;
+				int item2 = num8 + 1;
+				int item3 = num8 + 2;
+				int item4 = num8 + 3;
+				list2.Add(num8);
+				list2.Add(item3);
+				list2.Add(item2);
+				list2.Add(item2);
+				list2.Add(item3);
+				list2.Add(item4);
+			}
+		}
+		routeMesh.Clear();
+		routeMesh.vertices = list.ToArray();
+		routeMesh.colors = list3.ToArray();
+		routeMesh.triangles = list2.ToArray();
+		routeMesh.RecalculateBounds();
+		routeObj.transform.position = centre;
+		routeObj.SetActive(value: true);
+	}
+
+	private void Place()
+	{
+		Vector3 vector = Dir(viewLat, viewLon);
+		cam.transform.position = centre + vector * dist;
+		cam.transform.LookAt(centre, Vector3.up);
+		if (haloObj != null)
+		{
+			haloObj.transform.position = centre;
+			haloObj.transform.rotation = cam.transform.rotation;
+		}
+		if (starsObj != null)
+		{
+			starsObj.transform.position = centre;
+		}
+	}
+
+	private bool OverGameUi()
+	{
+		try
+		{
+			EventSystem current = EventSystem.current;
+			if (current == null)
+			{
+				return false;
+			}
+			PointerEventData pointerEventData = new PointerEventData(current);
+			pointerEventData.position = Input.mousePosition;
+			List<RaycastResult> list = new List<RaycastResult>();
+			current.RaycastAll(pointerEventData, list);
+			for (int i = 0; i < list.Count; i++)
+			{
+				if (!(list[i].gameObject == null) && !(list[i].gameObject == blocker))
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+		catch (Exception)
+		{
+			return false;
+		}
+	}
+
+	private void DropToMap(CampaignInterface ci)
+	{
+		CampaignData campaignData = CampaignManager.instance.campaignData;
+		Vector2 destination = MapPoint(campaignData, viewLat, viewLon);
+		Off();
+		lastSwitch = Time.unscaledTime;
+		if (ci.map != null && destination.x >= -0.5f && destination.x <= 0.5f && destination.y >= -0.5f && destination.y <= 0.5f)
+		{
+			float zoomLevel = Mathf.Lerp(ci.map.zoomMinDistance, ci.map.zoomMaxDistance, Mathf.Clamp01(DropZoom));
+			ci.map.FlyToLocation(destination, 0.6f, zoomLevel);
+			Debug.Log("[GLOBE] dropped to map at " + destination.x.ToString("0.000") + " " + destination.y.ToString("0.000"));
+		}
+	}
+
+	public static Vector3 Dir(float lat, float lon)
+	{
+		float f = lat * ((float)Math.PI / 180f);
+		float f2 = lon * ((float)Math.PI / 180f);
+		return new Vector3(Mathf.Cos(f) * Mathf.Cos(f2), Mathf.Sin(f), Mathf.Cos(f) * Mathf.Sin(f2));
+	}
+
+	public static Vector2 MapPoint(CampaignData d, float lat, float lon)
+	{
+		double num = ModGeo.Lon(d, -0.5f);
+		double num2;
+		for (num2 = lon; num2 < num; num2 += 360.0)
+		{
+		}
+		while (num2 >= num + 360.0)
+		{
+			num2 -= 360.0;
+		}
+		float x = (float)((num2 * 240.0 - (double)d.mapOriginXY[0]) / (double)d.mapPixelWidth - 0.5);
+		float y = (float)((((double)lat + 90.0) * 240.0 - (double)d.mapOriginXY[1]) / ((double)d.mapPixelWidth * 0.5) - 0.5);
+		return new Vector2(x, y);
+	}
+
+	private Vector3 SunDir(CampaignInterface ci)
+	{
+		float num = UtcOffsetHours;
+		if (num > 24f || num < -24f)
+		{
+			CampaignData campaignData = CampaignManager.instance.campaignData;
+			double num2 = ModGeo.Lon(campaignData, 0f);
+			if (num2 > 180.0)
+			{
+				num2 -= 360.0;
+			}
+			num = Mathf.Round((float)(num2 / 15.0));
+		}
+		return SunDir(ci.dateTime, num);
+	}
+
+	private static Vector3 SunDir(DateTime t, float offset)
+	{
+		float num = (float)t.TimeOfDay.TotalHours - offset;
+		float lat = 23.44f * Mathf.Sin((float)Math.PI * 2f * (284f + (float)t.DayOfYear) / 365f);
+		float lon = 180f - 15f * num;
+		return Dir(lat, lon);
+	}
+
+	private void Shade(CampaignInterface ci)
+	{
+		if (globeMesh != null)
+		{
+			ShadeBy(SunDir(ci));
+		}
+	}
+
+	private void Shade(DateTime t, float offset)
+	{
+		if (globeMesh != null)
+		{
+			ShadeBy(SunDir(t, offset));
+		}
+	}
+
+	private void ShadeBy(Vector3 s)
+	{
+		if (globeMesh == null || globeNormals == null)
+		{
+			return;
+		}
+		if (!DayNight)
+		{
+			for (int i = 0; i < globeColors.Length; i++)
+			{
+				globeColors[i] = Color.white;
+			}
+			globeMesh.colors = globeColors;
+			return;
+		}
+		float a = 0f - Twilight;
+		float twilight = Twilight;
+		for (int j = 0; j < globeNormals.Length; j++)
+		{
+			float num = Mathf.InverseLerp(a, twilight, Vector3.Dot(globeNormals[j], s));
+			float num2 = Mathf.Lerp(Night, 1f, num * num * (3f - 2f * num));
+			globeColors[j] = new Color(num2, num2, num2, 1f);
+		}
+		globeMesh.colors = globeColors;
+	}
+
+	private void Facing()
+	{
+		Vector3 normalized = (cam.transform.position - centre).normalized;
+		float num = Radius / dist;
+		if (globeTris != null && (cam.transform.position - lastCamPos).sqrMagnitude > 0.0001f)
+		{
+			lastCamPos = cam.transform.position;
+			frontTris.Clear();
+			Vector3 vector = cam.transform.position - centre;
+			for (int i = 0; i < globeTris.Length; i += 3)
+			{
+				int num2 = globeTris[i];
+				int num3 = globeTris[i + 1];
+				int num4 = globeTris[i + 2];
+				Vector3 lhs = globeNormals[num2] + globeNormals[num3] + globeNormals[num4];
+				Vector3 vector2 = (globeNormals[num2] + globeNormals[num3] + globeNormals[num4]) * (Radius / 3f);
+				if (Vector3.Dot(lhs, vector - vector2) > 0f)
+				{
+					frontTris.Add(num2);
+					frontTris.Add(num3);
+					frontTris.Add(num4);
+				}
+			}
+			globeMesh.SetTriangles(frontTris, 0);
+		}
+		PlaceEntries(normalized, num);
+		if (!(ribbonObj != null) || ribbonColors == null)
+		{
+			return;
+		}
+		bool flag = false;
+		for (int j = 0; j < ribbonDirs.Count; j++)
+		{
+			float num5 = ((Vector3.Dot(ribbonDirs[j], normalized) > num) ? 1f : 0f);
+			int num6 = j * 2;
+			if (ribbonColors[num6].a != num5)
+			{
+				ribbonColors[num6].a = num5;
+				ribbonColors[num6 + 1].a = num5;
+				flag = true;
+			}
+		}
+		if (flag)
+		{
+			ribbonObj.GetComponent<MeshFilter>().sharedMesh.colors = ribbonColors;
+		}
+	}
+
+	private void Markers(CampaignInterface ci)
+	{
+		for (int i = 0; i < entries.Count; i++)
+		{
+			if (entries[i].go != null)
+			{
+				UnityEngine.Object.Destroy(entries[i].go);
+			}
+		}
+		entries.Clear();
+		hover = null;
+		if (!ShowMarkers || overlay == null)
+		{
+			return;
+		}
+		CampaignManager instance = CampaignManager.instance;
+		CampaignData campaignData = instance.campaignData;
+		if (instance.landMapLocations != null)
+		{
+			for (int j = 0; j < instance.landMapLocations.Count; j++)
+			{
+				MapLocation mapLocation = instance.landMapLocations[j];
+				if (!(mapLocation == null))
+				{
+					AddEntry(campaignData, mapLocation.locationPosition, mapLocation.GetComponentInChildren<SpriteRenderer>(), mapLocation.locationName, 1f, mapLocation.gameObjectAnimator);
+				}
+			}
+		}
+		if (instance.playerMobile != null)
+		{
+			for (int k = 0; k < instance.playerMobile.Count; k++)
+			{
+				GameObjectAnimator gameObjectAnimator = instance.playerMobile[k];
+				if (gameObjectAnimator == null || gameObjectAnimator.mobileMapObject == null || gameObjectAnimator.mobileMapObject.unitPrefabs == null || gameObjectAnimator.mobileMapObject.unitPrefabs.Count == 0)
+				{
+					continue;
+				}
+				string text = gameObjectAnimator.mobileMapObject.mobileName;
+				if (FuelRings && ModTFOverlay.on)
+				{
+					float num = Mathf.Max(0f, 10f - gameObjectAnimator.mobileMapObject.fuelUsedDays);
+					text = text + "\n" + num.ToString("F1") + " d fuel  " + (gameObjectAnimator.mobileMapObject.speed / 0.514444f).ToString("F0") + " kn";
+				}
+				AddEntry(campaignData, gameObjectAnimator.currentMap2DLocation, gameObjectAnimator.GetComponentInChildren<SpriteRenderer>(), text, 1.1f, gameObjectAnimator);
+				if (FuelRings && ModTFOverlay.on)
+				{
+					Entry entry = entries[entries.Count - 1];
+					float num2 = Mathf.Max(0f, 10f - gameObjectAnimator.mobileMapObject.fuelUsedDays);
+					if (entry.label != null)
+					{
+						entry.label.color = ((num2 < 3f) ? new Color(1f, 0.3f, 0.3f, 1f) : ((num2 < 5f) ? new Color(1f, 0.6f, 0.15f, 1f) : Color.white));
+						entry.label.rectTransform.sizeDelta = new Vector2(220f, LabelPx * 2 + 8);
+						entry.shadow.rectTransform.sizeDelta = new Vector2(220f, LabelPx * 2 + 8);
+					}
+				}
+			}
+		}
+		if (instance.spottedContacts != null)
+		{
+			for (int l = 0; l < instance.spottedContacts.Count; l++)
+			{
+				MobileMapObject mobileMapObject = instance.spottedContacts[l];
+				if (!(mobileMapObject == null) && !(mobileMapObject.gameObjectAnimator == null))
+				{
+					AddEntry(campaignData, mobileMapObject.gameObjectAnimator.currentMap2DLocation, mobileMapObject.gameObjectAnimator.GetComponentInChildren<SpriteRenderer>(), mobileMapObject.mobileName, 1.1f, mobileMapObject.gameObjectAnimator);
+				}
+			}
+		}
+		if (Notes && ci.mapMarkerParent != null)
+		{
+			MapLocation[] componentsInChildren = ci.mapMarkerParent.GetComponentsInChildren<MapLocation>();
+			foreach (MapLocation mapLocation2 in componentsInChildren)
+			{
+				if (!(mapLocation2 == null) && !(mapLocation2.gameObjectAnimator == null))
+				{
+					AddEntry(campaignData, mapLocation2.locationPosition, mapLocation2.GetComponentInChildren<SpriteRenderer>(), mapLocation2.locationName, 0.9f, mapLocation2.gameObjectAnimator);
+				}
+			}
+		}
+		if (Weather && WeatherManager.instance != null && WeatherManager.instance.seaStateMeshes != null)
+		{
+			List<TextMesh> seaStateMeshes = WeatherManager.instance.seaStateMeshes;
+			for (int n = 0; n < seaStateMeshes.Count; n++)
+			{
+				TextMesh textMesh = seaStateMeshes[n];
+				if (!(textMesh == null) && !string.IsNullOrEmpty(textMesh.text) && textMesh.gameObject.activeInHierarchy)
+				{
+					Vector3 localPosition = textMesh.transform.localPosition;
+					AddEntry(campaignData, new Vector2(localPosition.x / 200f, localPosition.y / 100f), null, textMesh.text, 0.01f, null);
+					Entry entry2 = entries[entries.Count - 1];
+					entry2.icon.enabled = false;
+					if (entry2.label != null)
+					{
+						entry2.label.color = new Color(0.8f, 0.9f, 1f, 0.9f);
+						entry2.label.fontSize = LabelPx - 1;
+						entry2.shadow.fontSize = LabelPx - 1;
+					}
+				}
+			}
+		}
+		if (MapLabels && ci.mapLabels != null)
+		{
+			for (int num3 = 0; num3 < ci.mapLabels.childCount; num3++)
+			{
+				TextMesh component = ci.mapLabels.GetChild(num3).GetComponent<TextMesh>();
+				if (component == null || string.IsNullOrEmpty(component.text) || !component.gameObject.activeInHierarchy)
+				{
+					continue;
+				}
+				Vector3 localPosition2 = component.transform.localPosition;
+				if (!(localPosition2.x < -0.5f) && !(localPosition2.x > 0.5f) && !(localPosition2.y < -0.5f) && !(localPosition2.y > 0.5f))
+				{
+					float num4 = component.transform.localScale.y * 10f;
+					AddEntry(campaignData, new Vector2(localPosition2.x, localPosition2.y), null, component.text, 0.01f, null);
+					Entry entry3 = entries[entries.Count - 1];
+					entry3.icon.enabled = false;
+					entry3.always = true;
+					if (entry3.label != null)
+					{
+						int num5 = Mathf.Clamp(Mathf.RoundToInt(num4 * MapLabelScale), 8, 40);
+						Color color = component.color;
+						color.a = Mathf.Min(1f, color.a + 0.15f);
+						entry3.label.color = color;
+						entry3.label.fontSize = num5;
+						entry3.shadow.fontSize = num5;
+						entry3.label.fontStyle = component.fontStyle;
+						entry3.shadow.fontStyle = component.fontStyle;
+						entry3.label.rectTransform.sizeDelta = new Vector2(900f, num5 + 8);
+						entry3.shadow.rectTransform.sizeDelta = new Vector2(900f, num5 + 8);
+						entry3.label.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+						entry3.shadow.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+						entry3.label.rectTransform.anchoredPosition = Vector2.zero;
+						entry3.shadow.rectTransform.anchoredPosition = new Vector2(1f, -1f);
+						entry3.label.alignment = TextAnchor.MiddleCenter;
+						entry3.shadow.alignment = TextAnchor.MiddleCenter;
+					}
+				}
+			}
+		}
+		Vector3 normalized = (cam.transform.position - centre).normalized;
+		PlaceEntries(normalized, Radius / dist);
+	}
+
+	private void AddEntry(CampaignData d, Vector2 mapPos, SpriteRenderer src, string name, float size, GameObjectAnimator goa)
+	{
+		Entry entry = new Entry();
+		entry.goa = goa;
+		entry.dir = Dir((float)ModGeo.Lat(d, mapPos.y), (float)ModGeo.Lon(d, mapPos.x));
+		entry.go = new GameObject("GlobeIcon", typeof(RectTransform));
+		entry.go.transform.SetParent(overlay, worldPositionStays: false);
+		entry.rect = entry.go.GetComponent<RectTransform>();
+		RectTransform rect = entry.rect;
+		Vector2 anchorMin = (entry.rect.anchorMax = new Vector2(0.5f, 0.5f));
+		rect.anchorMin = anchorMin;
+		entry.rect.pivot = new Vector2(0.5f, 0.5f);
+		entry.rect.sizeDelta = new Vector2(IconPx * size, IconPx * size);
+		entry.icon = entry.go.AddComponent<Image>();
+		entry.icon.raycastTarget = false;
+		entry.icon.preserveAspect = true;
+		if (src != null && src.sprite != null)
+		{
+			entry.icon.sprite = src.sprite;
+			Color color = src.color;
+			color.a = 1f;
+			entry.icon.color = color;
+		}
+		else
+		{
+			entry.icon.color = Color.white;
+		}
+		if (!string.IsNullOrEmpty(name))
+		{
+			entry.shadow = MakeLabel(entry.rect, name, new Vector2(1f, -1f), new Color(0f, 0f, 0f, 0.9f));
+			entry.label = MakeLabel(entry.rect, name, Vector2.zero, Color.white);
+		}
+		entries.Add(entry);
+	}
+
+	private Text MakeLabel(RectTransform parent, string name, Vector2 offset, Color c)
+	{
+		GameObject gameObject = new GameObject("Name", typeof(RectTransform));
+		gameObject.transform.SetParent(parent, worldPositionStays: false);
+		RectTransform component = gameObject.GetComponent<RectTransform>();
+		component.anchorMin = new Vector2(0.5f, 0f);
+		component.anchorMax = new Vector2(0.5f, 0f);
+		component.pivot = new Vector2(0.5f, 1f);
+		component.anchoredPosition = new Vector2(offset.x, -2f + offset.y);
+		component.sizeDelta = new Vector2(220f, LabelPx + 6);
+		Text text = gameObject.AddComponent<Text>();
+		text.font = font;
+		text.fontSize = LabelPx;
+		text.alignment = TextAnchor.UpperCenter;
+		text.color = c;
+		text.raycastTarget = false;
+		text.text = name;
+		return text;
+	}
+
+	private void PlaceEntries(Vector3 v, float limit)
+	{
+		if (overlay == null)
+		{
+			return;
+		}
+		Canvas componentInParent = overlay.GetComponentInParent<Canvas>();
+		Camera camera = ((componentInParent != null && componentInParent.renderMode != 0) ? componentInParent.worldCamera : null);
+		float num = Mathf.Clamp(ZoomStart * Radius / dist, 0.6f, 2.4f);
+		bool flag = dist < LabelZoom * Radius;
+		GameObjectAnimator gameObjectAnimator = ((CampaignInterface.instance != null) ? CampaignInterface.instance.currentMapObject : null);
+		for (int i = 0; i < entries.Count; i++)
+		{
+			Entry entry = entries[i];
+			if (entry.go == null)
+			{
+				continue;
+			}
+			bool flag2 = Vector3.Dot(entry.dir, v) > limit;
+			entry.shown = false;
+			if (!flag2)
+			{
+				if (entry.go.activeSelf)
+				{
+					entry.go.SetActive(value: false);
+				}
+				continue;
+			}
+			Vector3 vector = cam.WorldToScreenPoint(centre + entry.dir * Radius * 1.002f);
+			entry.screen = new Vector2(vector.x, vector.y);
+			if (RectTransformUtility.ScreenPointToLocalPointInRectangle(overlay, new Vector2(vector.x, vector.y), camera, out var localPoint))
+			{
+				if (!entry.go.activeSelf)
+				{
+					entry.go.SetActive(value: true);
+				}
+				entry.shown = true;
+				entry.rect.anchoredPosition = localPoint;
+				float num2 = num;
+				if (entry.goa != null && (entry == hover || entry.goa == gameObjectAnimator))
+				{
+					num2 *= 1.3f;
+				}
+				entry.rect.localScale = new Vector3(num2, num2, 1f);
+				if (entry.label != null)
+				{
+					entry.label.enabled = flag || entry.always;
+					entry.shadow.enabled = flag || entry.always;
+				}
+			}
+		}
+	}
+
+	private void Build(CampaignData d)
+	{
+		built = true;
+		shader = Shader.Find("Particles/Alpha Blended");
+		if (shader == null)
+		{
+			shader = Shader.Find("Sprites/Default");
+			Debug.Log("[GLOBE] Particles/Alpha Blended not found, using Sprites/Default");
+		}
+		white = new Texture2D(2, 2, TextureFormat.RGBA32, mipmap: false);
+		white.SetPixels(new Color[4]
+		{
+			Color.white,
+			Color.white,
+			Color.white,
+			Color.white
+		});
+		white.Apply();
+		root = new GameObject("ModGlobeRoot");
+		root.transform.position = centre;
+		UnityEngine.Object.DontDestroyOnLoad(root);
+		GameObject gameObject = new GameObject("ModGlobeCamera");
+		gameObject.transform.SetParent(root.transform, worldPositionStays: false);
+		cam = gameObject.AddComponent<Camera>();
+		cam.clearFlags = CameraClearFlags.Color;
+		cam.backgroundColor = Color.black;
+		cam.nearClipPlane = 1f;
+		cam.farClipPlane = 60000f;
+		cam.fieldOfView = 40f;
+		Camera main = Camera.main;
+		cam.depth = ((main != null) ? main.depth : 0f) + 5f;
+		cam.cullingMask = -1;
+		cam.enabled = false;
+		globeMesh = Sphere(96, 192, Radius, out globeNormals);
+		globeTris = globeMesh.triangles;
+		globeMesh.MarkDynamic();
+		globeColors = new Color[globeNormals.Length];
+		for (int i = 0; i < globeColors.Length; i++)
+		{
+			globeColors[i] = Color.white;
+		}
+		globeMesh.colors = globeColors;
+		globeObj = MeshObj("Globe", globeMesh, EarthTexture(), Color.white, 3002);
+		starsObj = MeshObj("Stars", Sphere(24, 48, 30000f, out var _), StarTexture(), Color.white, 3000);
+		haloObj = MeshObj("Halo", Quad(Radius * 2.6f), HaloTexture(), new Color(0.45f, 0.65f, 1f, 1f), 3001);
+		if (d != null)
+		{
+			BuildRibbon(d);
+			BuildBlocker();
+		}
+		root.SetActive(value: false);
+		Debug.Log("[GLOBE] built: " + globeNormals.Length + " vertices, shader " + ((shader != null) ? shader.name : "none"));
+	}
+
+	private Material Unlit(Color c, int queue)
+	{
+		Material material = new Material(shader);
+		material.mainTexture = white;
+		if (material.HasProperty("_TintColor"))
+		{
+			material.SetColor("_TintColor", new Color(0.5f, 0.5f, 0.5f, 0.5f));
+		}
+		if (material.HasProperty("_Color"))
+		{
+			material.color = Color.white;
+		}
+		material.renderQueue = queue;
+		return Tinted(material, c);
+	}
+
+	private Material Tinted(Material m, Color c)
+	{
+		if (m.HasProperty("_TintColor"))
+		{
+			m.SetColor("_TintColor", new Color(c.r * 0.5f, c.g * 0.5f, c.b * 0.5f, c.a * 0.5f));
+		}
+		else if (m.HasProperty("_Color"))
+		{
+			m.color = c;
+		}
+		return m;
+	}
+
+	private GameObject MeshObj(string name, Mesh mesh, Texture2D tex, Color tint, int queue)
+	{
+		GameObject gameObject = new GameObject(name);
+		gameObject.transform.SetParent(root.transform, worldPositionStays: false);
+		gameObject.AddComponent<MeshFilter>().sharedMesh = mesh;
+		MeshRenderer meshRenderer = gameObject.AddComponent<MeshRenderer>();
+		Material material = new Material(shader);
+		material.mainTexture = tex;
+		material.renderQueue = queue;
+		Tinted(material, tint);
+		meshRenderer.sharedMaterial = material;
+		meshRenderer.shadowCastingMode = ShadowCastingMode.Off;
+		meshRenderer.receiveShadows = false;
+		return gameObject;
+	}
+
+	private Texture2D EarthTexture()
+	{
+		Texture2D texture2D = null;
+		try
+		{
+			texture2D = AssetLoader.instance.ImportTexture2D("ModAssets/globe/earth.jpg");
+		}
+		catch (Exception ex)
+		{
+			Debug.Log("[GLOBE] earth.jpg: " + ex.Message);
+		}
+		if (texture2D != null && texture2D.width > 64)
+		{
+			texture2D.wrapMode = TextureWrapMode.Repeat;
+			texture2D.anisoLevel = 4;
+			Debug.Log("[GLOBE] earth.jpg " + texture2D.width + "x" + texture2D.height);
+			return texture2D;
+		}
+		Debug.Log("[GLOBE] override/ModAssets/globe/earth.jpg not found, drawing a plain globe");
+		int num = 1024;
+		int num2 = 512;
+		texture2D = new Texture2D(num, num2, TextureFormat.RGB24, mipmap: false);
+		Color color = new Color(0.16f, 0.26f, 0.38f);
+		Color color2 = new Color(0.4f, 0.5f, 0.6f);
+		Color[] array = new Color[num * num2];
+		for (int i = 0; i < num2; i++)
+		{
+			for (int j = 0; j < num; j++)
+			{
+				array[i * num + j] = ((j % (num / 24) == 0 || i % (num2 / 12) == 0) ? color2 : color);
+			}
+		}
+		texture2D.SetPixels(array);
+		texture2D.Apply();
+		return texture2D;
+	}
+
+	private Texture2D StarTexture()
+	{
+		int num = 1024;
+		int num2 = 512;
+		Texture2D texture2D = new Texture2D(num, num2, TextureFormat.RGBA32, mipmap: false);
+		Color[] array = new Color[num * num2];
+		for (int i = 0; i < array.Length; i++)
+		{
+			array[i] = new Color(0f, 0f, 0f, 1f);
+		}
+		System.Random random = new System.Random(7);
+		for (int j = 0; j < 1800; j++)
+		{
+			int num3 = random.Next(num);
+			int num4 = random.Next(num2);
+			float num5 = 0.35f + 0.65f * (float)random.NextDouble();
+			array[num4 * num + num3] = new Color(num5, num5, num5 * 0.95f + 0.05f, 1f);
+		}
+		texture2D.SetPixels(array);
+		texture2D.Apply();
+		return texture2D;
+	}
+
+	private Texture2D HaloTexture()
+	{
+		int num = 256;
+		Texture2D texture2D = new Texture2D(num, num, TextureFormat.RGBA32, mipmap: false);
+		Color[] array = new Color[num * num];
+		float num2 = Radius / (Radius * 1.3f);
+		float num3 = 1f;
+		for (int i = 0; i < num; i++)
+		{
+			for (int j = 0; j < num; j++)
+			{
+				float num4 = ((float)j + 0.5f) / (float)num * 2f - 1f;
+				float num5 = ((float)i + 0.5f) / (float)num * 2f - 1f;
+				float num6 = Mathf.Sqrt(num4 * num4 + num5 * num5);
+				float a = 0f;
+				if (num6 > num2 * 0.98f && num6 < num3)
+				{
+					float num7 = (num6 - num2 * 0.98f) / (num3 - num2 * 0.98f);
+					a = 0.55f * (1f - num7) * (1f - num7);
+				}
+				array[i * num + j] = new Color(1f, 1f, 1f, a);
+			}
+		}
+		texture2D.SetPixels(array);
+		texture2D.Apply();
+		texture2D.wrapMode = TextureWrapMode.Clamp;
+		return texture2D;
+	}
+
+	private static Mesh Sphere(int rings, int segs, float r, out Vector3[] normals)
+	{
+		int num = (rings + 1) * (segs + 1);
+		Vector3[] array = new Vector3[num];
+		Vector3[] array2 = new Vector3[num];
+		Vector2[] array3 = new Vector2[num];
+		int num2 = 0;
+		for (int i = 0; i <= rings; i++)
+		{
+			float lat = -90f + 180f * (float)i / (float)rings;
+			for (int j = 0; j <= segs; j++)
+			{
+				float lon = -180f + 360f * (float)j / (float)segs;
+				Vector3 vector = Dir(lat, lon);
+				array[num2] = vector * r;
+				array2[num2] = vector;
+				array3[num2] = new Vector2((float)j / (float)segs, (float)i / (float)rings);
+				num2++;
+			}
+		}
+		int[] array4 = new int[rings * segs * 6];
+		int num3 = 0;
+		for (int k = 0; k < rings; k++)
+		{
+			for (int l = 0; l < segs; l++)
+			{
+				int num4 = k * (segs + 1) + l;
+				int num5 = num4 + 1;
+				int num6 = num4 + segs + 1;
+				int num7 = num6 + 1;
+				array4[num3++] = num4;
+				array4[num3++] = num6;
+				array4[num3++] = num7;
+				array4[num3++] = num4;
+				array4[num3++] = num7;
+				array4[num3++] = num5;
+			}
+		}
+		Mesh mesh = new Mesh();
+		mesh.name = "GlobeSphere";
+		mesh.vertices = array;
+		mesh.normals = array2;
+		mesh.uv = array3;
+		mesh.triangles = array4;
+		mesh.RecalculateBounds();
+		normals = array2;
+		return mesh;
+	}
+
+	private static Mesh Quad(float size)
+	{
+		float num = size * 0.5f;
+		Mesh mesh = new Mesh();
+		mesh.vertices = new Vector3[4]
+		{
+			new Vector3(0f - num, 0f - num, 0f),
+			new Vector3(num, 0f - num, 0f),
+			new Vector3(0f - num, num, 0f),
+			new Vector3(num, num, 0f)
+		};
+		mesh.uv = new Vector2[4]
+		{
+			new Vector2(0f, 0f),
+			new Vector2(1f, 0f),
+			new Vector2(0f, 1f),
+			new Vector2(1f, 1f)
+		};
+		mesh.triangles = new int[12]
+		{
+			0, 2, 3, 0, 3, 1, 0, 3, 2, 0,
+			1, 3
+		};
+		mesh.RecalculateBounds();
+		return mesh;
+	}
+
+	private void BuildRibbon(CampaignData d)
+	{
+		float num = (float)ModGeo.Lat(d, -0.5f);
+		float num2 = (float)ModGeo.Lat(d, 0.5f);
+		float num3 = (float)ModGeo.Lon(d, -0.5f);
+		float num4 = (float)d.mapPixelWidth / 240f;
+		if (!Theatre || num4 > 359f)
+		{
+			ribbonObj = null;
+			ribbonColors = null;
+			return;
+		}
+		List<Vector2> list = new List<Vector2>();
+		int num5 = Mathf.Max(8, Mathf.RoundToInt(num4));
+		for (int i = 0; i <= num5; i++)
+		{
+			list.Add(new Vector2(num, num3 + num4 * (float)i / (float)num5));
+		}
+		int num6 = Mathf.Max(4, Mathf.RoundToInt(num2 - num));
+		for (int j = 1; j <= num6; j++)
+		{
+			list.Add(new Vector2(num + (num2 - num) * (float)j / (float)num6, num3 + num4));
+		}
+		for (int num7 = num5 - 1; num7 >= 0; num7--)
+		{
+			list.Add(new Vector2(num2, num3 + num4 * (float)num7 / (float)num5));
+		}
+		for (int num8 = num6 - 1; num8 >= 0; num8--)
+		{
+			list.Add(new Vector2(num + (num2 - num) * (float)num8 / (float)num6, num3));
+		}
+		float num9 = Radius * 0.004f;
+		float num10 = Radius * 1.003f;
+		List<Vector3> list2 = new List<Vector3>();
+		List<int> list3 = new List<int>();
+		List<Vector2> list4 = new List<Vector2>();
+		ribbonDirs.Clear();
+		for (int k = 0; k < list.Count; k++)
+		{
+			Vector3 vector = Dir(list[k].x, list[k].y);
+			Vector3 vector2 = Dir(list[(k + 1) % list.Count].x, list[(k + 1) % list.Count].y);
+			Vector3 vector3 = Dir(list[(k - 1 + list.Count) % list.Count].x, list[(k - 1 + list.Count) % list.Count].y);
+			Vector3 normalized = (vector2 - vector3).normalized;
+			Vector3 normalized2 = Vector3.Cross(vector, normalized).normalized;
+			list2.Add(vector * num10 + normalized2 * num9);
+			list2.Add(vector * num10 - normalized2 * num9);
+			list4.Add(Vector2.zero);
+			list4.Add(Vector2.one);
+			ribbonDirs.Add(vector);
+		}
+		int count = list.Count;
+		for (int l = 0; l < count; l++)
+		{
+			int num11 = l * 2;
+			int num12 = num11 + 1;
+			int num13 = (l + 1) % count * 2;
+			int item = num13 + 1;
+			Vector3 lhs = Vector3.Cross(list2[num13] - list2[num11], list2[num12] - list2[num11]);
+			if (Vector3.Dot(lhs, list2[num11]) > 0f)
+			{
+				list3.Add(num11);
+				list3.Add(num13);
+				list3.Add(num12);
+				list3.Add(num12);
+				list3.Add(num13);
+				list3.Add(item);
+			}
+			else
+			{
+				list3.Add(num11);
+				list3.Add(num12);
+				list3.Add(num13);
+				list3.Add(num12);
+				list3.Add(item);
+				list3.Add(num13);
+			}
+		}
+		Mesh mesh = new Mesh();
+		mesh.vertices = list2.ToArray();
+		mesh.uv = list4.ToArray();
+		mesh.triangles = list3.ToArray();
+		ribbonColors = new Color[list2.Count];
+		for (int m = 0; m < ribbonColors.Length; m++)
+		{
+			ribbonColors[m] = new Color(1f, 0.8f, 0.25f, 1f);
+		}
+		mesh.colors = ribbonColors;
+		mesh.RecalculateBounds();
+		ribbonObj = MeshObj("Theatre", mesh, white, Color.white, 3003);
+		ribbonMat = ribbonObj.GetComponent<MeshRenderer>().sharedMaterial;
+	}
+
+	private void BuildBlocker()
+	{
+		try
+		{
+			CampaignInterface instance = CampaignInterface.instance;
+			if (instance == null || instance.pauseButtonImage == null || instance.pauseButtonImage.canvas == null)
+			{
+				return;
+			}
+			Transform parent = instance.pauseButtonImage.canvas.rootCanvas.transform;
+			blocker = new GameObject("ModGlobeBlocker", typeof(RectTransform));
+			blocker.transform.SetParent(parent, worldPositionStays: false);
+			blocker.transform.SetAsFirstSibling();
+			RectTransform component = blocker.GetComponent<RectTransform>();
+			component.anchorMin = Vector2.zero;
+			component.anchorMax = Vector2.one;
+			component.offsetMin = Vector2.zero;
+			component.offsetMax = Vector2.zero;
+			Image image2 = blocker.AddComponent<Image>();
+			image2.color = new Color(0f, 0f, 0f, 0f);
+			image2.raycastTarget = true;
+			GameObject gameObject = new GameObject("ModGlobeOverlay", typeof(RectTransform));
+			gameObject.transform.SetParent(blocker.transform, worldPositionStays: false);
+			overlay = gameObject.GetComponent<RectTransform>();
+			overlay.anchorMin = Vector2.zero;
+			overlay.anchorMax = Vector2.one;
+			overlay.offsetMin = Vector2.zero;
+			overlay.offsetMax = Vector2.zero;
+			font = null;
+			try
+			{
+				if (TooltipManager.instance != null && TooltipManager.instance.toolTipText != null)
+				{
+					font = TooltipManager.instance.toolTipText.font;
+				}
+			}
+			catch (Exception)
+			{
+			}
+			if (font == null)
+			{
+				font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+			}
+			blocker.SetActive(value: false);
+		}
+		catch (Exception ex2)
+		{
+			Debug.Log("[GLOBE] blocker: " + ex2.Message);
+			blocker = null;
+		}
+	}
+
+	private void BuildButton(CampaignInterface ci)
+	{
+		if (!(ci.pauseButtonImage == null) && !(ci.pauseButtonImage.canvas == null))
+		{
+			Transform transform = ci.pauseButtonImage.canvas.rootCanvas.transform;
+			buttonObject = ModTFOverlay.MakeButton(transform, 4, null, "3D", "Globe (F10). Drag to spin, wheel to zoom; zoom right in to return to the map, scroll out on the map to come back", Toggle, out buttonBack);
+			sunButton = ModTFOverlay.MakeButton(transform, 5, null, "SUN", "Day and night on the globe (N). Click to turn the night shadow on or off", ToggleSun, out sunBack);
+			if (sunButton != null)
+			{
+				sunButton.SetActive(value: false);
+			}
+			if (!buttonReported)
+			{
+				buttonReported = true;
+				Debug.Log("[GLOBE] button added");
+			}
+		}
+	}
+}

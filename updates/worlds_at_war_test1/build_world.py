@@ -5,6 +5,7 @@ Map: whole world, 100W eastwards round to 100W, pole to pole. Map coords -0.5..0
 """
 import json, math, os, sys, shutil
 from history_events import write_history
+from news_items import NEWS
 from PIL import Image
 
 OUT, MAPS, STOCK, MODCAMP, PAC = sys.argv[1:6]
@@ -585,6 +586,10 @@ All of these must be held at the same time to win the campaign."""
         json.dump({"nextAction": "", "header": header, "imagePath": "", "content": content},
                   open(os.path.join(lang, 'event', nm + '.txt'), 'w'), ensure_ascii=False)
     print(cid, 'historical events', write_history(camp, lang, player, owner_of, names, ev_json))
+    # weekly news (ModNews): news.txt + the pop-up frame
+    open(os.path.join(camp, 'news.txt'), 'w').write("// Weekly news items (read by ModNews, shown each Monday for the past week). One JSON line per item.\n" +
+        '\n'.join(json.dumps({"day": d, "month": m, "year": y, "text": t}, ensure_ascii=False) for d, m, y, t in NEWS) + '\n')
+    ev_json('news', "The week's news", "")
     # rules.txt: copied from the mod campaign001 if present
     rules = os.path.join(os.path.dirname(MODCAMP), '..', 'language', 'english', 'campaign', 'campaign001', 'rules.txt')
     if os.path.exists(rules): shutil.copy(rules, os.path.join(lang, 'rules.txt'))

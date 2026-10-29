@@ -1,0 +1,118 @@
+// Weekly news items (read by ModNews, shown each Monday for the past week). One JSON line per item.
+{"day": 8, "month": 12, "year": 1941, "text": "The United States and Britain declare war on Japan. Japanese troops land in Malaya and Thailand; Hong Kong, Guam, Wake and the Philippines are bombed."}
+{"day": 10, "month": 12, "year": 1941, "text": "HMS Prince of Wales and Repulse sunk by Japanese aircraft off Malaya. Japanese forces land on Luzon and seize Guam."}
+{"day": 11, "month": 12, "year": 1941, "text": "Germany and Italy declare war on the United States. Congress answers the same day."}
+{"day": 16, "month": 12, "year": 1941, "text": "Japanese troops land on British Borneo. In Russia the Red Army's winter counter-offensive drives the Germans back from Moscow."}
+{"day": 19, "month": 12, "year": 1941, "text": "Italian frogmen cripple the battleships Queen Elizabeth and Valiant at their moorings in Alexandria. Hitler takes personal command of the German Army."}
+{"day": 23, "month": 12, "year": 1941, "text": "Wake Island falls after fifteen days. Japanese forces land at Lingayen Gulf; General MacArthur declares Manila an open city."}
+{"day": 25, "month": 12, "year": 1941, "text": "Hong Kong surrenders on Christmas Day. Churchill is in Washington for the Arcadia conference."}
+{"day": 1, "month": 1, "year": 1942, "text": "Twenty-six nations sign the Declaration by United Nations in Washington, pledging to fight on to victory together."}
+{"day": 2, "month": 1, "year": 1942, "text": "Manila occupied. American and Filipino forces withdraw into the Bataan peninsula."}
+{"day": 11, "month": 1, "year": 1942, "text": "Japan declares war on the Netherlands and lands at Tarakan in Borneo and on Celebes. Rommel begins a new advance in Libya."}
+{"day": 20, "month": 1, "year": 1942, "text": "At Wannsee, Berlin, senior Nazi officials coordinate what they call the final solution of the Jewish question."}
+{"day": 23, "month": 1, "year": 1942, "text": "Rabaul falls to the Japanese South Seas Force. In the Macassar Strait American destroyers attack the Balikpapan invasion convoy by night."}
+{"day": 31, "month": 1, "year": 1942, "text": "The last British and Commonwealth troops cross the causeway from Johore to Singapore Island."}
+{"day": 12, "month": 2, "year": 1942, "text": "Scharnhorst, Gneisenau and Prinz Eugen run the English Channel from Brest to Germany in daylight."}
+{"day": 15, "month": 2, "year": 1942, "text": "Singapore surrenders: 80,000 British, Australian and Indian troops are taken prisoner in the largest capitulation in British history."}
+{"day": 19, "month": 2, "year": 1942, "text": "Japanese carrier aircraft raid Darwin, sinking eight ships. President Roosevelt signs the order interning Japanese Americans."}
+{"day": 27, "month": 2, "year": 1942, "text": "The ABDA fleet under Admiral Doorman is destroyed in the Battle of the Java Sea. HMS Exeter is lost two days later."}
+{"day": 1, "month": 3, "year": 1942, "text": "USS Houston and HMAS Perth sunk in the Sunda Strait. Japanese forces land on Java."}
+{"day": 8, "month": 3, "year": 1942, "text": "The Netherlands East Indies surrender. Rangoon falls and the Burma Road is cut. Japanese troops land at Lae and Salamaua in New Guinea."}
+{"day": 11, "month": 3, "year": 1942, "text": "General MacArthur leaves Corregidor by PT boat for Australia, promising: I shall return."}
+{"day": 28, "month": 3, "year": 1942, "text": "British commandos ram the old destroyer Campbeltown into the dock gates at St Nazaire, wrecking the only Atlantic dry dock able to take Tirpitz."}
+{"day": 5, "month": 4, "year": 1942, "text": "Nagumo's carriers raid Colombo; the cruisers Cornwall and Dorsetshire are sunk in the Indian Ocean."}
+{"day": 9, "month": 4, "year": 1942, "text": "Bataan surrenders; 75,000 prisoners begin the march to Camp O'Donnell. The carrier Hermes is sunk off Ceylon."}
+{"day": 18, "month": 4, "year": 1942, "text": "Sixteen Army B-25 bombers led by Colonel Doolittle take off from the carrier Hornet and bomb Tokyo."}
+{"day": 6, "month": 5, "year": 1942, "text": "Corregidor surrenders; the Philippines are lost. Allied troops land on Madagascar."}
+{"day": 8, "month": 5, "year": 1942, "text": "The Battle of the Coral Sea ends: Lexington is lost and Yorktown damaged; the Japanese lose the light carrier Shoho and turn back from Port Moresby."}
+{"day": 26, "month": 5, "year": 1942, "text": "Rommel attacks the Gazala line in Libya. Britain and the Soviet Union sign a twenty-year treaty of alliance."}
+{"day": 30, "month": 5, "year": 1942, "text": "RAF Bomber Command sends more than a thousand aircraft against Cologne in a single night."}
+{"day": 4, "month": 6, "year": 1942, "text": "The Battle of Midway: four Japanese fleet carriers are sunk by American carrier aircraft. Yorktown is lost to a submarine three days later."}
+{"day": 7, "month": 6, "year": 1942, "text": "Japanese forces occupy Attu and Kiska in the Aleutians."}
+{"day": 21, "month": 6, "year": 1942, "text": "Tobruk falls to Rommel with 33,000 prisoners. The Afrika Korps drives on towards Egypt."}
+{"day": 1, "month": 7, "year": 1942, "text": "The first battle of El Alamein begins; the Eighth Army holds the last line before Alexandria."}
+{"day": 4, "month": 7, "year": 1942, "text": "Convoy PQ 17 is ordered to scatter in the Barents Sea; two thirds of its merchant ships are lost. Sevastopol falls to the Germans."}
+{"day": 21, "month": 7, "year": 1942, "text": "Japanese troops land at Buna and Gona and begin the advance over the Kokoda Track towards Port Moresby."}
+{"day": 7, "month": 8, "year": 1942, "text": "US Marines land on Guadalcanal and Tulagi in the Solomons, the first Allied offensive of the Pacific war."}
+{"day": 9, "month": 8, "year": 1942, "text": "Four Allied cruisers are sunk off Savo Island in a night action. Gandhi and the Congress leaders are arrested in India."}
+{"day": 13, "month": 8, "year": 1942, "text": "Operation Pedestal: five of fourteen merchant ships reach Malta, the tanker Ohio among them, at the cost of the carrier Eagle and two cruisers."}
+{"day": 19, "month": 8, "year": 1942, "text": "The Dieppe raid: more than half of the 6,000 mostly Canadian troops are killed, wounded or captured."}
+{"day": 24, "month": 8, "year": 1942, "text": "Battle of the Eastern Solomons: the Japanese light carrier Ryujo is sunk; Enterprise is damaged."}
+{"day": 26, "month": 8, "year": 1942, "text": "Japanese forces land at Milne Bay in New Guinea and are driven back into the sea by Australian troops within two weeks."}
+{"day": 13, "month": 9, "year": 1942, "text": "The Battle of Stalingrad begins in the city's streets. Marines hold Edson's Ridge on Guadalcanal against a night assault."}
+{"day": 15, "month": 9, "year": 1942, "text": "The carrier Wasp is torpedoed and sunk by a Japanese submarine south of Guadalcanal."}
+{"day": 11, "month": 10, "year": 1942, "text": "Battle of Cape Esperance off Guadalcanal: a Japanese cruiser and destroyer are sunk in a night action."}
+{"day": 23, "month": 10, "year": 1942, "text": "The second battle of El Alamein opens with a barrage of a thousand guns."}
+{"day": 26, "month": 10, "year": 1942, "text": "Battle of the Santa Cruz Islands: Hornet is sunk, Enterprise damaged; two Japanese carriers are badly hit."}
+{"day": 4, "month": 11, "year": 1942, "text": "Rommel in full retreat from El Alamein. Church bells ring across Britain for the victory."}
+{"day": 8, "month": 11, "year": 1942, "text": "Operation Torch: Anglo-American forces land at Casablanca, Oran and Algiers in French North Africa."}
+{"day": 11, "month": 11, "year": 1942, "text": "German troops occupy Vichy France. The French fleet at Toulon scuttles itself on 27 November rather than fall into German hands."}
+{"day": 13, "month": 11, "year": 1942, "text": "Naval Battle of Guadalcanal: in two nights of close-range fighting the Japanese lose the battleships Hiei and Kirishima; the Americans lose two admirals and seven ships."}
+{"day": 19, "month": 11, "year": 1942, "text": "The Red Army launches Operation Uranus; within four days the German Sixth Army is encircled at Stalingrad."}
+{"day": 30, "month": 11, "year": 1942, "text": "Battle of Tassafaronga: Japanese destroyers torpedo four American cruisers off Guadalcanal."}
+{"day": 31, "month": 12, "year": 1942, "text": "Battle of the Barents Sea: German heavy ships fail to stop an Arctic convoy. Hitler orders the surface fleet scrapped; Raeder resigns."}
+{"day": 23, "month": 1, "year": 1943, "text": "The Eighth Army enters Tripoli. Roosevelt and Churchill meet at Casablanca and demand unconditional surrender."}
+{"day": 2, "month": 2, "year": 1943, "text": "The German Sixth Army surrenders at Stalingrad. Ninety thousand men go into captivity."}
+{"day": 8, "month": 2, "year": 1943, "text": "The Japanese complete the evacuation of Guadalcanal. The six-month campaign is over."}
+{"day": 3, "month": 3, "year": 1943, "text": "Battle of the Bismarck Sea: Allied aircraft destroy a Japanese convoy of eight transports and four destroyers bound for Lae."}
+{"day": 20, "month": 3, "year": 1943, "text": "The Battle of the Atlantic reaches its peak: convoys HX 229 and SC 122 lose 22 ships to U-boats in four days."}
+{"day": 18, "month": 4, "year": 1943, "text": "Admiral Yamamoto is killed when his aircraft is shot down over Bougainville by P-38 fighters."}
+{"day": 19, "month": 4, "year": 1943, "text": "The Warsaw Ghetto uprising begins."}
+{"day": 13, "month": 5, "year": 1943, "text": "Axis forces in Tunisia surrender; some 250,000 German and Italian troops are taken. North Africa is cleared."}
+{"day": 24, "month": 5, "year": 1943, "text": "Admiral Doenitz withdraws the U-boats from the North Atlantic after losing 41 boats in a month."}
+{"day": 30, "month": 5, "year": 1943, "text": "Attu is retaken by the US 7th Division after a three-week battle in the Aleutians."}
+{"day": 10, "month": 7, "year": 1943, "text": "Operation Husky: Allied forces land on Sicily."}
+{"day": 12, "month": 7, "year": 1943, "text": "The Battle of Kursk reaches its climax at Prokhorovka, the largest tank battle in history."}
+{"day": 25, "month": 7, "year": 1943, "text": "Mussolini is dismissed by the King and arrested. Marshal Badoglio forms a government."}
+{"day": 28, "month": 7, "year": 1943, "text": "Hamburg is devastated by firestorm after four nights of bombing."}
+{"day": 17, "month": 8, "year": 1943, "text": "Sicily falls as the last Axis troops cross to the mainland. Allied bombers strike Schweinfurt and Regensburg at heavy cost."}
+{"day": 3, "month": 9, "year": 1943, "text": "The Eighth Army crosses the Strait of Messina. Italy signs an armistice, announced on the 8th."}
+{"day": 9, "month": 9, "year": 1943, "text": "Allied landings at Salerno. The Italian fleet sails for Malta; the battleship Roma is sunk by a German glider bomb on the way."}
+{"day": 1, "month": 10, "year": 1943, "text": "Naples falls to the Fifth Army."}
+{"day": 13, "month": 10, "year": 1943, "text": "Italy declares war on Germany."}
+{"day": 1, "month": 11, "year": 1943, "text": "US Marines land at Empress Augusta Bay, Bougainville; a Japanese cruiser force is beaten off by night."}
+{"day": 20, "month": 11, "year": 1943, "text": "Marines land on Tarawa; Betio is taken in 76 hours at a cost of more than a thousand dead."}
+{"day": 28, "month": 11, "year": 1943, "text": "Roosevelt, Churchill and Stalin meet at Tehran and agree on the invasion of France for 1944."}
+{"day": 26, "month": 12, "year": 1943, "text": "Scharnhorst is sunk off the North Cape by Duke of York and her escorts while attacking an Arctic convoy."}
+{"day": 22, "month": 1, "year": 1944, "text": "Allied troops land at Anzio, south of Rome."}
+{"day": 27, "month": 1, "year": 1944, "text": "The siege of Leningrad is lifted after 872 days."}
+{"day": 31, "month": 1, "year": 1944, "text": "US forces land on Kwajalein and Roi-Namur in the Marshall Islands."}
+{"day": 17, "month": 2, "year": 1944, "text": "Operation Hailstone: carrier aircraft strike Truk, sinking some forty ships. Eniwetok is invaded."}
+{"day": 15, "month": 3, "year": 1944, "text": "The abbey of Monte Cassino is bombed; the third battle for the town begins."}
+{"day": 22, "month": 4, "year": 1944, "text": "MacArthur lands at Hollandia and Aitape in New Guinea, bypassing the Japanese 18th Army."}
+{"day": 4, "month": 6, "year": 1944, "text": "Rome falls to the Fifth Army. U-505 is captured intact in the Atlantic."}
+{"day": 6, "month": 6, "year": 1944, "text": "D-Day: Allied armies land in Normandy, put ashore by nearly 7,000 vessels."}
+{"day": 15, "month": 6, "year": 1944, "text": "US Marines land on Saipan. The first B-29 raid on Japan is flown from China."}
+{"day": 19, "month": 6, "year": 1944, "text": "Battle of the Philippine Sea: Japanese carrier air power is destroyed in the Great Marianas Turkey Shoot; Taiho, Shokaku and Hiyo are sunk."}
+{"day": 22, "month": 6, "year": 1944, "text": "Operation Bagration: the Red Army's summer offensive shatters Army Group Centre."}
+{"day": 9, "month": 7, "year": 1944, "text": "Saipan is secured. Admiral Nagumo and General Saito take their own lives."}
+{"day": 18, "month": 7, "year": 1944, "text": "General Tojo resigns as Prime Minister of Japan."}
+{"day": 20, "month": 7, "year": 1944, "text": "A bomb explodes in Hitler's headquarters at Rastenburg; the Fuehrer survives. Guam is invaded the next day."}
+{"day": 1, "month": 8, "year": 1944, "text": "The Warsaw uprising begins. Tinian falls to the Marines."}
+{"day": 15, "month": 8, "year": 1944, "text": "Operation Dragoon: Allied forces land in southern France."}
+{"day": 25, "month": 8, "year": 1944, "text": "Paris is liberated."}
+{"day": 15, "month": 9, "year": 1944, "text": "Marines land on Peleliu; the Army lands on Morotai."}
+{"day": 17, "month": 9, "year": 1944, "text": "Operation Market Garden: airborne landings at Eindhoven, Nijmegen and Arnhem."}
+{"day": 20, "month": 10, "year": 1944, "text": "General MacArthur wades ashore at Leyte: I have returned."}
+{"day": 25, "month": 10, "year": 1944, "text": "The Battle of Leyte Gulf: in three days the Japanese lose four carriers, three battleships including Musashi, and ten cruisers. The first kamikaze attacks sink the escort carrier St. Lo."}
+{"day": 12, "month": 11, "year": 1944, "text": "Tirpitz is capsized by RAF Lancasters with Tallboy bombs at Tromso."}
+{"day": 24, "month": 11, "year": 1944, "text": "B-29s from the Marianas bomb Tokyo for the first time."}
+{"day": 16, "month": 12, "year": 1944, "text": "The German Ardennes offensive opens: the Battle of the Bulge."}
+{"day": 9, "month": 1, "year": 1945, "text": "US forces land at Lingayen Gulf on Luzon."}
+{"day": 17, "month": 1, "year": 1945, "text": "Warsaw is liberated by the Red Army."}
+{"day": 4, "month": 2, "year": 1945, "text": "Roosevelt, Churchill and Stalin meet at Yalta. The battle for Manila begins."}
+{"day": 13, "month": 2, "year": 1945, "text": "Dresden is destroyed by bombing. Budapest falls to the Red Army."}
+{"day": 19, "month": 2, "year": 1945, "text": "Marines land on Iwo Jima; the flag is raised on Mount Suribachi on the 23rd."}
+{"day": 7, "month": 3, "year": 1945, "text": "US troops cross the Rhine at Remagen."}
+{"day": 9, "month": 3, "year": 1945, "text": "The great fire raid on Tokyo: more than 80,000 killed in a single night."}
+{"day": 1, "month": 4, "year": 1945, "text": "Operation Iceberg: the US Tenth Army lands on Okinawa."}
+{"day": 7, "month": 4, "year": 1945, "text": "Yamato, the largest battleship ever built, is sunk by carrier aircraft on a one-way sortie to Okinawa."}
+{"day": 12, "month": 4, "year": 1945, "text": "President Roosevelt dies at Warm Springs. Harry S. Truman is sworn in."}
+{"day": 28, "month": 4, "year": 1945, "text": "Mussolini is shot by partisans. Two days later Hitler kills himself in Berlin."}
+{"day": 8, "month": 5, "year": 1945, "text": "Germany surrenders unconditionally. VE Day is celebrated across the Allied world."}
+{"day": 22, "month": 6, "year": 1945, "text": "Organised resistance on Okinawa ends after 82 days."}
+{"day": 16, "month": 7, "year": 1945, "text": "The first atomic bomb is tested at Alamogordo, New Mexico. The Potsdam conference opens."}
+{"day": 30, "month": 7, "year": 1945, "text": "USS Indianapolis is sunk by a Japanese submarine after delivering atomic bomb parts to Tinian."}
+{"day": 6, "month": 8, "year": 1945, "text": "An atomic bomb destroys Hiroshima. Nagasaki follows on the 9th, the day the Soviet Union invades Manchuria."}
+{"day": 15, "month": 8, "year": 1945, "text": "Emperor Hirohito announces Japan's surrender. The war is over."}
+{"day": 2, "month": 9, "year": 1945, "text": "The Japanese surrender is signed aboard USS Missouri in Tokyo Bay."}

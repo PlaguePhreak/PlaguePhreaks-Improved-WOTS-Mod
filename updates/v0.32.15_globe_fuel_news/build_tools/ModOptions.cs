@@ -1,0 +1,840 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using UnityEngine;
+using UnityEngine.Events;
+using UnityEngine.UI;
+
+public static class ModOptions
+{
+	public const int Count = 21;
+
+	private const int INews = 20;
+
+	public const int LockedCount = 6;
+
+	private const int ICrew = 0;
+
+	private const int IVeteran = 1;
+
+	private const int IRescue = 2;
+
+	private const int ISupply = 3;
+
+	private const int IConvoy = 4;
+
+	private const int ISurvivors = 5;
+
+	private const int IMinimap = 6;
+
+	private const int IBadges = 7;
+
+	private const int ITFOverlay = 8;
+
+	private const int INotify = 9;
+
+	private const int IDark = 10;
+
+	private static readonly string[] keys;
+
+	private static readonly string[] names;
+
+	private static bool[] values;
+
+	private static bool loaded;
+
+	private static bool fromPause;
+
+	private static int pendingLoad;
+
+	private static readonly float[] darkTable;
+
+	private static readonly float[] stockTable;
+
+	private static Button loadBtn;
+
+	private static Button settingsBtn;
+
+	private static Button modBtn;
+
+	private static readonly Color gold;
+
+	private static readonly Color dark;
+
+	private static readonly Color lit;
+
+	private const float RowH = 34f;
+
+	private static GameObject panel;
+
+	private static RectTransform contentRect;
+
+	private static Font font;
+
+	private static int fontSize;
+
+	private static Text[] stateTexts;
+
+	private static Image[] stateBacks;
+
+	private static Text[] labelTexts;
+
+	private static Text noteText;
+
+	private static List<GameObject> savedObjs;
+
+	private static List<bool> savedStates;
+
+	private static Canvas savedCanvas;
+
+	private static int savedOrder;
+
+	public static bool Crew => Get(0);
+
+	public static bool Veteran => Get(1);
+
+	public static bool Rescue => Get(2);
+
+	public static bool Supply => Get(3);
+
+	public static bool Convoy => Get(4);
+
+	public static bool Survivors => Get(5);
+
+	public static bool Minimap => Get(6);
+
+	public static bool Badges => Get(7);
+
+	public static bool TFOverlay => Get(8);
+
+	public static bool Notify => Get(9);
+
+	public static bool DarkNights => Get(10);
+
+	public static bool EnemyAI => Get(18);
+
+	public static bool ScoutPopup => Get(19);
+
+	public static bool News => Get(20);
+
+	public static bool LogCategory(int cat)
+	{
+		if (!Get(9))
+		{
+			return false;
+		}
+		if (cat < 1 || cat > 7)
+		{
+			return true;
+		}
+		return Get(10 + cat);
+	}
+
+	public static bool Get(int i)
+	{
+		if (!loaded)
+		{
+			Load();
+		}
+		if (i < 6)
+		{
+			string text = CampaignLock();
+			if (text != null)
+			{
+				return text[i] == '1';
+			}
+		}
+		return values[i];
+	}
+
+	private static string CampaignLock()
+	{
+		try
+		{
+			CampaignManager instance = CampaignManager.instance;
+			if (instance == null || instance.campaignData == null || string.IsNullOrEmpty(instance.campaignData.campaignID))
+			{
+				return null;
+			}
+			CampaignData campaignData = instance.campaignData;
+			if (string.IsNullOrEmpty(campaignData.modLocked) || campaignData.modLocked.Length < 6)
+			{
+				char[] array = new char[6];
+				for (int i = 0; i < 6; i++)
+				{
+					array[i] = (values[i] ? '1' : '0');
+				}
+				campaignData.modLocked = new string(array);
+			}
+			return campaignData.modLocked;
+		}
+		catch
+		{
+			return null;
+		}
+	}
+
+	private static string FilePath()
+	{
+		return Path.Combine(Application.persistentDataPath, "modoptions.txt");
+	}
+
+	public static void Load()
+	{
+		loaded = true;
+		try
+		{
+			string path = FilePath();
+			if (!File.Exists(path))
+			{
+				return;
+			}
+			string[] array = File.ReadAllLines(path);
+			for (int i = 0; i < array.Length; i++)
+			{
+				int num = array[i].IndexOf('=');
+				if (num < 1)
+				{
+					continue;
+				}
+				string text = array[i].Substring(0, num).Trim();
+				string text2 = array[i].Substring(num + 1).Trim();
+				for (int j = 0; j < Count; j++)
+				{
+					if (keys[j] == text)
+					{
+						values[j] = text2 != "0";
+					}
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[MODOPT] load failed: " + ex.Message);
+		}
+	}
+
+	public static void Save()
+	{
+		try
+		{
+			List<string> list = new List<string>();
+			for (int i = 0; i < Count; i++)
+			{
+				list.Add(keys[i] + "=" + (values[i] ? "1" : "0"));
+			}
+			File.WriteAllLines(FilePath(), list.ToArray());
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[MODOPT] save failed: " + ex.Message);
+		}
+	}
+
+	public static void ApplyNights()
+	{
+		try
+		{
+			if (!(Config.instance == null))
+			{
+				bool flag = Get(10);
+				Config.instance.visibilityByHour = (float[])(flag ? darkTable : stockTable).Clone();
+				Config.instance.nightEncounterMaxRange = (flag ? 10f : 15f);
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[MODOPT] nights failed: " + ex.Message);
+		}
+	}
+
+	public static void BuildPauseButtons(PauseMenu pm)
+	{
+		try
+		{
+			if (!(pm == null) && !(pm.saveButton == null))
+			{
+				if (loadBtn == null || settingsBtn == null || modBtn == null)
+				{
+					loadBtn = Clone(pm.saveButton, "Load Game", AskLoad);
+					settingsBtn = Clone(pm.saveButton, "Settings", OpenGameSettings);
+					modBtn = Clone(pm.saveButton, "Mod Options", OpenPanelFromPause);
+					PlaceAfter(pm.saveButton, new Button[3] { loadBtn, settingsBtn, modBtn });
+				}
+				loadBtn.gameObject.SetActive(pm.saveButton.gameObject.activeSelf);
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[MODOPT] pause buttons failed: " + ex.ToString());
+		}
+	}
+
+	private static Button Clone(Button template, string label, UnityAction action)
+	{
+
+		GameObject gameObject = UnityEngine.Object.Instantiate(template.gameObject, template.transform.parent);
+		gameObject.name = "Mod " + label;
+		gameObject.SetActive(value: true);
+		Button component = gameObject.GetComponent<Button>();
+		component.onClick = new Button.ButtonClickedEvent();
+		component.onClick.AddListener(action);
+		Text[] componentsInChildren = gameObject.GetComponentsInChildren<Text>(includeInactive: true);
+		for (int i = 0; i < componentsInChildren.Length; i++)
+		{
+			componentsInChildren[i].text = label.ToUpper();
+		}
+		if (componentsInChildren.Length == 0)
+		{
+			Debug.LogError("[MODOPT] no Text found on the button to copy, the label could not be set");
+		}
+		return component;
+	}
+
+	private static void PlaceAfter(Button anchor, Button[] added)
+	{
+		Transform parent = anchor.transform.parent;
+		int siblingIndex = anchor.transform.GetSiblingIndex();
+		for (int i = 0; i < added.Length; i++)
+		{
+			added[i].transform.SetSiblingIndex(siblingIndex + 1 + i);
+		}
+		if ((UnityEngine.Object)(object)parent.GetComponent<LayoutGroup>() != null)
+		{
+			return;
+		}
+		List<RectTransform> list = new List<RectTransform>();
+		for (int j = 0; j < parent.childCount; j++)
+		{
+			Transform child = parent.GetChild(j);
+			if (child.GetComponent<Button>() != null)
+			{
+				list.Add(child.GetComponent<RectTransform>());
+			}
+		}
+		if (list.Count >= 3)
+		{
+			Vector2 anchoredPosition = list[0].anchoredPosition;
+			float num = list[1].anchoredPosition.y - anchoredPosition.y;
+			if (Mathf.Abs(num) < 1f)
+			{
+				num = (0f - list[0].rect.height) * 1.1f;
+			}
+			for (int k = 0; k < list.Count; k++)
+			{
+				list[k].anchoredPosition = new Vector2(anchoredPosition.x, anchoredPosition.y + num * (float)k);
+			}
+		}
+	}
+
+	private static void AskLoad()
+	{
+		PauseMenu.instance.OpenConfirmation(2);
+	}
+
+	public static void LoadFromPause()
+	{
+		pendingLoad = ((PauseMenu.instance.isStratMap || (EngagementData.instance != null && EngagementData.instance.isCampaignEngagement)) ? 1 : 2);
+		Time.timeScale = 1f;
+		Map.instance.ClearMap();
+		Utilities.ReloadMain();
+	}
+
+	private static void OpenGameSettings()
+	{
+		MenuSystem instance = MenuSystem.instance;
+		if (instance == null || instance.optionsInterface == null || fromPause)
+		{
+			return;
+		}
+		try
+		{
+			savedObjs = new List<GameObject>();
+			savedStates = new List<bool>();
+			Transform[] componentsInChildren = instance.GetComponentsInChildren<Transform>(includeInactive: true);
+			for (int i = 0; i < componentsInChildren.Length; i++)
+			{
+				savedObjs.Add(componentsInChildren[i].gameObject);
+				savedStates.Add(componentsInChildren[i].gameObject.activeSelf);
+			}
+			savedObjs.Add(PauseMenu.instance.gameObject);
+			savedStates.Add(PauseMenu.instance.gameObject.activeSelf);
+			fromPause = true;
+			PauseMenu.instance.gameObject.SetActive(value: false);
+			Transform transform = instance.optionsInterface.transform;
+			Transform transform2 = transform;
+			string text = string.Empty;
+			while (transform != null)
+			{
+				if (!transform.gameObject.activeSelf)
+				{
+					transform.gameObject.SetActive(value: true);
+				}
+				text = transform.name + "/" + text;
+				if (transform.parent == instance.transform)
+				{
+					transform2 = transform;
+				}
+				transform = transform.parent;
+			}
+			for (int j = 0; j < instance.transform.childCount; j++)
+			{
+				Transform child = instance.transform.GetChild(j);
+				if (child != transform2)
+				{
+					child.gameObject.SetActive(value: false);
+				}
+			}
+			instance.optionsInterface.SetActive(value: true);
+			instance.gameObject.SetActive(value: true);
+			savedCanvas = instance.optionsInterface.GetComponentInParent<Canvas>();
+			if (savedCanvas != null)
+			{
+				savedCanvas = savedCanvas.rootCanvas;
+				savedOrder = savedCanvas.sortingOrder;
+				if (savedOrder < 100)
+				{
+					savedCanvas.sortingOrder = 100;
+				}
+			}
+			Debug.Log("[MODOPT] options path " + text + " visible " + instance.optionsInterface.activeInHierarchy);
+			if (!instance.optionsInterface.activeInHierarchy)
+			{
+				RestoreScreens();
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[MODOPT] settings failed: " + ex.ToString());
+			RestoreScreens();
+		}
+	}
+
+	public static bool OnBack()
+	{
+		if (!fromPause)
+		{
+			return false;
+		}
+		try
+		{
+			RestoreScreens();
+		}
+		catch (Exception ex)
+		{
+			fromPause = false;
+			Debug.LogError("[MODOPT] back failed: " + ex.ToString());
+		}
+		return true;
+	}
+
+	public static void AfterMenuStart()
+	{
+		try
+		{
+			Load();
+			ApplyNights();
+			BuildMainMenuButton();
+			int num = pendingLoad;
+			pendingLoad = 0;
+			switch (num)
+			{
+			case 1:
+				MenuSystem.instance.NewCampaign(load: true);
+				break;
+			case 2:
+				MenuSystem.instance.OpenMission(training: false);
+				MenuSystem.instance.LoadSelection();
+				break;
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[MODOPT] menu start failed: " + ex.ToString());
+		}
+	}
+
+	private static void BuildMainMenuButton()
+	{
+		MenuSystem instance = MenuSystem.instance;
+		if (instance == null || instance.mainInterface == null)
+		{
+			return;
+		}
+		Button[] componentsInChildren = instance.mainInterface.GetComponentsInChildren<Button>(includeInactive: true);
+		if (componentsInChildren.Length == 0)
+		{
+			return;
+		}
+		Button button = componentsInChildren[componentsInChildren.Length - 1];
+		for (int i = 0; i < componentsInChildren.Length; i++)
+		{
+			Text componentInChildren = componentsInChildren[i].GetComponentInChildren<Text>(includeInactive: true);
+			if (componentInChildren != null && componentInChildren.text.ToUpper().Contains("OPTION"))
+			{
+				button = componentsInChildren[i];
+				break;
+			}
+		}
+		Button button2 = Clone(button, "Mod Options", OpenPanelFromMain);
+		PlaceAfter(button, new Button[1] { button2 });
+		ModVersion.Build();
+	}
+
+	private static void OpenPanelFromPause()
+	{
+		OpenPanel(modBtn);
+	}
+
+	private static void OpenPanelFromMain()
+	{
+		Button[] componentsInChildren = MenuSystem.instance.mainInterface.GetComponentsInChildren<Button>(includeInactive: true);
+		for (int i = 0; i < componentsInChildren.Length; i++)
+		{
+			if (componentsInChildren[i].gameObject.name == "Mod Mod Options")
+			{
+				OpenPanel(componentsInChildren[i]);
+				break;
+			}
+		}
+	}
+
+	private static void OpenPanel(Button from)
+	{
+		try
+		{
+			if (panel == null)
+			{
+				Canvas componentInParent = from.GetComponentInParent<Canvas>();
+				if (componentInParent == null)
+				{
+					Debug.LogError("[MODOPT] no canvas found for the panel");
+					return;
+				}
+				BuildPanel(componentInParent.rootCanvas.transform);
+			}
+			Load();
+			UpdateRows();
+			panel.transform.SetAsLastSibling();
+			panel.SetActive(value: true);
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[MODOPT] open panel failed: " + ex.ToString());
+		}
+	}
+
+	public static void Close()
+	{
+		if (panel != null)
+		{
+			panel.SetActive(value: false);
+		}
+	}
+
+	private static void Flip(int i)
+	{
+		if (i >= 6 || CampaignLock() == null)
+		{
+			values[i] = !values[i];
+			Save();
+			if (i == 10)
+			{
+				ApplyNights();
+			}
+			UpdateRows();
+		}
+	}
+
+	private static void UpdateRows()
+	{
+		bool flag = CampaignLock() != null;
+		for (int i = 0; i < Count; i++)
+		{
+			if (!(stateTexts[i] == null))
+			{
+				bool flag2 = Get(i);
+				bool flag3 = flag && i < 6;
+				stateTexts[i].text = (flag2 ? "ON" : "OFF");
+				stateTexts[i].color = (flag3 ? new Color(0.6f, 0.6f, 0.6f, 1f) : Color.white);
+				stateBacks[i].color = (flag3 ? new Color(0.25f, 0.25f, 0.25f, 1f) : (flag2 ? lit : dark));
+				labelTexts[i].text = names[i] + ((i < 6) ? " *" : string.Empty) + (flag3 ? "  (locked)" : string.Empty);
+				labelTexts[i].color = (flag3 ? new Color(0.6f, 0.6f, 0.6f, 1f) : Color.white);
+			}
+		}
+		if (noteText != null)
+		{
+			noteText.text = (flag ? "Settings marked (locked) cannot be changed during a campaign, because changing them can break a save. Change them from the main menu before you start a new campaign." : "Settings marked * are locked once a campaign has started, because changing them can break a save. Everything else can be changed at any time.");
+		}
+	}
+
+	private static void BuildPanel(Transform root)
+	{
+		font = null;
+		fontSize = 16;
+		if (TooltipManager.instance != null && TooltipManager.instance.toolTipText != null)
+		{
+			font = TooltipManager.instance.toolTipText.font;
+			fontSize = TooltipManager.instance.toolTipText.fontSize;
+		}
+		if (font == null)
+		{
+			font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+		}
+		RectTransform rectTransform = NewRect("ModOptionsPanel", root);
+		Stretch(rectTransform, 0f, 0f, 0f, 0f);
+		rectTransform.gameObject.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0.55f);
+		Canvas canvas = rectTransform.gameObject.AddComponent<Canvas>();
+		canvas.overrideSorting = true;
+		canvas.sortingOrder = 500;
+		rectTransform.gameObject.AddComponent<GraphicRaycaster>();
+		panel = rectTransform.gameObject;
+		RectTransform rectTransform2 = NewRect("Window", rectTransform);
+		rectTransform2.anchorMin = new Vector2(0.5f, 0.5f);
+		rectTransform2.anchorMax = new Vector2(0.5f, 0.5f);
+		rectTransform2.pivot = new Vector2(0.5f, 0.5f);
+		rectTransform2.sizeDelta = new Vector2(760f, 700f);
+		rectTransform2.gameObject.AddComponent<Image>().color = gold;
+		RectTransform rectTransform3 = NewRect("Back", rectTransform2);
+		Stretch(rectTransform3, 2f, 2f, 2f, 2f);
+		Image obj = rectTransform3.gameObject.AddComponent<Image>();
+		obj.color = dark;
+		obj.raycastTarget = false;
+		RectTransform rectTransform4 = NewRect("Title", rectTransform2);
+		rectTransform4.anchorMin = new Vector2(0f, 1f);
+		rectTransform4.anchorMax = new Vector2(1f, 1f);
+		rectTransform4.pivot = new Vector2(0.5f, 1f);
+		rectTransform4.anchoredPosition = new Vector2(0f, -10f);
+		rectTransform4.sizeDelta = new Vector2(-60f, 32f);
+		NewText(rectTransform4, fontSize + 6, TextAnchor.MiddleLeft, Color.white).text = "Mod Options";
+		RectTransform rectTransform5 = NewRect("Close", rectTransform2);
+		rectTransform5.anchorMin = new Vector2(1f, 1f);
+		rectTransform5.anchorMax = new Vector2(1f, 1f);
+		rectTransform5.pivot = new Vector2(1f, 1f);
+		rectTransform5.anchoredPosition = new Vector2(-8f, -8f);
+		rectTransform5.sizeDelta = new Vector2(32f, 32f);
+		Image image2 = rectTransform5.gameObject.AddComponent<Image>();
+		image2.color = gold;
+		Button button = rectTransform5.gameObject.AddComponent<Button>();
+		button.targetGraphic = image2;
+		button.onClick.AddListener(Close);
+		RectTransform rectTransform6 = NewRect("Back", rectTransform5);
+		Stretch(rectTransform6, 2f, 2f, 2f, 2f);
+		Image obj2 = rectTransform6.gameObject.AddComponent<Image>();
+		obj2.color = dark;
+		obj2.raycastTarget = false;
+		RectTransform rt = NewRect("Text", rectTransform5);
+		Stretch(rt, 0f, 0f, 0f, 0f);
+		NewText(rt, fontSize + 2, TextAnchor.MiddleCenter, Color.white).text = "X";
+		RectTransform rectTransform7 = NewRect("Note", rectTransform2);
+		rectTransform7.anchorMin = new Vector2(0f, 1f);
+		rectTransform7.anchorMax = new Vector2(1f, 1f);
+		rectTransform7.pivot = new Vector2(0.5f, 1f);
+		rectTransform7.anchoredPosition = new Vector2(0f, -48f);
+		rectTransform7.sizeDelta = new Vector2(-30f, 46f);
+		noteText = NewText(rectTransform7, fontSize - 3, TextAnchor.UpperLeft, new Color(0.8f, 0.83f, 0.87f, 1f));
+		RectTransform rectTransform8 = NewRect("Scroll", rectTransform2);
+		Stretch(rectTransform8, 12f, 12f, 12f, 104f);
+		ScrollRect scrollRect = rectTransform8.gameObject.AddComponent<ScrollRect>();
+		RectTransform rectTransform9 = NewRect("Viewport", rectTransform8);
+		Stretch(rectTransform9, 0f, 0f, 16f, 0f);
+		rectTransform9.gameObject.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0f);
+		rectTransform9.gameObject.AddComponent<RectMask2D>();
+		contentRect = NewRect("Content", rectTransform9);
+		contentRect.anchorMin = new Vector2(0f, 1f);
+		contentRect.anchorMax = new Vector2(1f, 1f);
+		contentRect.pivot = new Vector2(0.5f, 1f);
+		contentRect.anchoredPosition = Vector2.zero;
+		RectTransform rectTransform10 = NewRect("Scrollbar", rectTransform8);
+		rectTransform10.anchorMin = new Vector2(1f, 0f);
+		rectTransform10.anchorMax = new Vector2(1f, 1f);
+		rectTransform10.pivot = new Vector2(1f, 1f);
+		rectTransform10.anchoredPosition = Vector2.zero;
+		rectTransform10.sizeDelta = new Vector2(12f, 0f);
+		rectTransform10.gameObject.AddComponent<Image>().color = new Color(0.03f, 0.06f, 0.1f, 1f);
+		RectTransform rectTransform11 = NewRect("Sliding Area", rectTransform10);
+		Stretch(rectTransform11, 0f, 0f, 0f, 0f);
+		RectTransform rectTransform12 = NewRect("Handle", rectTransform11);
+		rectTransform12.sizeDelta = Vector2.zero;
+		Image image3 = rectTransform12.gameObject.AddComponent<Image>();
+		image3.color = gold;
+		Scrollbar scrollbar = rectTransform10.gameObject.AddComponent<Scrollbar>();
+		scrollbar.direction = Scrollbar.Direction.BottomToTop;
+		scrollbar.handleRect = rectTransform12;
+		scrollbar.targetGraphic = image3;
+		scrollRect.content = contentRect;
+		scrollRect.viewport = rectTransform9;
+		scrollRect.horizontal = false;
+		scrollRect.vertical = true;
+		scrollRect.movementType = ScrollRect.MovementType.Clamped;
+		scrollRect.scrollSensitivity = 30f;
+		scrollRect.verticalScrollbar = scrollbar;
+		scrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
+		int row = 0;
+		row = AddHeader(row, "Campaign features (* locked once a campaign has started)");
+		for (int i = 0; i < 6; i++)
+		{
+			row = AddSetting(row, i);
+		}
+		row = AddHeader(row, "Interface features");
+		for (int j = 6; j < 11; j++)
+		{
+			row = AddSetting(row, j);
+		}
+		row = AddHeader(row, "Notification log: what goes into the log (the pop-ups still appear)");
+		for (int k = 11; k < 18; k++)
+		{
+			row = AddSetting(row, k);
+		}
+		row = AddHeader(row, "Enemy AI (strength follows the difficulty settings)");
+		for (int l = 18; l < 20; l++)
+		{
+			row = AddSetting(row, l);
+		}
+		row = AddHeader(row, "World campaigns");
+		row = AddSetting(row, 20);
+		contentRect.sizeDelta = new Vector2(0f, (float)row * 34f);
+		panel.SetActive(value: false);
+	}
+
+	private static int AddHeader(int row, string text)
+	{
+		RectTransform rectTransform = NewRect("Header", contentRect);
+		rectTransform.anchorMin = new Vector2(0f, 1f);
+		rectTransform.anchorMax = new Vector2(1f, 1f);
+		rectTransform.pivot = new Vector2(0.5f, 1f);
+		rectTransform.anchoredPosition = new Vector2(0f, (0f - (float)row) * 34f);
+		rectTransform.sizeDelta = new Vector2(0f, 34f);
+		NewText(rectTransform, fontSize, TextAnchor.LowerLeft, gold).text = text;
+		return row + 1;
+	}
+
+	private static int AddSetting(int row, int index)
+	{
+		RectTransform rectTransform = NewRect("Row " + keys[index], contentRect);
+		rectTransform.anchorMin = new Vector2(0f, 1f);
+		rectTransform.anchorMax = new Vector2(1f, 1f);
+		rectTransform.pivot = new Vector2(0.5f, 1f);
+		rectTransform.anchoredPosition = new Vector2(0f, (0f - (float)row) * 34f);
+		rectTransform.sizeDelta = new Vector2(0f, 34f);
+		Image image2 = rectTransform.gameObject.AddComponent<Image>();
+		image2.color = ((row % 2 == 0) ? new Color(1f, 1f, 1f, 0.05f) : new Color(1f, 1f, 1f, 0f));
+		Button button = rectTransform.gameObject.AddComponent<Button>();
+		button.targetGraphic = image2;
+		int captured = index;
+		button.onClick.AddListener(delegate
+		{
+			Flip(captured);
+		});
+		RectTransform rt = NewRect("Label", rectTransform);
+		Stretch(rt, 12f, 2f, 90f, 2f);
+		labelTexts[index] = NewText(rt, fontSize, TextAnchor.MiddleLeft, Color.white);
+		labelTexts[index].horizontalOverflow = HorizontalWrapMode.Overflow;
+		RectTransform rectTransform2 = NewRect("State", rectTransform);
+		rectTransform2.anchorMin = new Vector2(1f, 0.5f);
+		rectTransform2.anchorMax = new Vector2(1f, 0.5f);
+		rectTransform2.pivot = new Vector2(1f, 0.5f);
+		rectTransform2.anchoredPosition = new Vector2(-6f, 0f);
+		rectTransform2.sizeDelta = new Vector2(64f, 26f);
+		stateBacks[index] = rectTransform2.gameObject.AddComponent<Image>();
+		stateBacks[index].color = lit;
+		stateBacks[index].raycastTarget = false;
+		RectTransform rt2 = NewRect("Text", rectTransform2);
+		Stretch(rt2, 0f, 0f, 0f, 0f);
+		stateTexts[index] = NewText(rt2, fontSize, TextAnchor.MiddleCenter, Color.white);
+		return row + 1;
+	}
+
+	private static RectTransform NewRect(string name, Transform parent)
+	{
+		GameObject gameObject = new GameObject(name, typeof(RectTransform));
+		gameObject.transform.SetParent(parent, worldPositionStays: false);
+		return gameObject.GetComponent<RectTransform>();
+	}
+
+	private static void Stretch(RectTransform rt, float left, float bottom, float right, float top)
+	{
+		rt.anchorMin = Vector2.zero;
+		rt.anchorMax = Vector2.one;
+		rt.offsetMin = new Vector2(left, bottom);
+		rt.offsetMax = new Vector2(0f - right, 0f - top);
+	}
+
+	private static Text NewText(RectTransform rt, int size, TextAnchor anchor, Color colour)
+	{
+		Text text = rt.gameObject.AddComponent<Text>();
+		text.font = font;
+		text.fontSize = size;
+		text.alignment = anchor;
+		text.color = colour;
+		text.supportRichText = false;
+		text.horizontalOverflow = HorizontalWrapMode.Wrap;
+		text.verticalOverflow = VerticalWrapMode.Truncate;
+		text.raycastTarget = false;
+		return text;
+	}
+
+	static ModOptions()
+	{
+		keys = new string[21]
+		{
+			"crew", "veteran", "rescue", "supply", "convoy", "survivors", "minimap", "badges", "tfoverlay", "notify",
+			"darknights", "log_contacts", "log_battles", "log_fleet", "log_air", "log_supply", "log_admiralty", "log_other", "enemyai", "scoutpopup",
+			"news"
+		};
+		names = new string[21]
+		{
+			"Crew system (crew numbers, losses, experience)", "Veteran crews (experience from real fights)", "Rescue missions on the campaign map", "Troop supply upkeep", "Admiralty supply convoy event", "Survivors event (random sinkings)", "Minimap upgrades (torpedo tracks, smoke, rings)", "Group numbers on the roster", "Task force overlay (fuel barrel button, F11)", "Notification log (bell button and Messages window)",
+			"Darker nights", "Contacts", "Battles", "Fleet", "Air", "Supply", "Admiralty", "Other", "Enemy AI rework (scouts, smarter enemy on the map and in battle)", "Enemy scout reports pop-up",
+			"Weekly news pop-up (campaigns with a news file, Monday mornings)"
+		};
+		values = new bool[21]
+		{
+			true, true, true, true, true, true, true, true, true, true,
+			true, true, true, true, true, true, true, true, true, true,
+			true
+		};
+		darkTable = new float[24]
+		{
+			0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 0.45f, 0.65f, 0.8f, 0.9f, 1f,
+			1f, 1f, 1f, 1f, 1f, 1f, 0.9f, 0.8f, 0.65f, 0.45f,
+			0.25f, 0.25f, 0.25f, 0.25f
+		};
+		stockTable = new float[24]
+		{
+			0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.6f, 0.7f, 0.8f, 0.9f, 1f,
+			1f, 1f, 1f, 1f, 1f, 1f, 0.9f, 0.8f, 0.7f, 0.6f,
+			0.5f, 0.5f, 0.5f, 0.5f
+		};
+		gold = new Color(0.72f, 0.58f, 0.3f, 1f);
+		dark = new Color(0.07f, 0.12f, 0.19f, 0.97f);
+		lit = new Color(0.5f, 0.3f, 0.08f, 0.95f);
+		fontSize = 16;
+		stateTexts = new Text[Count];
+		stateBacks = new Image[Count];
+		labelTexts = new Text[Count];
+	}
+
+	private static void RestoreScreens()
+	{
+		fromPause = false;
+		if (savedObjs != null)
+		{
+			for (int i = 0; i < savedObjs.Count; i++)
+			{
+				if (savedObjs[i] != null)
+				{
+					savedObjs[i].SetActive(savedStates[i]);
+				}
+			}
+		}
+		if (savedCanvas != null)
+		{
+			savedCanvas.sortingOrder = savedOrder;
+		}
+		savedObjs = null;
+		savedStates = null;
+		savedCanvas = null;
+		PauseMenu.instance.gameObject.SetActive(value: true);
+	}
+}

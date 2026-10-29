@@ -1,0 +1,247 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+using WorldMapStrategyKit;
+
+public static class ModHistory
+{
+	public class HistoryEvent
+	{
+		public string id = string.Empty;
+
+		public int day;
+
+		public int month;
+
+		public int year;
+
+		public string location = string.Empty;
+
+		public int ifOwner = -1;
+
+		public string check = "none";
+
+		public float rangeKm = 500f;
+
+		public int minCount = 1;
+
+		public string passEvent = string.Empty;
+
+		public string failEvent = string.Empty;
+
+		public int passOwner = -1;
+
+		public int failOwner = -1;
+
+		public int passTroops;
+
+		public int failTroops;
+
+		public int passCP;
+
+		public int failCP;
+
+		public string warnEvent = string.Empty;
+
+		public int warnDays = 7;
+	}
+
+	private static string loadedFor;
+
+	private static List<HistoryEvent> events = new List<HistoryEvent>();
+
+	private static DateTime lastDay = DateTime.MinValue;
+
+	public static void Daily()
+	{
+		try
+		{
+			CampaignManager instance = CampaignManager.instance;
+			string campaignID = instance.campaignData.campaignID;
+			if (loadedFor != campaignID)
+			{
+				Load(campaignID);
+				lastDay = DateTime.MinValue;
+			}
+			if (events.Count == 0)
+			{
+				return;
+			}
+			DateTime date = CampaignInterface.instance.dateTime.Date;
+			if (lastDay == DateTime.MinValue || date <= lastDay || (date - lastDay).TotalDays > 7.0)
+			{
+				lastDay = date.AddDays(-1.0);
+			}
+			List<string> list = new List<string>();
+			for (int i = 0; i < events.Count; i++)
+			{
+				HistoryEvent historyEvent = events[i];
+				DateTime dateTime = new DateTime(historyEvent.year, historyEvent.month, historyEvent.day);
+				DateTime dateTime2 = dateTime.AddDays(-historyEvent.warnDays);
+				if (!string.IsNullOrEmpty(historyEvent.warnEvent) && dateTime2 > lastDay && dateTime2 <= date && StillPossible(historyEvent))
+				{
+					Debug.Log("[HISTORY] " + historyEvent.id + " warning, " + historyEvent.warnDays + " days to go");
+					list.Add(historyEvent.warnEvent);
+				}
+				if (dateTime > lastDay && dateTime <= date)
+				{
+					string text = Run(historyEvent);
+					if (!string.IsNullOrEmpty(text))
+					{
+						list.Add(text);
+					}
+				}
+			}
+			lastDay = date;
+			Show(list);
+		}
+		catch (Exception ex)
+		{
+			Debug.Log("[HISTORY] error " + ex.Message + " " + ex.StackTrace);
+		}
+	}
+
+	private static void Load(string campaignID)
+	{
+		loadedFor = campaignID;
+		events.Clear();
+		string text = "campaign/" + campaignID + "/history.txt";
+		if (!Utilities.DoesGameFileExist(text))
+		{
+			return;
+		}
+		string[] array = AssetLoader.instance.ImportText(text);
+		if (array == null)
+		{
+			return;
+		}
+		for (int i = 0; i < array.Length; i++)
+		{
+			string text2 = array[i].Trim();
+			if (text2.Length != 0 && !text2.StartsWith("//"))
+			{
+				HistoryEvent historyEvent = new HistoryEvent();
+				JsonUtility.FromJsonOverwrite(text2, historyEvent);
+				events.Add(historyEvent);
+			}
+		}
+		Debug.Log("[HISTORY] " + events.Count + " historical events loaded for " + campaignID);
+	}
+
+	private static bool StillPossible(HistoryEvent e)
+	{
+		MapLocation mapLocation = (string.IsNullOrEmpty(e.location) ? null : CampaignManager.instance.GetMapLocationObject(e.location));
+		return mapLocation == null || e.ifOwner < 0 || mapLocation.currentFaction == e.ifOwner;
+	}
+
+	private static string Run(HistoryEvent e)
+	{
+		CampaignManager instance = CampaignManager.instance;
+		MapLocation mapLocation = (string.IsNullOrEmpty(e.location) ? null : instance.GetMapLocationObject(e.location));
+		if (mapLocation != null && e.ifOwner >= 0 && mapLocation.currentFaction != e.ifOwner)
+		{
+			Debug.Log("[HISTORY] " + e.id + " skipped, " + e.location + " belongs to side " + mapLocation.currentFaction);
+			return null;
+		}
+		bool flag = true;
+		int num = 0;
+		if (mapLocation != null && e.check != "none")
+		{
+			num = CountPlayerShips(mapLocation, e.check == "carriers", e.rangeKm);
+			flag = num >= e.minCount;
+		}
+		Debug.Log("[HISTORY] " + e.id + " " + (flag ? "PASS" : "FAIL") + " (" + e.check + " within " + e.rangeKm + " km: " + num + ", need " + e.minCount + ")");
+		int num2 = (flag ? e.passOwner : e.failOwner);
+		int troops = (flag ? e.passTroops : e.failTroops);
+		int num3 = (flag ? e.passCP : e.failCP);
+		if (mapLocation != null && num2 >= 0 && num2 != mapLocation.currentFaction)
+		{
+			SetOwner(mapLocation, num2, troops);
+		}
+		if (num3 != 0)
+		{
+			instance.campaignData.commandPoints[0] = Mathf.Max(0, instance.campaignData.commandPoints[0] + num3);
+		}
+		return flag ? e.passEvent : e.failEvent;
+	}
+
+	private static int CountPlayerShips(MapLocation loc, bool carriersOnly, float rangeKm)
+	{
+		CampaignManager instance = CampaignManager.instance;
+		Vector2 b = ((loc.gameObjectAnimator != null) ? loc.gameObjectAnimator.currentMap2DLocation : loc.locationPosition);
+		int num = 0;
+		for (int i = 0; i < instance.playerMobile.Count; i++)
+		{
+			GameObjectAnimator gameObjectAnimator = instance.playerMobile[i];
+			if (gameObjectAnimator == null || gameObjectAnimator.mobileMapObject == null || gameObjectAnimator.mobileMapObject.type != 0)
+			{
+				continue;
+			}
+			MobileMapObject mobileMapObject = gameObjectAnimator.mobileMapObject;
+			if (instance.GetDistanceInMetresBetweenMapObjects(gameObjectAnimator.currentMap2DLocation, b) / 1000f > rangeKm)
+			{
+				continue;
+			}
+			for (int j = 0; j < mobileMapObject.unitPrefabs.Count; j++)
+			{
+				if (!EngagementManager.instance.unitDataDictionary.TryGetValue(mobileMapObject.unitPrefabs[j], out var value))
+				{
+					continue;
+				}
+				UnitSubType unitSubtype = value.unitSubtype;
+				if (carriersOnly)
+				{
+					if (unitSubtype == UnitSubType.Aircraft_Carrier || unitSubtype == UnitSubType.Light_Carrier)
+					{
+						num++;
+					}
+				}
+				else if (unitSubtype != UnitSubType.Merchant && unitSubtype != UnitSubType.Oiler)
+				{
+					num++;
+				}
+			}
+		}
+		return num;
+	}
+
+	private static void SetOwner(MapLocation loc, int faction, int troops)
+	{
+		CampaignInterface.instance.SetFireToLocation(loc, isOn: false);
+		for (int i = 0; i < 2; i++)
+		{
+			loc.troops[i] = 0;
+			loc.supplies[i] = 0;
+			loc.engineering[i] = 0;
+			loc.fuel[i] = 0;
+		}
+		loc.currentFaction = faction;
+		if (faction < 2)
+		{
+			loc.troops[faction] = troops;
+			loc.supplies[faction] = troops * 2;
+		}
+		loc.GetComponentInChildren<SpriteRenderer>().color = CampaignInterface.instance.factionColours[faction];
+		CampaignAI.instance.CheckUnsafeLocations(loc);
+		Debug.Log("[HISTORY] " + loc.locationName + " now belongs to side " + faction + " with " + troops + " troops");
+	}
+
+	private static void Show(List<string> names)
+	{
+		if (names.Count == 0)
+		{
+			return;
+		}
+		CampaignEvent.instance.CreateEvent(names[0]);
+		for (int i = 1; i < names.Count; i++)
+		{
+			string[] array = AssetLoader.instance.ImportText("language/campaign/" + CampaignManager.instance.campaignData.campaignID + "/event/" + names[i] + ".txt");
+			if (array != null)
+			{
+				CampaignEventData campaignEventData = new CampaignEventData();
+				JsonUtility.FromJsonOverwrite(array[0], campaignEventData);
+				CampaignEvent.instance.contentText.text = CampaignEvent.instance.contentText.text + "\n\n" + campaignEventData.content;
+			}
+		}
+	}
+}

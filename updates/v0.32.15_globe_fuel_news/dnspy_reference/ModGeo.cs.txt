@@ -1,0 +1,199 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+using WorldMapStrategyKit;
+
+public static class ModGeo
+{
+	public static bool On = true;
+
+	public static float MinCos = 0.1f;
+
+	public static float JoinRadiusMetres = 110000f;
+
+	public static float ZoneRadiusUnits = 11000f;
+
+	public const float PxPerDeg = 240f;
+
+	public const int WorldPx = 86400;
+
+	public const int DemTilesX = 24;
+
+	private static string logged;
+
+	public static float EngagementSize()
+	{
+		return On ? (ZoneRadiusUnits * 0.02f) : 100f;
+	}
+
+	private static CampaignData Data()
+	{
+		if (!On || CampaignManager.instance == null)
+		{
+			return null;
+		}
+		CampaignData campaignData = CampaignManager.instance.campaignData;
+		if (campaignData == null || campaignData.mapOriginXY == null || campaignData.mapOriginXY.Length < 2 || campaignData.mapPixelWidth <= 0 || campaignData.mapWidthMetres <= 0f)
+		{
+			return null;
+		}
+		if ((object)logged != campaignData.campaignID && CampaignManager.instance.landMapLocations != null && CampaignManager.instance.landMapLocations.Count > 1)
+		{
+			logged = campaignData.campaignID;
+			Report(campaignData);
+		}
+		return campaignData;
+	}
+
+	public static double Lat(CampaignData d, float y)
+	{
+		return ((double)d.mapOriginXY[1] + ((double)y + 0.5) * (double)d.mapPixelWidth * 0.5) / 240.0 - 90.0;
+	}
+
+	public static double Lon(CampaignData d, float x)
+	{
+		double num = ((double)d.mapOriginXY[0] + ((double)x + 0.5) * (double)d.mapPixelWidth) / 240.0;
+		num %= 360.0;
+		if (num < 0.0)
+		{
+			num += 360.0;
+		}
+		return num;
+	}
+
+	public static float Cos(Vector2 p)
+	{
+		CampaignData campaignData = Data();
+		if (campaignData == null)
+		{
+			return 1f;
+		}
+		return Mathf.Max(MinCos, (float)Math.Cos(Lat(campaignData, p.y) * Math.PI / 180.0));
+	}
+
+	public static float Flat(Vector2 a, Vector2 b)
+	{
+		a.y /= 2f;
+		b.y /= 2f;
+		return Vector2.Distance(a, b) * CampaignManager.instance.campaignData.mapWidthMetres;
+	}
+
+	public static float Metres(Vector2 a, Vector2 b)
+	{
+		CampaignData campaignData = Data();
+		if (campaignData == null)
+		{
+			return Flat(a, b);
+		}
+		double num = Radius(campaignData);
+		double num2 = Math.PI / 180.0;
+		double num3 = Lat(campaignData, a.y) * num2;
+		double num4 = Lat(campaignData, b.y) * num2;
+		double num5 = (double)((b.x - a.x) * (float)campaignData.mapPixelWidth / 240f) * num2;
+		double num6 = Math.Sin((num4 - num3) * 0.5);
+		double num7 = Math.Sin(num5 * 0.5);
+		double num8 = num6 * num6 + Math.Cos(num3) * Math.Cos(num4) * num7 * num7;
+		if (num8 > 1.0)
+		{
+			num8 = 1.0;
+		}
+		return (float)(2.0 * num * Math.Asin(Math.Sqrt(num8)));
+	}
+
+	public static double Radius(CampaignData d)
+	{
+		double num = d.mapWidthMetres / (float)d.mapPixelWidth;
+		return num * 240.0 * 180.0 / Math.PI;
+	}
+
+	public static Vector2 Battle(Vector2 offset, GameObjectAnimator centre)
+	{
+		if (centre == null)
+		{
+			return offset;
+		}
+		offset.x *= Cos(centre.currentMap2DLocation);
+		return offset;
+	}
+
+	public static int[] WrapPixel(int[] px)
+	{
+		if (px != null && px.Length != 0)
+		{
+			px[0] %= 86400;
+			if (px[0] < 0)
+			{
+				px[0] += 86400;
+			}
+		}
+		return px;
+	}
+
+	public static int WrapTile(int x)
+	{
+		x %= 24;
+		if (x < 0)
+		{
+			x += 24;
+		}
+		return x;
+	}
+
+	public static void Radii()
+	{
+		if (Data() == null || MapRadii.instance == null)
+		{
+			return;
+		}
+		List<MapLocation> landMapLocations = CampaignManager.instance.landMapLocations;
+		List<MeshRenderer> mapRadiiMeshRenderers = MapRadii.instance.mapRadiiMeshRenderers;
+		if (landMapLocations == null || mapRadiiMeshRenderers == null || landMapLocations.Count == 0)
+		{
+			return;
+		}
+		for (int i = 0; i < mapRadiiMeshRenderers.Count; i++)
+		{
+			if (!(mapRadiiMeshRenderers[i] == null))
+			{
+				MapLocation mapLocation = landMapLocations[i % landMapLocations.Count];
+				if (!(mapLocation == null))
+				{
+					Transform transform = mapRadiiMeshRenderers[i].transform;
+					Vector3 localScale = transform.localScale;
+					localScale.x = localScale.y / Cos(mapLocation.locationPosition);
+					transform.localScale = localScale;
+				}
+			}
+		}
+	}
+
+	private static void Report(CampaignData d)
+	{
+		try
+		{
+			string text = "[GEO] " + d.campaignID + " map: lat " + Lat(d, -0.5f).ToString("0.0") + " to " + Lat(d, 0.5f).ToString("0.0") + ", lon " + Lon(d, -0.5f).ToString("0.0") + "E to " + Lon(d, 0.5f).ToString("0.0") + "E, earth radius " + (Radius(d) / 1000.0).ToString("0") + " km";
+			List<MapLocation> landMapLocations = CampaignManager.instance.landMapLocations;
+			if (landMapLocations != null)
+			{
+				int num = 0;
+				int num2 = 0;
+				while (num2 + 1 < landMapLocations.Count && num < 4)
+				{
+					MapLocation mapLocation = landMapLocations[num2];
+					MapLocation mapLocation2 = landMapLocations[landMapLocations.Count - 1 - num2];
+					if (!(mapLocation == null) && !(mapLocation2 == null) && !(mapLocation == mapLocation2))
+					{
+						text = text + "\n[GEO] " + mapLocation.locationName + " (" + Lat(d, mapLocation.locationPosition.y).ToString("0.0") + ") to " + mapLocation2.locationName + " (" + Lat(d, mapLocation2.locationPosition.y).ToString("0.0") + "): flat " + (Flat(mapLocation.locationPosition, mapLocation2.locationPosition) / 1000f).ToString("0") + " km, round " + (Metres(mapLocation.locationPosition, mapLocation2.locationPosition) / 1000f).ToString("0") + " km";
+					}
+					num2 += 2;
+					num++;
+				}
+			}
+			Debug.Log(text);
+		}
+		catch (Exception ex)
+		{
+			Debug.Log("[GEO] report failed: " + ex.Message);
+		}
+	}
+}
