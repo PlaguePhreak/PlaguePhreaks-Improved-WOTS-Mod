@@ -1,0 +1,19 @@
+ONE NEW LINE IN ModCampaignRescue.Update
+
+Right-click ModCampaignRescue > Update > Edit Method (C#)...
+Add the line marked NEW just above "ModCrew.CampaignRescueCheck();" (inside the try):
+
+	private void Update()
+	{
+		try
+		{
+			if (Input.GetKeyDown(KeyCode.F4))
+			{
+				ModCrew.CreateSurvivorEvent();
+				ModCrew.RebuildMapMarkers();
+			}
+			ModAirRescue.CampaignTick();      // NEW
+			ModCrew.CampaignRescueCheck();
+		}
+		...
+Compile.
