@@ -1,0 +1,391 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using UnityEngine;
+
+// 0.31 enemy AI rework: the difficulty table every other ModEnemy class reads.
+// Campaign knobs follow the Campaign difficulty picked at campaign start, battle knobs follow Combat difficulty.
+// Steps: 0 Very Easy, 1 Easy, 2 Balanced, 3 Hard, 4 Elite.
+// Any knob can be overridden in StreamingAssets\override\ModAssets\enemy_ai.txt, one line each: name = v0, v1, v2, v3, v4
+public static class ModEnemyAI
+{
+	public static readonly string[] StepNames = new string[5] { "Very Easy", "Easy", "Balanced", "Hard", "Elite" };
+
+	// ---- campaign map (Campaign difficulty) ----
+	public static float[] ScoutSorties = new float[5] { 1f, 2f, 4f, 6f, 8f };
+	public static float[] ScoutLegKm = new float[5] { 300f, 350f, 450f, 550f, 650f };
+	public static float[] ReportDelayMin = new float[5] { 60f, 45f, 30f, 20f, 10f };
+	public static float[] ShadowMin = new float[5] { 0f, 10f, 30f, 30f, 45f };
+	public static float[] ShipScoutPct = new float[5] { 1.2f, 1.5f, 3f, 5f, 8f };
+	public static float[] InterceptChance = new float[5] { 0.8f, 0.85f, 0.9f, 1f, 1f };
+	public static float[] InterceptCP = new float[5] { 100f, 95f, 85f, 70f, 55f };
+	public static float[] DecisionWait = new float[5] { 0.95f, 0.9f, 0.8f, 0.6f, 0.5f };
+	public static float[] ChaseKm = new float[5] { 220f, 240f, 270f, 300f, 350f };
+	public static float[] ChaseRatio = new float[5] { 0.75f, 0.72f, 0.68f, 0.6f, 0.5f };
+	public static float[] SpotMemory = new float[5] { 1.17f, 1.33f, 1.67f, 2f, 2.67f };
+	public static float[] LastKnownHours = new float[5] { 0f, 6f, 12f, 12f, 18f };
+	public static float[] StrikeWaitMin = new float[5] { 10f, 15f, 20f, 30f, 30f };
+
+	// ---- battle (Combat difficulty) ----
+	public static float[] RethinkSec = new float[5] { 110f, 100f, 90f, 70f, 50f };
+	public static float[] RunSpeed = new float[5] { 0.52f, 0.5f, 0.45f, 0.4f, 0.35f };
+	public static float[] RunOnCell = new float[5] { 1f, 1f, 0f, 0f, 0f };
+	public static float[] MaxOnTarget = new float[5] { 4f, 3f, 3f, 3f, 2f };
+	public static float[] FinishCripples = new float[5] { 0f, 0f, 0f, 1f, 1f };
+	public static float[] SmokeRetreat = new float[5] { 1f, 1f, 1f, 1f, 1f };
+	public static float[] ScoutStaySec = new float[5] { 120f, 240f, -1f, -1f, -1f };
+	public static float[] PilotUpPct = new float[5] { 5f, 10f, 15f, 25f, 50f };
+	public static float[] PressOn = new float[5] { 0f, 0f, 0f, 1f, 1f };
+	public static float[] RetreatRatio = new float[5] { 0.5f, 0.5f, 0.5f, 0.5f, 0.33f };
+
+	private static bool loaded;
+
+	public static bool On
+	{
+		get
+		{
+			try
+			{
+				return ModOptions.EnemyAI;
+			}
+			catch
+			{
+				return true;
+			}
+		}
+	}
+
+	public static int CampaignStep()
+	{
+		Load();
+		try
+		{
+			return Mathf.Clamp(LanguageManager.instance.campaignDifficultyDropdown.value, 0, 4);
+		}
+		catch
+		{
+			return 2;
+		}
+	}
+
+	public static int CombatStep()
+	{
+		Load();
+		try
+		{
+			return Mathf.Clamp(LanguageManager.instance.combatDifficultyDropdown.value, 0, 4);
+		}
+		catch
+		{
+			return 2;
+		}
+	}
+
+	public static float C(float[] knob)
+	{
+		return knob[CampaignStep()];
+	}
+
+	public static float B(float[] knob)
+	{
+		return knob[CombatStep()];
+	}
+
+	public static void Log(string text)
+	{
+		Debug.Log((object)("[EAI] " + text));
+	}
+
+	public static string FilePath()
+	{
+		return Path.Combine(Path.Combine(ModAssetPath.Override(), "ModAssets"), "enemy_ai.txt");
+	}
+
+	public static void Load()
+	{
+		if (loaded)
+		{
+			return;
+		}
+		loaded = true;
+		try
+		{
+			string path = FilePath();
+			if (!File.Exists(path))
+			{
+				Log("no " + path + ", using the built-in table");
+				return;
+			}
+			Dictionary<string, float[]> dictionary = Knobs();
+			string[] array = File.ReadAllLines(path);
+			int num = 0;
+			for (int i = 0; i < array.Length; i++)
+			{
+				string text = array[i].Trim();
+				int num2 = text.IndexOf('#');
+				if (num2 >= 0)
+				{
+					text = text.Substring(0, num2).Trim();
+				}
+				int num3 = text.IndexOf('=');
+				if (num3 < 1)
+				{
+					continue;
+				}
+				string key = text.Substring(0, num3).Trim();
+				if (!dictionary.TryGetValue(key, out var value))
+				{
+					Log("enemy_ai.txt: unknown name '" + key + "'");
+					continue;
+				}
+				string[] array2 = text.Substring(num3 + 1).Split(new char[1] { ',' });
+				for (int j = 0; j < array2.Length && j < 5; j++)
+				{
+					if (float.TryParse(array2[j].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var result))
+					{
+						value[j] = result;
+					}
+				}
+				num++;
+			}
+			Log("enemy_ai.txt read, " + num + " values changed");
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError((object)("[EAI] enemy_ai.txt failed: " + ex.Message));
+		}
+	}
+
+	private static Dictionary<string, float[]> Knobs()
+	{
+		Dictionary<string, float[]> dictionary = new Dictionary<string, float[]>();
+		dictionary["ScoutSorties"] = ScoutSorties;
+		dictionary["ScoutLegKm"] = ScoutLegKm;
+		dictionary["ReportDelayMin"] = ReportDelayMin;
+		dictionary["ShadowMin"] = ShadowMin;
+		dictionary["ShipScoutPct"] = ShipScoutPct;
+		dictionary["InterceptChance"] = InterceptChance;
+		dictionary["InterceptCP"] = InterceptCP;
+		dictionary["DecisionWait"] = DecisionWait;
+		dictionary["ChaseKm"] = ChaseKm;
+		dictionary["ChaseRatio"] = ChaseRatio;
+		dictionary["SpotMemory"] = SpotMemory;
+		dictionary["LastKnownHours"] = LastKnownHours;
+		dictionary["StrikeWaitMin"] = StrikeWaitMin;
+		dictionary["RethinkSec"] = RethinkSec;
+		dictionary["RunSpeed"] = RunSpeed;
+		dictionary["RunOnCell"] = RunOnCell;
+		dictionary["MaxOnTarget"] = MaxOnTarget;
+		dictionary["FinishCripples"] = FinishCripples;
+		dictionary["SmokeRetreat"] = SmokeRetreat;
+		dictionary["ScoutStaySec"] = ScoutStaySec;
+		dictionary["PilotUpPct"] = PilotUpPct;
+		dictionary["PressOn"] = PressOn;
+		dictionary["RetreatRatio"] = RetreatRatio;
+		return dictionary;
+	}
+
+	// ---- search plane types (fly searches only, never sent on strikes) ----
+	public static readonly string[] SearchTypes = new string[7] { "h6k", "emily", "j1n1", "pby", "pbm", "sunderland", "pby5" };
+
+	public static bool IsSearchType(string prefab)
+	{
+		if (string.IsNullOrEmpty(prefab))
+		{
+			return false;
+		}
+		for (int i = 0; i < SearchTypes.Length; i++)
+		{
+			if (SearchTypes[i] == prefab)
+			{
+				return true;
+			}
+		}
+		try
+		{
+			if (EngagementManager.instance.unitDataDictionary.TryGetValue(prefab, out var value) && value.unitSubtype == UnitSubType.Scout)
+			{
+				return true;
+			}
+		}
+		catch
+		{
+		}
+		return false;
+	}
+
+	// ---- new airfield aircraft, set when a NEW campaign is created (hook: end of CampaignData.InitialiseCampaignData) ----
+	private static readonly string[] JapanTypes = new string[8] { "zero", "val", "kate", "betty", "g3m", "h6k", "emily", "j1n1" };
+
+	private static readonly int[] JapanNumbers = new int[40]
+	{
+		4, 0, 0, 0, 0, 2, 0, 0,
+		4, 4, 0, 0, 0, 2, 0, 1,
+		8, 4, 4, 0, 4, 2, 0, 1,
+		8, 8, 4, 4, 4, 3, 1, 2,
+		10, 8, 6, 8, 4, 3, 2, 2
+	};
+
+	private static readonly int[] JapanReplenish = new int[8] { 4, 4, 4, 4, 2, 1, 1, 1 };
+
+	private static readonly string[] UsaTypes = new string[7] { "wildcat", "p400", "dauntless", "avenger", "b26b", "b17f", "pby" };
+
+	private static readonly int[] UsaNumbers = new int[35]
+	{
+		4, 0, 0, 0, 0, 0, 2,
+		4, 2, 4, 0, 0, 0, 2,
+		8, 2, 4, 4, 0, 0, 2,
+		8, 4, 6, 4, 4, 0, 3,
+		10, 4, 8, 8, 4, 8, 3
+	};
+
+	private static readonly int[] UsaReplenish = new int[7] { 4, 2, 4, 4, 2, 2, 1 };
+
+	public static bool newCampaignAir;
+
+	public static void AfterInit(CampaignData data, string filePath)
+	{
+		try
+		{
+			if (!string.IsNullOrEmpty(filePath) || data == null || !On)
+			{
+				return;
+			}
+			string[] array = null;
+			int[] array2 = null;
+			int[] array3 = null;
+			string nation = null;
+			if (data.nations1 != null && data.nations1.Contains("japan"))
+			{
+				array = JapanTypes;
+				array2 = JapanNumbers;
+				array3 = JapanReplenish;
+				nation = "japan";
+			}
+			else if (data.nations1 != null && data.nations1.Contains("usa"))
+			{
+				array = UsaTypes;
+				array2 = UsaNumbers;
+				array3 = UsaReplenish;
+				nation = "usa";
+			}
+			if (array == null)
+			{
+				Log("new campaign: enemy nations not Japan or USA, airfield aircraft left as they are");
+				return;
+			}
+			List<int> list = new List<int>();
+			for (int i = 0; i < array.Length; i++)
+			{
+				if (Ready(array[i], nation))
+				{
+					list.Add(i);
+				}
+				else
+				{
+					Log("new campaign: aircraft '" + array[i] + "' is not installed, left out");
+				}
+			}
+			if (list.Count < 2 || list[0] != 0)
+			{
+				Log("new campaign: too few new aircraft installed, airfield aircraft left as they are");
+				return;
+			}
+			List<string> list2 = new List<string>();
+			List<int> list3 = new List<int>();
+			int[] array4 = new int[Mathf.Max(8, list.Count)];
+			for (int j = 0; j < list.Count; j++)
+			{
+				list2.Add(array[list[j]]);
+				array4[j] = array3[list[j]];
+			}
+			for (int k = 0; k < 5; k++)
+			{
+				for (int l = 0; l < list.Count; l++)
+				{
+					list3.Add(array2[k * array.Length + list[l]]);
+				}
+			}
+			data.aircraft1 = list2;
+			data.aircraft1Numbers = list3;
+			data.replenishDailyAircraft1 = array4;
+			newCampaignAir = true;
+			Log("new campaign: enemy airfields now fly " + string.Join(", ", list2.ToArray()));
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError((object)("[EAI] AfterInit failed: " + ex));
+		}
+	}
+
+	// the campaign's airUnits.txt may not list the new types: add an entry copied from a stock one so replenish costs work
+	private static bool Ready(string type, string nation)
+	{
+		EngagementManager instance = EngagementManager.instance;
+		if (!instance.unitDataDictionary.ContainsKey(type))
+		{
+			return false;
+		}
+		if (instance.unitAirDictionary.ContainsKey(type))
+		{
+			return true;
+		}
+		UnitListData unitListData = new UnitListData();
+		unitListData.nation = nation;
+		unitListData.unitID = type;
+		unitListData.isAvailable = false;
+		unitListData.available = new List<int> { 1, 1, 1930 };
+		unitListData.payloadDisplayNames = new List<string>();
+		unitListData.payloadIndexes = new List<string>();
+		unitListData.endurance = new List<float>();
+		unitListData.notAtLocation = new List<string>();
+		unitListData.orderAvailable = new List<int>();
+		unitListData.sunkYield = new int[5];
+		unitListData.resourceCost = new int[4] { 0, 12, 3, 4 };
+		instance.unitAirDictionary[type] = unitListData;
+		Log("added '" + type + "' to the campaign aircraft list (not in its airUnits.txt)");
+		return true;
+	}
+
+	// first campaign tick after a new campaign: bases with their own enemy aircraft list switch to the new one
+	public static void FixLocations()
+	{
+		if (!newCampaignAir)
+		{
+			return;
+		}
+		newCampaignAir = false;
+		try
+		{
+			CampaignManager instance = CampaignManager.instance;
+			int num = 0;
+			for (int i = 0; i < instance.landMapLocations.Count; i++)
+			{
+				MapLocation mapLocation = instance.landMapLocations[i];
+				if (mapLocation.aircraft1 != null && mapLocation.aircraft1.Count > 0)
+				{
+					mapLocation.aircraft1 = new List<string>();
+					mapLocation.aircraft1Numbers = new List<int>();
+					mapLocation.replenishDailyAircraft1 = new int[0];
+					num++;
+				}
+				if (mapLocation.currentFaction == 1)
+				{
+					int count = instance.GetAirTypesAtLocation(mapLocation).Count;
+					mapLocation.inTheAir = new List<int>();
+					mapLocation.destroyedAir = new List<int>();
+					for (int j = 0; j < count; j++)
+					{
+						mapLocation.inTheAir.Add(0);
+						mapLocation.destroyedAir.Add(0);
+					}
+				}
+			}
+			Log("new campaign: enemy bases set to the new aircraft list (" + num + " had their own list)");
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError((object)("[EAI] FixLocations failed: " + ex));
+		}
+	}
+}

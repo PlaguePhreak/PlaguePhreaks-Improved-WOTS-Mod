@@ -1,0 +1,51 @@
+# Enemy AI numbers for 0.31. Put this file in Wars on the Sea_Data\StreamingAssets\override\ModAssets\enemy_ai.txt
+# Each line: name = Very Easy, Easy, Balanced, Hard, Elite. Lines starting with # are ignored.
+# Campaign numbers follow Campaign Difficulty, battle numbers follow Combat Difficulty.
+# Delete a line (or the whole file) to use the built-in value. Values below are the built-in ones.
+
+# scout planes sent out per day by each enemy air base that has a search plane
+ScoutSorties = 1, 2, 4, 6, 8
+# how far a scout flies out (km)
+ScoutLegKm = 300, 350, 450, 550, 650
+# minutes before a scout's sighting reaches enemy HQ (scout must survive)
+ReportDelayMin = 60, 45, 30, 20, 10
+# minutes a scout stays near your force after spotting it (0 = goes home)
+ShadowMin = 0, 10, 30, 30, 45
+# enemy ship floatplane launch chance, percent per check (stock 0.9)
+ShipScoutPct = 1.2, 1.5, 3, 5, 8
+# daily chance the planner tries an intercept (stock 0.8)
+InterceptChance = 0.8, 0.85, 0.9, 1, 1
+# command points needed for an intercept group (stock 100)
+InterceptCP = 100, 95, 85, 70, 55
+# multiplier on the planner's waiting days (lower = acts sooner)
+DecisionWait = 0.95, 0.9, 0.8, 0.6, 0.5
+# how far aggressive enemy groups chase a sighting (stock 200)
+ChaseKm = 220, 240, 270, 300, 350
+# tonnage ratio the enemy needs before it chases (stock 0.75, lower = braver)
+ChaseRatio = 0.75, 0.72, 0.68, 0.6, 0.5
+# how long the enemy keeps tracking a sighting, x stock
+SpotMemory = 1.17, 1.33, 1.67, 2, 2.67
+# hours the enemy searches your last known position after losing you
+LastKnownHours = 0, 6, 12, 12, 18
+# most minutes a near base waits so all strike waves arrive together
+StrikeWaitMin = 10, 15, 20, 30, 30
+# battle: seconds between enemy retreat/target rethinks (stock 120)
+RethinkSec = 110, 100, 90, 70, 50
+# battle: a ship retreats when its speed drops below this share (stock 0.55)
+RunSpeed = 0.52, 0.5, 0.45, 0.4, 0.35
+# battle: 1 = retreat after any destroyed part (stock), 0 = keep fighting
+RunOnCell = 1, 1, 0, 0, 0
+# battle: most enemy ships firing at one of yours (spreads fire)
+MaxOnTarget = 4, 3, 3, 3, 2
+# battle: 1 = pick crippled ships first
+FinishCripples = 0, 0, 0, 1, 1
+# battle: 1 = retreating ships lay smoke
+SmokeRetreat = 1, 1, 1, 1, 1
+# battle: seconds enemy scout planes stay over you (-1 = until shot down)
+ScoutStaySec = 120, 240, -1, -1, -1
+# percent of enemy pilots one rank better
+PilotUpPct = 5, 10, 15, 25, 50
+# reserved, not used yet
+PressOn = 0, 0, 0, 1, 1
+# battle: from Hard up, the whole enemy force only runs below this strength ratio
+RetreatRatio = 0.5, 0.5, 0.5, 0.5, 0.33

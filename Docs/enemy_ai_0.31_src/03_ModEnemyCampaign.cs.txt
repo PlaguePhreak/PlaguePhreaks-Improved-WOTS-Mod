@@ -1,0 +1,417 @@
+using System;
+using System.Collections.Generic;
+using System.Reflection;
+using UnityEngine;
+using WorldMapStrategyKit;
+
+// 0.31 enemy campaign map AI: the planner's numbers by Campaign difficulty, the reaction to a sighting
+// (coordinated strikes timed to arrive together), last known position searches, and the Elite follow-up.
+public static class ModEnemyCampaign
+{
+	public class Strike
+	{
+		public MapLocation airfield;
+
+		public MobileMapObject carrier;
+
+		public MobileMapObject target;
+
+		public DateTime due;
+	}
+
+	public class LastSeen
+	{
+		public MobileMapObject mmo;
+
+		public Vector2 pos;
+
+		public DateTime until;
+	}
+
+	public static List<Strike> strikes = new List<Strike>();
+
+	public static List<LastSeen> lastKnown = new List<LastSeen>();
+
+	private static Dictionary<MobileMapObject, Vector2> seen = new Dictionary<MobileMapObject, Vector2>();
+
+	private static Dictionary<GameObjectAnimator, DateTime> hunters = new Dictionary<GameObjectAnimator, DateTime>();
+
+	private static MethodInfo groupStrike;
+
+	private const float StrikeKmPerMin = 5f;
+
+	private static int lastHour = -1;
+
+	private static DateTime Now => CampaignInterface.instance.dateTime;
+
+	public static void Reset()
+	{
+		strikes.Clear();
+		lastKnown.Clear();
+		seen.Clear();
+		hunters.Clear();
+	}
+
+	// ---- number hooks (each returns the stock value when the rework is off) ----
+	public static float InterceptChance(float stock)
+	{
+		return ModEnemyAI.On ? ModEnemyAI.C(ModEnemyAI.InterceptChance) : stock;
+	}
+
+	public static int InterceptCP(int stock)
+	{
+		return ModEnemyAI.On ? Mathf.RoundToInt(ModEnemyAI.C(ModEnemyAI.InterceptCP)) : stock;
+	}
+
+	public static int ScaleDelay(int days)
+	{
+		if (!ModEnemyAI.On || days <= 0)
+		{
+			return days;
+		}
+		int num = Mathf.RoundToInt((float)days * ModEnemyAI.C(ModEnemyAI.DecisionWait));
+		int num2 = ((ModEnemyAI.CampaignStep() <= 2) ? 1 : 0);
+		return Mathf.Max(num2, num);
+	}
+
+	public static float ChaseRange(float stock)
+	{
+		return ModEnemyAI.On ? (ModEnemyAI.C(ModEnemyAI.ChaseKm) * 1000f) : stock;
+	}
+
+	public static float ChaseRatio(float stock)
+	{
+		return ModEnemyAI.On ? ModEnemyAI.C(ModEnemyAI.ChaseRatio) : stock;
+	}
+
+	// hook: end of Utilities.GetMaxSpotTime. Only our groups seen by the enemy are remembered longer.
+	public static float SpotTime(float stock, MobileMapObject mmo)
+	{
+		if (!ModEnemyAI.On || (UnityEngine.Object)(object)mmo == (UnityEngine.Object)null || mmo.currentFaction != 0)
+		{
+			return stock;
+		}
+		return stock * ModEnemyAI.C(ModEnemyAI.SpotMemory);
+	}
+
+	// ---- hook: CampaignAI.OnPlayerSpotted first line ----
+	public static bool OnSpotted(MobileMapObject mmo)
+	{
+		GameObjectAnimator gameObjectAnimator = ModEnemyScouts.TakeObserver();
+		if (!ModEnemyAI.On)
+		{
+			return false;
+		}
+		try
+		{
+			if (EngagementManager.instance.unitDataDictionary[mmo.unitPrefabs[0]].unitSubtype == UnitSubType.Scout || (mmo.type == 1 && mmo.unitPrefabs.Count < 2) || CampaignManager.instance.IsMobileSubOnly(mmo))
+			{
+				return true;
+			}
+			if ((UnityEngine.Object)(object)gameObjectAnimator != (UnityEngine.Object)null && ModEnemyAI.C(ModEnemyAI.ReportDelayMin) > 0f)
+			{
+				ModEnemyScouts.QueueReport(gameObjectAnimator, mmo);
+				return true;
+			}
+			React(mmo);
+			return true;
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError((object)("[EAI] OnSpotted failed, stock reaction used: " + ex));
+			return false;
+		}
+	}
+
+	// the enemy's reaction to a confirmed sighting
+	public static void React(MobileMapObject mmo)
+	{
+		CampaignManager instance = CampaignManager.instance;
+		instance.CheckAISeaIntercept();
+		if (ModEnemyAI.CampaignStep() >= 4 && mmo.type == 0)
+		{
+			Hunt(mmo.gameObjectAnimator.currentMap2DLocation, "Elite follow-up on " + mmo.mobileName);
+		}
+		if (!instance.campaignData.airOpHours[Now.Hour])
+		{
+			return;
+		}
+		List<MapLocation> airfieldsInRange = CampaignAI.instance.GetAirfieldsInRange(mmo.gameObjectAnimator, instance.campaignData.enemyAirfieldStrikeRange);
+		List<MobileMapObject> carriersInRange = CampaignAI.instance.GetCarriersInRange(mmo.gameObjectAnimator, instance.campaignData.enemyCarrierStrikeRange);
+		List<float> list = new List<float>();
+		float num = 0f;
+		for (int i = 0; i < airfieldsInRange.Count; i++)
+		{
+			float num2 = instance.GetDistanceInMetresBetweenMapObjects(airfieldsInRange[i].gameObjectAnimator.currentMap2DLocation, mmo.gameObjectAnimator.currentMap2DLocation) / 1000f;
+			list.Add(num2);
+			num = Mathf.Max(num, num2);
+		}
+		List<float> list2 = new List<float>();
+		for (int j = 0; j < carriersInRange.Count; j++)
+		{
+			float num3 = instance.GetDistanceInMetresBetweenMapObjects(carriersInRange[j].gameObjectAnimator.currentMap2DLocation, mmo.gameObjectAnimator.currentMap2DLocation) / 1000f;
+			list2.Add(num3);
+			num = Mathf.Max(num, num3);
+		}
+		float num4 = ModEnemyAI.C(ModEnemyAI.StrikeWaitMin);
+		int num5 = 0;
+		int num6 = 0;
+		for (int k = 0; k < airfieldsInRange.Count; k++)
+		{
+			float num7 = Mathf.Min(num4, (num - list[k]) / StrikeKmPerMin);
+			Queue(airfieldsInRange[k], null, mmo, num7);
+			if (num7 >= 1f)
+			{
+				num6++;
+			}
+			num5++;
+		}
+		for (int l = 0; l < carriersInRange.Count; l++)
+		{
+			float num8 = Mathf.Min(num4, (num - list2[l]) / StrikeKmPerMin);
+			Queue(null, carriersInRange[l], mmo, num8);
+			if (num8 >= 1f)
+			{
+				num6++;
+			}
+			num5++;
+		}
+		if (num5 > 0)
+		{
+			ModEnemyAI.Log("strike on " + mmo.mobileName + ": " + num5 + " launchers, " + num6 + " wait so the waves arrive together (max " + num4 + " min)");
+		}
+		Launch();
+	}
+
+	private static void Queue(MapLocation ml, MobileMapObject carrier, MobileMapObject target, float waitMin)
+	{
+		for (int i = 0; i < strikes.Count; i++)
+		{
+			if (strikes[i].target == target && strikes[i].airfield == ml && strikes[i].carrier == carrier)
+			{
+				return;
+			}
+		}
+		Strike strike = new Strike();
+		strike.airfield = ml;
+		strike.carrier = carrier;
+		strike.target = target;
+		strike.due = Now.AddMinutes(Mathf.Max(0f, waitMin));
+		strikes.Add(strike);
+	}
+
+	// called each campaign minute from ModEnemyScouts.Tick
+	public static void Tick()
+	{
+		Launch();
+		int num = Now.Hour + Now.DayOfYear * 24;
+		if (num != lastHour)
+		{
+			lastHour = num;
+			Hour();
+		}
+	}
+
+	private static void Launch()
+	{
+		CampaignManager instance = CampaignManager.instance;
+		for (int num = strikes.Count - 1; num >= 0; num--)
+		{
+			Strike strike = strikes[num];
+			if (Now < strike.due)
+			{
+				continue;
+			}
+			strikes.RemoveAt(num);
+			MobileMapObject target = strike.target;
+			if ((UnityEngine.Object)(object)target == (UnityEngine.Object)null || (UnityEngine.Object)(object)target.gameObjectAnimator == (UnityEngine.Object)null || !instance.playerMobile.Contains(target.gameObjectAnimator) || !instance.campaignData.airOpHours[Now.Hour])
+			{
+				continue;
+			}
+			try
+			{
+				if ((UnityEngine.Object)(object)strike.airfield != (UnityEngine.Object)null)
+				{
+					if (strike.airfield.currentFaction == 1 && strike.airfield.aircraftCooldown <= 0f)
+					{
+						CampaignAI.instance.CheckAirfieldLaunchAirstrikeOnMobile(strike.airfield, target);
+					}
+				}
+				else if ((UnityEngine.Object)(object)strike.carrier != (UnityEngine.Object)null && (UnityEngine.Object)(object)strike.carrier.gameObjectAnimator != (UnityEngine.Object)null && instance.otherMobile.Contains(strike.carrier.gameObjectAnimator))
+				{
+					CampaignAI.instance.CheckCarrierLaunchAirstrikeOnMobile(strike.carrier, target);
+				}
+			}
+			catch (Exception ex)
+			{
+				Debug.LogError((object)("[EAI] strike launch failed: " + ex.Message));
+			}
+		}
+	}
+
+	// ---- hook: CampaignAI.CheckAirfieldLaunchAirstrikeOnMobile first line ----
+	// Same as the stock method, but search planes stay home.
+	public static bool AirfieldStrike(MapLocation ml, MobileMapObject mmoTarget)
+	{
+		if (!ModEnemyAI.On)
+		{
+			return false;
+		}
+		try
+		{
+			if (ml.aircraftCooldown > 0f)
+			{
+				return true;
+			}
+			CampaignManager instance = CampaignManager.instance;
+			int num = ml.airfieldLevel - 1;
+			List<string> airTypesAtLocation = instance.GetAirTypesAtLocation(ml);
+			List<int> airNumbersAtLocation = instance.GetAirNumbersAtLocation(ml);
+			List<GameObjectAnimator> list = new List<GameObjectAnimator>();
+			if (ml.destroyedAir == null || ml.destroyedAir.Count != airTypesAtLocation.Count)
+			{
+				ml.destroyedAir = new List<int>();
+				for (int i = 0; i < airTypesAtLocation.Count; i++)
+				{
+					ml.destroyedAir.Add(0);
+				}
+			}
+			if (ml.inTheAir == null || ml.inTheAir.Count != airTypesAtLocation.Count)
+			{
+				ml.inTheAir = instance.GetAircraftInTheAir(ml);
+			}
+			int count = airTypesAtLocation.Count;
+			if (mmoTarget.type == 1)
+			{
+				if (ml.inTheAir[0] == 0 && airNumbersAtLocation[num * count] > 0)
+				{
+					list.Add(CampaignAI.instance.CreateAIMobileAir(ml.gameObjectAnimator, airTypesAtLocation[0], airNumbersAtLocation[num * count] - ml.destroyedAir[0], mmoTarget.gameObjectAnimator.currentMap2DLocation));
+					ml.inTheAir[0] = airNumbersAtLocation[num * count] - ml.destroyedAir[0];
+				}
+			}
+			else
+			{
+				for (int num2 = count - 1; num2 > 0; num2--)
+				{
+					if (!ModEnemyAI.IsSearchType(airTypesAtLocation[num2]) && ml.inTheAir[num2] == 0 && airNumbersAtLocation[num * count + num2] > 0)
+					{
+						list.Add(CampaignAI.instance.CreateAIMobileAir(ml.gameObjectAnimator, airTypesAtLocation[num2], airNumbersAtLocation[num * count + num2] - ml.destroyedAir[num2], mmoTarget.gameObjectAnimator.currentMap2DLocation));
+						ml.inTheAir[num2] = airNumbersAtLocation[num * count + num2] - ml.destroyedAir[num2];
+					}
+				}
+			}
+			list.RemoveAll((GameObjectAnimator g) => (UnityEngine.Object)(object)g == (UnityEngine.Object)null);
+			if (list.Count > 0)
+			{
+				if (groupStrike == null)
+				{
+					groupStrike = typeof(CampaignAI).GetMethod("GroupAIAirStrike", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+				}
+				groupStrike.Invoke(CampaignAI.instance, new object[1] { list });
+				ModEnemyAI.Log(ml.locationName + " launches " + list.Count + " groups at " + mmoTarget.mobileName);
+			}
+			return true;
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError((object)("[EAI] airfield strike failed, stock used: " + ex.Message));
+			return false;
+		}
+	}
+
+	// ---- hourly: last known position searches ----
+	private static void Hour()
+	{
+		CampaignManager instance = CampaignManager.instance;
+		float num = ModEnemyAI.C(ModEnemyAI.LastKnownHours);
+		List<MobileMapObject> list = new List<MobileMapObject>(seen.Keys);
+		for (int i = 0; i < list.Count; i++)
+		{
+			MobileMapObject mobileMapObject = list[i];
+			if (!instance.spottedContacts.Contains(mobileMapObject))
+			{
+				Vector2 pos = seen[mobileMapObject];
+				seen.Remove(mobileMapObject);
+				if (num > 0f && (UnityEngine.Object)(object)mobileMapObject != (UnityEngine.Object)null && (UnityEngine.Object)(object)mobileMapObject.gameObjectAnimator != (UnityEngine.Object)null && instance.playerMobile.Contains(mobileMapObject.gameObjectAnimator) && Worth(mobileMapObject))
+				{
+					LastSeen lastSeen = new LastSeen();
+					lastSeen.mmo = mobileMapObject;
+					lastSeen.pos = pos;
+					lastSeen.until = Now.AddHours(num);
+					lastKnown.Add(lastSeen);
+					ModEnemyAI.Log("lost contact with " + mobileMapObject.mobileName + ", searching its last known position for " + num + " h");
+					Hunt(pos, "last known position of " + mobileMapObject.mobileName);
+				}
+			}
+		}
+		for (int j = 0; j < instance.spottedContacts.Count; j++)
+		{
+			MobileMapObject mobileMapObject2 = instance.spottedContacts[j];
+			if ((UnityEngine.Object)(object)mobileMapObject2 != (UnityEngine.Object)null && mobileMapObject2.currentFaction == 0 && mobileMapObject2.type == 0 && (UnityEngine.Object)(object)mobileMapObject2.gameObjectAnimator != (UnityEngine.Object)null)
+			{
+				seen[mobileMapObject2] = mobileMapObject2.gameObjectAnimator.currentMap2DLocation;
+			}
+		}
+		lastKnown.RemoveAll((LastSeen l) => Now > l.until);
+		List<GameObjectAnimator> list2 = new List<GameObjectAnimator>(hunters.Keys);
+		for (int k = 0; k < list2.Count; k++)
+		{
+			if (Now > hunters[list2[k]])
+			{
+				hunters.Remove(list2[k]);
+			}
+		}
+	}
+
+	private static bool Worth(MobileMapObject mmo)
+	{
+		if (CampaignManager.instance.IsMobileSubOnly(mmo))
+		{
+			return false;
+		}
+		return Utilities.DoesMobileContainSubtype(mmo, UnitSubType.Battleship).Count > 0 || Utilities.DoesMobileContainSubtype(mmo, UnitSubType.Battlecruiser).Count > 0 || Utilities.DoesMobileContainSubtype(mmo, UnitSubType.Aircraft_Carrier).Count > 0 || Utilities.DoesMobileContainSubtype(mmo, UnitSubType.Light_Carrier).Count > 0 || Utilities.DoesMobileContainSubtype(mmo, UnitSubType.Merchant).Count > 0 || Utilities.DoesMobileContainSubtype(mmo, UnitSubType.Oiler).Count > 0 || ModEnemyAI.CampaignStep() >= 3;
+	}
+
+	public static List<Vector2> LastKnown()
+	{
+		List<Vector2> list = new List<Vector2>();
+		for (int i = 0; i < lastKnown.Count; i++)
+		{
+			list.Add(lastKnown[i].pos);
+		}
+		return list;
+	}
+
+	// send the nearest free aggressive enemy surface group within chase range to a map position
+	private static void Hunt(Vector2 pos, string why)
+	{
+		CampaignManager instance = CampaignManager.instance;
+		float num = ModEnemyAI.C(ModEnemyAI.ChaseKm) * 1000f;
+		GameObjectAnimator gameObjectAnimator = null;
+		float num2 = num;
+		for (int i = 0; i < instance.otherMobile.Count; i++)
+		{
+			GameObjectAnimator gameObjectAnimator2 = instance.otherMobile[i];
+			if ((UnityEngine.Object)(object)gameObjectAnimator2 == (UnityEngine.Object)null || gameObjectAnimator2.type != 0 || (UnityEngine.Object)(object)gameObjectAnimator2.mobileMapObject == (UnityEngine.Object)null || gameObjectAnimator2.mobileMapObject.currentFaction != 1 || hunters.ContainsKey(gameObjectAnimator2))
+			{
+				continue;
+			}
+			MissionData missionData = CampaignAI.instance.seaMissions[gameObjectAnimator2.mobileMapObject.missionIndex];
+			if (missionData.aggressive && missionData.missionType != MissionType.Home && !instance.IsMobileSubOnly(gameObjectAnimator2.mobileMapObject))
+			{
+				float distanceInMetresBetweenMapObjects = instance.GetDistanceInMetresBetweenMapObjects(gameObjectAnimator2.currentMap2DLocation, pos);
+				if (distanceInMetresBetweenMapObjects < num2 && distanceInMetresBetweenMapObjects > 20000f)
+				{
+					num2 = distanceInMetresBetweenMapObjects;
+					gameObjectAnimator = gameObjectAnimator2;
+				}
+			}
+		}
+		if (!((UnityEngine.Object)(object)gameObjectAnimator == (UnityEngine.Object)null))
+		{
+			hunters[gameObjectAnimator] = Now.AddHours(12.0);
+			bool flag = ModAllied.SendTo(gameObjectAnimator, pos);
+			ModEnemyAI.Log(gameObjectAnimator.mobileMapObject.mobileName + " sent to search: " + why + (flag ? "" : " (no route)"));
+		}
+	}
+}

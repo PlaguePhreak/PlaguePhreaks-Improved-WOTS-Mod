@@ -1,0 +1,518 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+using WorldMapStrategyKit;
+
+// 0.31 enemy scout patrols on the campaign map.
+// Two waves a day (first air ops hour and midday) of single search planes from enemy airfields.
+// Each flies a wedge: out on a bearing, a 15 degree cross leg, then home. A sighting is held for the report delay;
+// if the scout is shot down first, the report never reaches the enemy. On harder steps the scout shadows its find.
+public static class ModEnemyScouts
+{
+	public class Scout
+	{
+		public GameObjectAnimator goa;
+
+		public string baseName;
+
+		public List<Vector2> legs = new List<Vector2>();
+
+		public int leg;
+
+		public MobileMapObject shadowing;
+
+		public DateTime shadowUntil;
+	}
+
+	public class Report
+	{
+		public GameObjectAnimator scout;
+
+		public MobileMapObject contact;
+
+		public DateTime due;
+	}
+
+	public static List<Scout> scouts = new List<Scout>();
+
+	public static List<Report> reports = new List<Report>();
+
+	private static GameObjectAnimator pendingObserver;
+
+	private static int lastWave = -1;
+
+	private static List<MapLocation> lastLocations;
+
+	public const string PopupKey = "ModEnemyScoutSpotted";
+
+	private static DateTime Now => CampaignInterface.instance.dateTime;
+
+	// hook: CampaignManager.Check1Min, after ModAllied.Tick()
+	public static void Tick()
+	{
+		try
+		{
+			if (!ModEnemyAI.On)
+			{
+				return;
+			}
+			CampaignManager instance = CampaignManager.instance;
+			if ((UnityEngine.Object)(object)instance == (UnityEngine.Object)null || instance.campaignData == null || instance.landMapLocations == null)
+			{
+				return;
+			}
+			if (lastLocations != instance.landMapLocations)
+			{
+				lastLocations = instance.landMapLocations;
+				scouts.Clear();
+				reports.Clear();
+				ModEnemyCampaign.Reset();
+				lastWave = -1;
+				ModEnemyAI.Log("campaign map started, Campaign difficulty " + ModEnemyAI.StepNames[ModEnemyAI.CampaignStep()]);
+			}
+			ModEnemyAI.FixLocations();
+			Steer();
+			Reports();
+			ModEnemyCampaign.Tick();
+			Waves();
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError((object)("[EAI] scout tick failed: " + ex));
+		}
+	}
+
+	private static bool Alive(GameObjectAnimator goa)
+	{
+		return (UnityEngine.Object)(object)goa != (UnityEngine.Object)null && (UnityEngine.Object)(object)goa.mobileMapObject != (UnityEngine.Object)null && CampaignManager.instance.otherMobile.Contains(goa);
+	}
+
+	public static bool IsScout(GameObjectAnimator goa)
+	{
+		if ((UnityEngine.Object)(object)goa == (UnityEngine.Object)null)
+		{
+			return false;
+		}
+		for (int i = 0; i < scouts.Count; i++)
+		{
+			if (scouts[i].goa == goa)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static Scout Find(GameObjectAnimator goa)
+	{
+		for (int i = 0; i < scouts.Count; i++)
+		{
+			if (scouts[i].goa == goa)
+			{
+				return scouts[i];
+			}
+		}
+		return null;
+	}
+
+	// hook: CampaignAI.GetNewSpottedWaypoint first line. Our scouts fly their own legs.
+	public static bool SkipSpottedWaypoint(GameObjectAnimator goa)
+	{
+		return ModEnemyAI.On && IsScout(goa);
+	}
+
+	// hook: CampaignManager.CheckMobileEncounters, the 0.009 chance an enemy ship launches its floatplane
+	public static float ShipScoutChance(float stock)
+	{
+		if (!ModEnemyAI.On)
+		{
+			return stock;
+		}
+		return ModEnemyAI.C(ModEnemyAI.ShipScoutPct) / 100f;
+	}
+
+	// hook: CampaignManager.SpotContact replaces AirReturnToBase(observer) for a single enemy plane that spotted us
+	public static void ReturnOrShadow(CampaignManager cm, GameObjectAnimator observer)
+	{
+		if (!ModEnemyAI.On)
+		{
+			cm.AirReturnToBase(observer);
+			return;
+		}
+		pendingObserver = observer;
+		try
+		{
+			Scout scout = Find(observer);
+			float num = ModEnemyAI.C(ModEnemyAI.ShadowMin);
+			if (scout != null && num > 0f && scout.shadowing == null)
+			{
+				scout.shadowing = lastContact;
+				scout.shadowUntil = Now.AddMinutes(num);
+				if (scout.shadowing != null)
+				{
+					ModEnemyAI.Log(observer.mobileMapObject.mobileName + " shadows " + scout.shadowing.mobileName + " for " + num + " min");
+					return;
+				}
+			}
+			if (scout != null && scout.shadowing != null)
+			{
+				return;
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError((object)("[EAI] ReturnOrShadow: " + ex.Message));
+		}
+		cm.AirReturnToBase(observer);
+	}
+
+	private static MobileMapObject lastContact;
+
+	// hook: CampaignManager.SpotContact first line, remembers which of our groups is being looked at
+	public static void Contact(MobileMapObject contact)
+	{
+		lastContact = contact;
+	}
+
+	public static GameObjectAnimator TakeObserver()
+	{
+		GameObjectAnimator result = pendingObserver;
+		pendingObserver = null;
+		return result;
+	}
+
+	public static void QueueReport(GameObjectAnimator scout, MobileMapObject contact)
+	{
+		for (int i = 0; i < reports.Count; i++)
+		{
+			if (reports[i].contact == contact)
+			{
+				return;
+			}
+		}
+		Report report = new Report();
+		report.scout = scout;
+		report.contact = contact;
+		report.due = Now.AddMinutes(ModEnemyAI.C(ModEnemyAI.ReportDelayMin));
+		reports.Add(report);
+		ModEnemyAI.Log(scout.mobileMapObject.mobileName + " spotted " + contact.mobileName + ", report due " + report.due.ToString("HH:mm"));
+		Popup(contact);
+	}
+
+	private static void Popup(MobileMapObject contact)
+	{
+		try
+		{
+			if (!ModOptions.ScoutPopup || (UnityEngine.Object)(object)ErrorPanel.instance == (UnityEngine.Object)null)
+			{
+				return;
+			}
+			ErrorPanel.instance.messages[PopupKey] = "<0> has been spotted by an enemy scout plane";
+			if (!ErrorPanel.instance.audioReferences.ContainsKey(PopupKey) && ErrorPanel.instance.audioReferences.ContainsKey("SpottedAir"))
+			{
+				ErrorPanel.instance.audioReferences[PopupKey] = ErrorPanel.instance.audioReferences["SpottedAir"];
+			}
+			CampaignInterface.instance.PauseCampaign();
+			ErrorPanel.instance.SetErrorMessage(PopupKey, contact.mobileName, string.Empty, string.Empty);
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError((object)("[EAI] popup: " + ex.Message));
+		}
+	}
+
+	private static void Reports()
+	{
+		for (int num = reports.Count - 1; num >= 0; num--)
+		{
+			Report report = reports[num];
+			if (!(Now < report.due))
+			{
+				reports.RemoveAt(num);
+				if ((UnityEngine.Object)(object)report.contact == (UnityEngine.Object)null || (UnityEngine.Object)(object)report.contact.gameObjectAnimator == (UnityEngine.Object)null || !CampaignManager.instance.playerMobile.Contains(report.contact.gameObjectAnimator))
+				{
+					ModEnemyAI.Log("report dropped, the spotted group is gone");
+				}
+				else if (!Alive(report.scout))
+				{
+					ModEnemyAI.Log("the scout that found " + report.contact.mobileName + " was lost before it reported. No strike.");
+				}
+				else
+				{
+					ModEnemyAI.Log("scout report on " + report.contact.mobileName + " reached the enemy");
+					ModEnemyCampaign.React(report.contact);
+				}
+			}
+		}
+	}
+
+	// ---- flying the patrols ----
+	private static void Steer()
+	{
+		for (int num = scouts.Count - 1; num >= 0; num--)
+		{
+			Scout scout = scouts[num];
+			if (!Alive(scout.goa))
+			{
+				scouts.RemoveAt(num);
+				continue;
+			}
+			MobileMapObject mobileMapObject = scout.goa.mobileMapObject;
+			if (mobileMapObject.currentCampaignAction == 1)
+			{
+				continue;
+			}
+			if (scout.shadowing != null)
+			{
+				if (Now > scout.shadowUntil || (UnityEngine.Object)(object)scout.shadowing.gameObjectAnimator == (UnityEngine.Object)null || !CampaignManager.instance.playerMobile.Contains(scout.shadowing.gameObjectAnimator))
+				{
+					ModEnemyAI.Log(mobileMapObject.mobileName + " stops shadowing and heads home");
+					scout.shadowing = null;
+					CampaignManager.instance.AirReturnToBase(scout.goa);
+					continue;
+				}
+				Vector2 currentMap2DLocation = scout.shadowing.gameObjectAnimator.currentMap2DLocation;
+				Vector2 val = scout.goa.currentMap2DLocation - currentMap2DLocation;
+				if (val.sqrMagnitude < 1E-10f)
+				{
+					val = new Vector2(1f, 0f);
+				}
+				float km = CampaignManager.instance.campaignData.maxCampaignDetectionRange + 10f;
+				CampaignAI.instance.MoveAIMobile(scout.goa, currentMap2DLocation + Offset(currentMap2DLocation, val.normalized, km), direct: true);
+				scout.shadowing.spottedTimer = Utilities.GetMaxSpotTime(scout.shadowing) * 2f;
+				if (!CampaignManager.instance.spottedContacts.Contains(scout.shadowing))
+				{
+					CampaignManager.instance.spottedContacts.Add(scout.shadowing);
+				}
+				continue;
+			}
+			if (scout.leg >= scout.legs.Count)
+			{
+				CampaignManager.instance.AirReturnToBase(scout.goa);
+				continue;
+			}
+			if (CampaignManager.instance.GetDistanceInMetresBetweenMapObjects(scout.goa.currentMap2DLocation, scout.legs[scout.leg]) < 15000f)
+			{
+				scout.leg++;
+				if (scout.leg >= scout.legs.Count)
+				{
+					CampaignManager.instance.AirReturnToBase(scout.goa);
+					continue;
+				}
+				CampaignAI.instance.MoveAIMobile(scout.goa, scout.legs[scout.leg], direct: true);
+			}
+			else if (!scout.goa.isMoving)
+			{
+				CampaignAI.instance.MoveAIMobile(scout.goa, scout.legs[scout.leg], direct: true);
+			}
+		}
+	}
+
+	// a map-space vector of 'km' along 'dir' from 'at' (map x and y scale differ, so measure both)
+	public static Vector2 Offset(Vector2 at, Vector2 dir, float km)
+	{
+		CampaignManager instance = CampaignManager.instance;
+		float num = instance.GetDistanceInMetresBetweenMapObjects(at, at + new Vector2(0.001f, 0f)) / 0.001f;
+		float num2 = instance.GetDistanceInMetresBetweenMapObjects(at, at + new Vector2(0f, 0.001f)) / 0.001f;
+		if (num <= 0f || num2 <= 0f)
+		{
+			return Vector2.zero;
+		}
+		float num3 = km * 1000f;
+		return new Vector2(dir.x * num3 / num, dir.y * num3 / num2);
+	}
+
+	private static void Waves()
+	{
+		CampaignData campaignData = CampaignManager.instance.campaignData;
+		int hour = Now.Hour;
+		if (!campaignData.airOpHours[hour])
+		{
+			return;
+		}
+		int num = -1;
+		for (int i = 0; i < 24; i++)
+		{
+			if (campaignData.airOpHours[i])
+			{
+				num = i;
+				break;
+			}
+		}
+		int num2;
+		if (hour == num)
+		{
+			num2 = 0;
+		}
+		else
+		{
+			if (hour != 12)
+			{
+				return;
+			}
+			num2 = 1;
+		}
+		int num3 = Now.DayOfYear * 10 + num2 + Now.Year * 10000;
+		if (num3 == lastWave)
+		{
+			return;
+		}
+		lastWave = num3;
+		int num4 = Mathf.RoundToInt(ModEnemyAI.C(ModEnemyAI.ScoutSorties));
+		int num5 = (num2 == 0) ? ((num4 + 1) / 2) : (num4 / 2);
+		int num6 = 0;
+		List<MapLocation> list = Bases();
+		for (int j = 0; j < num5 && list.Count > 0; j++)
+		{
+			int index = UnityEngine.Random.Range(0, list.Count);
+			if (Launch(list[index]))
+			{
+				num6++;
+			}
+			list.RemoveAt(index);
+		}
+		ModEnemyAI.Log("scout wave " + (num2 + 1) + ": " + num6 + " of " + num5 + " sorties launched");
+	}
+
+	private static string SearchTypeAt(MapLocation ml, out int index)
+	{
+		index = -1;
+		CampaignManager instance = CampaignManager.instance;
+		List<string> airTypesAtLocation = instance.GetAirTypesAtLocation(ml);
+		List<int> airNumbersAtLocation = instance.GetAirNumbersAtLocation(ml);
+		if (ml.airfieldLevel < 1 || airTypesAtLocation == null)
+		{
+			return null;
+		}
+		int num = (ml.airfieldLevel - 1) * airTypesAtLocation.Count;
+		for (int i = 0; i < airTypesAtLocation.Count; i++)
+		{
+			if (!ModEnemyAI.IsSearchType(airTypesAtLocation[i]) || num + i >= airNumbersAtLocation.Count)
+			{
+				continue;
+			}
+			int num2 = airNumbersAtLocation[num + i];
+			if (ml.inTheAir != null && i < ml.inTheAir.Count)
+			{
+				num2 -= ml.inTheAir[i];
+			}
+			if (ml.destroyedAir != null && i < ml.destroyedAir.Count)
+			{
+				num2 -= ml.destroyedAir[i];
+			}
+			if (num2 > 0)
+			{
+				index = i;
+				return airTypesAtLocation[i];
+			}
+		}
+		return null;
+	}
+
+	private static List<MapLocation> Bases()
+	{
+		List<MapLocation> list = new List<MapLocation>();
+		CampaignManager instance = CampaignManager.instance;
+		int num = ModEnemyAI.CampaignStep();
+		for (int i = 0; i < instance.landMapLocations.Count; i++)
+		{
+			MapLocation mapLocation = instance.landMapLocations[i];
+			if (mapLocation.currentFaction != 1 || mapLocation.airfieldLevel < 1 || SearchTypeAt(mapLocation, out var _) == null)
+			{
+				continue;
+			}
+			if (num <= 2)
+			{
+				try
+				{
+					WeatherCell weatherCell = WeatherManager.instance.weatherCells[WeatherManager.instance.GetMapObjectWeatherCellIndex(mapLocation.locationPosition)];
+					if (weatherCell.isRaining || weatherCell.isStorm)
+					{
+						continue;
+					}
+				}
+				catch
+				{
+				}
+			}
+			list.Add(mapLocation);
+		}
+		return list;
+	}
+
+	private static bool Launch(MapLocation ml)
+	{
+		int index;
+		string text = SearchTypeAt(ml, out index);
+		if (text == null)
+		{
+			return false;
+		}
+		Vector2 currentMap2DLocation = ml.gameObjectAnimator.currentMap2DLocation;
+		Vector2 val = Bearing(currentMap2DLocation);
+		float num = ModEnemyAI.C(ModEnemyAI.ScoutLegKm);
+		float num2 = ((UnityEngine.Random.value < 0.5f) ? 15f : (-15f)) * ((float)Math.PI / 180f);
+		Vector2 dir = new Vector2(val.x * Mathf.Cos(num2) - val.y * Mathf.Sin(num2), val.x * Mathf.Sin(num2) + val.y * Mathf.Cos(num2));
+		Vector2 val2 = currentMap2DLocation + Offset(currentMap2DLocation, val, num);
+		Vector2 item = currentMap2DLocation + Offset(currentMap2DLocation, dir, num);
+		float aircraftCooldown = ml.aircraftCooldown;
+		GameObjectAnimator gameObjectAnimator = CampaignAI.instance.CreateAIMobileAir(ml.gameObjectAnimator, text, 1, val2);
+		ml.aircraftCooldown = aircraftCooldown;
+		if ((UnityEngine.Object)(object)gameObjectAnimator == (UnityEngine.Object)null)
+		{
+			return false;
+		}
+		Scout scout = new Scout();
+		scout.goa = gameObjectAnimator;
+		scout.baseName = ml.locationName;
+		scout.legs.Add(val2);
+		scout.legs.Add(item);
+		scouts.Add(scout);
+		ModEnemyAI.Log(ml.locationName + " launches a " + text + " search, " + num + " km leg");
+		return true;
+	}
+
+	// a search bearing: toward our bases, last known positions or recent sightings, with some random spread
+	private static Vector2 Bearing(Vector2 from)
+	{
+		List<Vector2> list = new List<Vector2>();
+		CampaignManager instance = CampaignManager.instance;
+		float num = ModEnemyAI.C(ModEnemyAI.ScoutLegKm) * 1000f * 1.3f;
+		for (int i = 0; i < instance.landMapLocations.Count; i++)
+		{
+			MapLocation mapLocation = instance.landMapLocations[i];
+			if (mapLocation.currentFaction == 0 && mapLocation.portLevel + mapLocation.airfieldLevel > 0 && instance.GetDistanceInMetresBetweenMapObjects(from, mapLocation.gameObjectAnimator.currentMap2DLocation) < num)
+			{
+				list.Add(mapLocation.gameObjectAnimator.currentMap2DLocation);
+			}
+		}
+		List<Vector2> list2 = ModEnemyCampaign.LastKnown();
+		for (int j = 0; j < list2.Count; j++)
+		{
+			if (instance.GetDistanceInMetresBetweenMapObjects(from, list2[j]) < num)
+			{
+				list.Add(list2[j]);
+				list.Add(list2[j]);
+			}
+		}
+		float num2 = ((ModEnemyAI.CampaignStep() <= 1) ? 0.5f : 0.25f);
+		Vector2 val;
+		if (list.Count == 0 || UnityEngine.Random.value < num2)
+		{
+			float num3 = UnityEngine.Random.Range(0f, (float)Math.PI * 2f);
+			val = new Vector2(Mathf.Cos(num3), Mathf.Sin(num3));
+		}
+		else
+		{
+			val = list[UnityEngine.Random.Range(0, list.Count)] - from;
+			if (val.sqrMagnitude < 1E-10f)
+			{
+				val = new Vector2(1f, 0f);
+			}
+			val = val.normalized;
+			float num4 = UnityEngine.Random.Range(-20f, 20f) * ((float)Math.PI / 180f);
+			val = new Vector2(val.x * Mathf.Cos(num4) - val.y * Mathf.Sin(num4), val.x * Mathf.Sin(num4) + val.y * Mathf.Cos(num4));
+		}
+		return val;
+	}
+}

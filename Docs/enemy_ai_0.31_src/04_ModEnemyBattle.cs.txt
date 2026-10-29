@@ -1,0 +1,513 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+// 0.31 enemy battle AI by Combat difficulty: stays in the fight longer, splits fire by class, finishes cripples,
+// smokes to cover a retreat, closes hard when it has the upper hand, keeps scouts spotting, better pilots.
+// Elite: no random retreat unless outgunned 3 to 1, re-thinks every 50 s, two ships at most per target.
+public static class ModEnemyBattle
+{
+	private static int step = 2;
+
+	private static bool on;
+
+	private static float clock;
+
+	private static float slowClock;
+
+	private static float ratio = 1f;
+
+	private static Dictionary<int, float> scoutSince = new Dictionary<int, float>();
+
+	private static HashSet<int> smoked = new HashSet<int>();
+
+	public static int Step => step;
+
+	// hook: last line of EngagementAI.InitialiseEngagementAI
+	public static void Begin()
+	{
+		try
+		{
+			on = ModEnemyAI.On;
+			step = ModEnemyAI.CombatStep();
+			scoutSince.Clear();
+			smoked.Clear();
+			clock = 0f;
+			slowClock = 0f;
+			if (on)
+			{
+				EngagementAI instance = EngagementAI.instance;
+				instance.intervalDefense = ModEnemyAI.RethinkSec[step];
+				instance.intervalTimerDefense = Mathf.Min(instance.intervalTimerDefense, instance.intervalDefense - 10f);
+				ratio = Ratio();
+				ModEnemyAI.Log("battle starts, Combat difficulty " + ModEnemyAI.StepNames[step] + ", enemy re-thinks every " + instance.intervalDefense + " s, tonnage ratio " + ratio.ToString("0.00"));
+			}
+			else
+			{
+				EngagementAI.instance.intervalDefense = 120f;
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError((object)("[EAI] battle begin: " + ex.Message));
+		}
+	}
+
+	private static float Ratio()
+	{
+		EngagementAI instance = EngagementAI.instance;
+		float num = 0f;
+		float num2 = 0f;
+		for (int i = 0; i < instance.playerSea.Count; i++)
+		{
+			if (Warship(instance.playerSea[i]))
+			{
+				num2 += (float)instance.playerSea[i].unitData.displacement_weight;
+			}
+		}
+		for (int j = 0; j < instance.otherSea.Count; j++)
+		{
+			if (Warship(instance.otherSea[j]))
+			{
+				num += (float)instance.otherSea[j].unitData.displacement_weight;
+			}
+		}
+		if (num2 <= 0f)
+		{
+			return 10f;
+		}
+		return num / num2;
+	}
+
+	private static bool Warship(Unit u)
+	{
+		if ((UnityEngine.Object)(object)u == (UnityEngine.Object)null || u.isDestroyed)
+		{
+			return false;
+		}
+		UnitSubType unitSubtype = u.unitData.unitSubtype;
+		return unitSubtype != UnitSubType.Oiler && unitSubtype != UnitSubType.Merchant && unitSubtype != UnitSubType.Aircraft_Carrier && unitSubtype != UnitSubType.Light_Carrier;
+	}
+
+	// hook: first line of EngagementAI.Update
+	public static void Tick()
+	{
+		if (!on)
+		{
+			return;
+		}
+		try
+		{
+			float num = Time.deltaTime * Time.timeScale;
+			clock += num;
+			slowClock += num;
+			EngagementAI instance = EngagementAI.instance;
+			if (slowClock >= 5f)
+			{
+				slowClock = 0f;
+				ratio = Ratio();
+				Press();
+			}
+			if (instance.globalRetreatTimer > 0f && !instance.globalRetreat && step >= 3 && ratio >= ModEnemyAI.RetreatRatio[step])
+			{
+				instance.globalRetreatTimer = 0f;
+				ModEnemyAI.Log("random fleet retreat cancelled (" + ModEnemyAI.StepNames[step] + ", tonnage ratio " + ratio.ToString("0.00") + ")");
+			}
+			if (clock >= 3f)
+			{
+				clock = 0f;
+				Scouts();
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError((object)("[EAI] battle tick: " + ex.Message));
+			on = false;
+		}
+	}
+
+	// the upper hand: leaders close at full speed (Balanced and up)
+	private static void Press()
+	{
+		if (step < 2 || EngagementAI.instance.aggressionLevel < 3)
+		{
+			return;
+		}
+		List<Unit> otherSea = EngagementAI.instance.otherSea;
+		for (int i = 0; i < otherSea.Count; i++)
+		{
+			Unit unit = otherSea[i];
+			if (!unit.isDestroyed && !unit.unitAI.retreating && (UnityEngine.Object)(object)unit.unitAI.followingUnit == (UnityEngine.Object)null && (UnityEngine.Object)(object)unit.unitAI.focusedUnit != (UnityEngine.Object)null && unit.unitAI.currentAIAction == AIAction.Attack_Unit && unit.unitData.unitSubtype != UnitSubType.Submarine)
+			{
+				unit.wantedSpeed = unit.unitData.maxSpeed;
+			}
+		}
+	}
+
+	// ---- hook: EngagementAI.CheckDefensiveConditions, right after the global retreat block ----
+	public static bool Defensive()
+	{
+		if (!on)
+		{
+			return false;
+		}
+		try
+		{
+			EngagementAI instance = EngagementAI.instance;
+			if (EngagementManager.instance.engagementData.playerEverDetected)
+			{
+				for (int i = 0; i < instance.otherSea.Count; i++)
+				{
+					Unit unit = instance.otherSea[i];
+					if (!unit.isDestroyed && !unit.unitAI.retreating && (UnityEngine.Object)(object)unit.unitAI.followingUnit == (UnityEngine.Object)null)
+					{
+						string text = ShouldRetreat(unit);
+						if (text != null)
+						{
+							ModEnemyAI.Log(unit.unitInstanceName + " retreats: " + text);
+							instance.SwitchToNewLeader(unit.unitAI);
+							unit.unitAI.RetreatUnit();
+							Smoke(unit);
+						}
+					}
+				}
+			}
+			for (int j = 0; j < instance.otherAir.Count; j++)
+			{
+				Unit unit2 = instance.otherAir[j];
+				if (unit2.unitData.unitSubtype == UnitSubType.Scout && !unit2.isDestroyed && !KeepScout(unit2))
+				{
+					unit2.unitAI.RetreatUnit();
+				}
+			}
+			return true;
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError((object)("[EAI] defensive check failed, stock used: " + ex.Message));
+			return false;
+		}
+	}
+
+	public static string ShouldRetreat(Unit ship)
+	{
+		DamageableSea damageableSea = ship.damageableSea;
+		if ((UnityEngine.Object)(object)damageableSea == (UnityEngine.Object)null)
+		{
+			return null;
+		}
+		if (ModEnemyAI.RunOnCell[step] > 0f && damageableSea.cellsDestroyed.Count > 0)
+		{
+			return "a destroyed compartment";
+		}
+		if (damageableSea.speedPenalty < ModEnemyAI.RunSpeed[step])
+		{
+			return "speed down to " + Mathf.RoundToInt(damageableSea.speedPenalty * 100f) + "%";
+		}
+		if (step >= 2 && EngagementAI.instance.ModIsShipCrippled(ship))
+		{
+			return "crippled";
+		}
+		return null;
+	}
+
+	private static void Smoke(Unit ship)
+	{
+		try
+		{
+			if (ModEnemyAI.SmokeRetreat[step] <= 0f || (UnityEngine.Object)(object)ship.unitSea == (UnityEngine.Object)null || smoked.Contains(((UnityEngine.Object)ship).GetInstanceID()))
+			{
+				return;
+			}
+			smoked.Add(((UnityEngine.Object)ship).GetInstanceID());
+			ship.unitSea.LaySmoke(isOn: true);
+			List<Unit> otherSea = EngagementAI.instance.otherSea;
+			Unit unit = null;
+			float num = float.MaxValue;
+			for (int i = 0; i < otherSea.Count; i++)
+			{
+				Unit unit2 = otherSea[i];
+				if (!unit2.isDestroyed && unit2 != ship && !unit2.unitAI.retreating && (unit2.unitData.unitSubtype == UnitSubType.Destroyer || unit2.unitData.unitSubtype == UnitSubType.Destroyer_Escort) && !smoked.Contains(((UnityEngine.Object)unit2).GetInstanceID()))
+				{
+					float num2 = Vector3.Distance(((Component)unit2).transform.position, ((Component)ship).transform.position);
+					if (num2 < num)
+					{
+						num = num2;
+						unit = unit2;
+					}
+				}
+			}
+			if ((UnityEngine.Object)(object)unit != (UnityEngine.Object)null && (UnityEngine.Object)(object)unit.unitSea != (UnityEngine.Object)null && step >= 2)
+			{
+				smoked.Add(((UnityEngine.Object)unit).GetInstanceID());
+				unit.unitSea.LaySmoke(isOn: true);
+				ModEnemyAI.Log(unit.unitInstanceName + " lays smoke to cover " + ship.unitInstanceName);
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError((object)("[EAI] smoke: " + ex.Message));
+		}
+	}
+
+	// ---- scouts ----
+	public static bool KeepScout(Unit scout)
+	{
+		if (scout.totalDamage > 0f)
+		{
+			return false;
+		}
+		float num = ModEnemyAI.ScoutStaySec[step];
+		if (num < 0f)
+		{
+			return true;
+		}
+		int instanceID = ((UnityEngine.Object)scout).GetInstanceID();
+		float engagementTime = EngagementManager.instance.engagementTime;
+		if (!scoutSince.TryGetValue(instanceID, out var value))
+		{
+			scoutSince[instanceID] = engagementTime;
+			value = engagementTime;
+		}
+		return engagementTime - value < num;
+	}
+
+	private static void Scouts()
+	{
+		EngagementAI instance = EngagementAI.instance;
+		for (int i = 0; i < instance.otherAir.Count; i++)
+		{
+			Unit unit = instance.otherAir[i];
+			if (unit.isDestroyed || unit.unitData.unitSubtype != UnitSubType.Scout || unit.unitAI.retreating || !KeepScout(unit))
+			{
+				continue;
+			}
+			Unit closestUnit = instance.GetClosestUnit(unit, instance.playerSea);
+			if ((UnityEngine.Object)(object)closestUnit == (UnityEngine.Object)null)
+			{
+				continue;
+			}
+			float num = 2f * unit.unitData.visualHorizonDistance * EngagementData.instance.currentVisibilityModifier * 0.6f;
+			if (num <= 100f)
+			{
+				num = 1500f;
+			}
+			Vector3 val = ((Component)unit).transform.position - ((Component)closestUnit).transform.position;
+			val.y = 0f;
+			if (val.sqrMagnitude < 1f)
+			{
+				val = Vector3.forward;
+			}
+			float num2 = Mathf.Atan2(val.z, val.x) + 0.5f;
+			Vector3 position = ((Component)closestUnit).transform.position;
+			Vector3 item = new Vector3(position.x + Mathf.Cos(num2) * num, ((Component)unit).transform.position.y, position.z + Mathf.Sin(num2) * num);
+			unit.unitAI.navPoints.Clear();
+			unit.unitAI.navPoints.Add(item);
+			if (unit.unitAI.currentAIAction != AIAction.Follow_Nav_Points)
+			{
+				instance.ChangeAIAction(unit, AIAction.Follow_Nav_Points);
+			}
+		}
+	}
+
+	// ---- targets ----
+	private static bool Crippled(Unit u)
+	{
+		DamageableSea damageableSea = u.damageableSea;
+		if ((UnityEngine.Object)(object)damageableSea == (UnityEngine.Object)null)
+		{
+			return false;
+		}
+		return damageableSea.cellsBurning.Count > 0 || damageableSea.cellsFlooded.Count > 1 || damageableSea.speedPenalty < 0.5f || EngagementAI.instance.ModIsShipCrippled(u);
+	}
+
+	private static bool Heavy(UnitSubType t)
+	{
+		return t == UnitSubType.Battleship || t == UnitSubType.Battlecruiser || t == UnitSubType.Heavy_Cruiser || t == UnitSubType.Aircraft_Carrier;
+	}
+
+	private static bool Light(UnitSubType t)
+	{
+		return t == UnitSubType.Destroyer || t == UnitSubType.Destroyer_Escort || t == UnitSubType.Merchant || t == UnitSubType.Oiler || t == UnitSubType.Submarine;
+	}
+
+	private static int Rank(Unit attacker, Unit target)
+	{
+		UnitSubType unitSubtype = attacker.unitData.unitSubtype;
+		UnitSubType unitSubtype2 = target.unitData.unitSubtype;
+		if (unitSubtype == UnitSubType.Battleship || unitSubtype == UnitSubType.Battlecruiser || unitSubtype == UnitSubType.Heavy_Cruiser)
+		{
+			if (Heavy(unitSubtype2))
+			{
+				return 0;
+			}
+			if (unitSubtype2 == UnitSubType.Light_Cruiser || unitSubtype2 == UnitSubType.Light_Carrier)
+			{
+				return 1;
+			}
+			return 2;
+		}
+		if (Light(unitSubtype2))
+		{
+			return 0;
+		}
+		if (unitSubtype2 == UnitSubType.Light_Cruiser)
+		{
+			return 1;
+		}
+		return 2;
+	}
+
+	private static Unit Choose(Unit attacker, Dictionary<Unit, int> counts)
+	{
+		EngagementAI instance = EngagementAI.instance;
+		int num = Mathf.RoundToInt(ModEnemyAI.MaxOnTarget[step]);
+		Vector3 position = ((Component)attacker).transform.position;
+		float num2 = Mathf.Max(attacker.unitAI.primaryEngageDistance, 200f);
+		Unit unit = null;
+		float num3 = float.MaxValue;
+		if (ModEnemyAI.FinishCripples[step] > 0f)
+		{
+			for (int i = 0; i < instance.playerSea.Count; i++)
+			{
+				Unit unit2 = instance.playerSea[i];
+				if (unit2.detected && !unit2.isDestroyed && Crippled(unit2) && Count(counts, unit2) < 2)
+				{
+					float num4 = Vector3.Distance(position, ((Component)unit2).transform.position);
+					if (num4 < num2 && num4 < num3)
+					{
+						num3 = num4;
+						unit = unit2;
+					}
+				}
+			}
+			if ((UnityEngine.Object)(object)unit != (UnityEngine.Object)null)
+			{
+				return unit;
+			}
+		}
+		float num5 = float.MaxValue;
+		for (int j = 0; j < instance.playerSea.Count; j++)
+		{
+			Unit unit3 = instance.playerSea[j];
+			if (unit3.detected && !unit3.isDestroyed)
+			{
+				float num6 = Vector3.Distance(position, ((Component)unit3).transform.position);
+				float num7 = num6 * (1f + 0.6f * (float)Rank(attacker, unit3));
+				if (Count(counts, unit3) >= num)
+				{
+					num7 *= 4f;
+				}
+				if (num7 < num5)
+				{
+					num5 = num7;
+					unit = unit3;
+				}
+			}
+		}
+		return unit;
+	}
+
+	private static int Count(Dictionary<Unit, int> counts, Unit u)
+	{
+		if (!counts.TryGetValue(u, out var value))
+		{
+			return 0;
+		}
+		return value;
+	}
+
+	private static Dictionary<Unit, int> Counts(Unit skip)
+	{
+		Dictionary<Unit, int> dictionary = new Dictionary<Unit, int>();
+		List<Unit> otherSea = EngagementAI.instance.otherSea;
+		for (int i = 0; i < otherSea.Count; i++)
+		{
+			Unit unit = otherSea[i];
+			if (unit != skip && !unit.isDestroyed && (UnityEngine.Object)(object)unit.unitAI.focusedUnit != (UnityEngine.Object)null && unit.unitAI.focusedUnit.faction == Faction.Player)
+			{
+				dictionary[unit.unitAI.focusedUnit] = Count(dictionary, unit.unitAI.focusedUnit) + 1;
+			}
+		}
+		return dictionary;
+	}
+
+	// hook: EngagementAI.OnDetectUnit, replaces MultipleUnitsAttackTarget(otherSea, detectedUnit)
+	public static void SplitFire(EngagementAI ai, List<Unit> attackers, Unit detected)
+	{
+		if (!on || attackers != ai.otherSea || (UnityEngine.Object)(object)detected == (UnityEngine.Object)null || (UnityEngine.Object)(object)detected.unitSea == (UnityEngine.Object)null)
+		{
+			ai.MultipleUnitsAttackTarget(attackers, detected);
+			return;
+		}
+		try
+		{
+			Dictionary<Unit, int> dictionary = new Dictionary<Unit, int>();
+			int num = 0;
+			for (int i = 0; i < attackers.Count; i++)
+			{
+				Unit unit = attackers[i];
+				if (!unit.isDestroyed && !unit.unitAI.retreating && unit.unitData.unitSubtype != UnitSubType.Merchant && unit.unitData.unitSubtype != UnitSubType.Oiler)
+				{
+					Unit unit2 = Choose(unit, dictionary);
+					if ((UnityEngine.Object)(object)unit2 == (UnityEngine.Object)null)
+					{
+						unit2 = detected;
+					}
+					unit.unitAI.focusedUnit = unit2;
+					ai.AttackUnit(unit);
+					dictionary[unit2] = Count(dictionary, unit2) + 1;
+					if (unit2 != detected)
+					{
+						num++;
+					}
+				}
+			}
+			ModEnemyAI.Log("contact " + detected.unitInstanceName + ": fire split over " + dictionary.Count + " targets (" + num + " ships off the first contact)");
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError((object)("[EAI] split fire failed, stock used: " + ex.Message));
+			ai.MultipleUnitsAttackTarget(attackers, detected);
+		}
+	}
+
+	// hook: EngagementAI.GetBestPrimaryGunTarget first line; null = stock choice
+	public static Unit PickGunTarget(Unit attacker)
+	{
+		if (!on || (UnityEngine.Object)(object)attacker == (UnityEngine.Object)null || attacker.faction == Faction.Player || (UnityEngine.Object)(object)attacker.unitSea == (UnityEngine.Object)null)
+		{
+			return null;
+		}
+		try
+		{
+			return Choose(attacker, Counts(attacker));
+		}
+		catch
+		{
+			return null;
+		}
+	}
+
+	// hook: every return of ModFlight.Rank. Moves a share of enemy pilots up one rank, the same pilots every call.
+	public static int ShiftRank(int rank, Unit u)
+	{
+		try
+		{
+			if (!ModEnemyAI.On || (UnityEngine.Object)(object)u == (UnityEngine.Object)null || u.faction == Faction.Player || rank >= 3)
+			{
+				return rank;
+			}
+			float num = ModEnemyAI.PilotUpPct[ModEnemyAI.CombatStep()];
+			uint num2 = (uint)((UnityEngine.Object)u).GetInstanceID() * 2654435761u;
+			if ((float)(num2 % 100) < num)
+			{
+				return rank + 1;
+			}
+		}
+		catch
+		{
+		}
+		return rank;
+	}
+}
