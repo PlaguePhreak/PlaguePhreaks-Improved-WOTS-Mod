@@ -1,0 +1,66 @@
+64a65,66
+> 	public static string StartForceName = "Australia Surface Force"; // the RAN group the Allied campaign starts with
+> 	public static float StartForceDays = 2f;                         // only taken over this early in a campaign
+74a77
+> 	private static bool startChecked;
+90a94
+> 			TakeStartForce();
+343a348
+> 			startChecked = false;
+396a402,457
+> 		}
+> 	}
+> 
+> 	// 0.31.10: the RAN force the player starts the Allied campaign with is handed to the Allied AI
+> 	// (checked once per campaign load, only in the first StartForceDays days)
+> 	private static void TakeStartForce()
+> 	{
+> 		if (startChecked)
+> 		{
+> 			return;
+> 		}
+> 		startChecked = true;
+> 		if (!Active() || (CampaignInterface.instance.dateTime - CampaignInterface.instance.startDate).TotalDays > StartForceDays)
+> 		{
+> 			return;
+> 		}
+> 		CampaignManager cm = CampaignManager.instance;
+> 		for (int i = 0; i < cm.playerMobile.Count; i++)
+> 		{
+> 			GameObjectAnimator goa = cm.playerMobile[i];
+> 			if (goa == null || goa.mobileMapObject == null || goa.mobileMapObject.currentFaction != 0 || goa.mobileMapObject.type != 0 || goa.mobileMapObject.mobileName != StartForceName)
+> 			{
+> 				continue;
+> 			}
+> 			MobileMapObject m = goa.mobileMapObject;
+> 			string kind = "destroyer";
+> 			for (int k = 0; k < m.unitPrefabs.Count; k++)
+> 			{
+> 				UnitSubType st = Sub(m.unitPrefabs[k]);
+> 				if (st == UnitSubType.Aircraft_Carrier || st == UnitSubType.Light_Carrier)
+> 				{
+> 					kind = "carrier";
+> 					break;
+> 				}
+> 				if (st == UnitSubType.Heavy_Cruiser || st == UnitSubType.Light_Cruiser || st == UnitSubType.Battleship)
+> 				{
+> 					kind = "cruiser";
+> 				}
+> 			}
+> 			string name = Prefix + kind.ToUpper() + " FORCE " + serial++;
+> 			m.mobileName = name;
+> 			m.customName = true;
+> 			if (CampaignInterface.instance.currentMapObject == goa)
+> 			{
+> 				CampaignInterface.instance.currentMapObject = null;
+> 			}
+> 			Group g = new Group();
+> 			g.mmo = m;
+> 			g.kind = kind;
+> 			g.home = Home();
+> 			g.startShips = m.unitPrefabs.Count;
+> 			g.note = name;
+> 			groups[m] = g;
+> 			Debug.Log("[ALLIED] start force handed to the Allied AI: " + StartForceName + " -> " + name + " (" + Describe(m) + ")");
+> 			Say("The " + StartForceName + " (" + Describe(m) + ") is under RAN command as " + name + ". It fights alongside you but takes no orders from you.");
+> 			return;
