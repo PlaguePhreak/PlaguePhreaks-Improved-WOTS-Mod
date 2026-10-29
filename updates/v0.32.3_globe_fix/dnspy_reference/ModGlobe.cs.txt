@@ -1,0 +1,629 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.Events;
+using UnityEngine.UI;
+using WorldMapStrategyKit;
+
+// 0.32.3 Globe phase 2: the campaign map as a spinning Earth (look only).
+// GLOBE button (row 5 of the mod buttons, top left) or F10 swaps the flat campaign map for a 3D globe drawn by its own
+// camera far away from everything else in the scene. The globe shows the whole Earth (override/ModAssets/globe/earth.jpg),
+// the day/night line worked out from the campaign clock, a gold outline of the current theatre, and simple dots for bases,
+// your task forces and spotted enemy forces. Drag to spin, wheel to zoom, arrows to turn. Zooming in past the closest point
+// drops you back onto the flat map at the spot in the middle of the view. Orders still happen on the flat map (phase 4).
+public class ModGlobe : MonoBehaviour
+{
+    // ===== knobs =====
+    public static bool Enabled = true;         // false = no button, no key
+    public static KeyCode Key = (KeyCode)291;  // F10
+    public static float Radius = 100f;         // globe size in scene units
+    public static float ZoomMin = 1.3f;        // closest camera distance, in radii
+    public static float ZoomMax = 4.5f;        // farthest
+    public static float ZoomStart = 2.8f;      // where the camera starts
+    public static float ZoomStep = 0.12f;      // one wheel notch
+    public static float DragSpeed = 0.22f;     // degrees per pixel dragged
+    public static float KeySpeed = 45f;        // degrees per second on the arrow keys
+    public static float Night = 0.16f;         // how dark the night side is (0 black, 1 no night)
+    public static float Twilight = 0.10f;      // width of the day/night blend
+    public static float UtcOffsetHours = 99f;  // 99 = work it out from the theatre centre (campaign clock is local time)
+    public static float MarkerSize = 0.014f;   // dots, in radii
+    public static bool AutoDropToMap = true;   // zoom in past the closest point = back to the flat map
+    public static bool ShowMarkers = true;
+
+    public static bool on;
+    private static ModGlobe inst;
+
+    private const float Far = -300000f;        // the globe lives down here, away from the campaign scene
+
+    private Camera cam;
+    private GameObject root, globeObj, starsObj, haloObj, ribbonObj, markerRoot, blocker;
+    private Mesh globeMesh;
+    private Vector3[] globeNormals;
+    private int[] globeTris;                 // every triangle of the sphere
+    private List<int> frontTris = new List<int>();
+    private Vector3 lastCamPos = new Vector3(1e9f, 0f, 0f);
+    private Color[] globeColors;
+    private Shader shader;
+    private Texture2D white;
+    private Material ribbonMat;
+    private List<Vector3> ribbonDirs = new List<Vector3>();
+    private Color[] ribbonColors;
+    private List<Renderer> markers = new List<Renderer>();
+    private List<Vector3> markerDirs = new List<Vector3>();
+    private List<Material> markerMats = new List<Material>();
+    private float dist, viewLat, viewLon;
+    private Vector3 lastMouse;
+    private bool dragging;
+    private float sunTimer, markerTimer;
+    private bool built, reported, buttonReported;
+    private GameObject buttonObject;
+    private Image buttonBack;
+    private bool savedDrag, savedZoom, savedKeys, savedOk;
+    private Vector3 centre { get { return new Vector3(0f, Far, 0f); } }
+
+    public static void Ensure(Component host)
+    {
+        try
+        {
+            if (host != null && host.gameObject.GetComponent<ModGlobe>() == null) host.gameObject.AddComponent<ModGlobe>();
+        }
+        catch (Exception ex) { Debug.LogError("[GLOBE] could not add: " + ex.Message); }
+    }
+
+    private void Awake() { inst = this; }
+
+    private void OnDisable()
+    {
+        try { if (on) Off(); } catch (Exception) { }
+    }
+
+    private void Update()
+    {
+        try
+        {
+            CampaignInterface ci = CampaignInterface.instance;
+            if (ci == null || CampaignManager.instance == null || !Enabled) return;
+            if (buttonObject == null) BuildButton(ci);
+            if (Input.GetKeyDown(Key)) Toggle();
+            if (buttonBack != null) buttonBack.color = on ? new Color(0.5f, 0.3f, 0.08f, 0.95f) : new Color(0.07f, 0.12f, 0.19f, 0.92f);
+            if (on) Drive(ci);
+        }
+        catch (Exception ex)
+        {
+            if (!reported) { reported = true; Debug.LogError("[GLOBE] failed: " + ex.ToString()); }
+            try { if (on) Off(); } catch (Exception) { }
+        }
+    }
+
+    public static void Toggle()
+    {
+        if (inst == null) return;
+        if (on) inst.Off(); else inst.On();
+    }
+
+    // ---------- on / off ----------
+
+    private void On()
+    {
+        CampaignInterface ci = CampaignInterface.instance;
+        CampaignData d = CampaignManager.instance.campaignData;
+        if (ci == null || d == null || d.mapOriginXY == null || d.mapOriginXY.Length < 2) { Debug.Log("[GLOBE] no campaign map"); return; }
+        if (!built) Build(d);
+        // start over the theatre centre, or where the flat map is looking? The centre is simpler and always right.
+        viewLat = (float)ModGeo.Lat(d, 0f);
+        viewLon = (float)ModGeo.Lon(d, 0f);
+        dist = Mathf.Clamp(ZoomStart, ZoomMin, ZoomMax) * Radius;
+        WMSK map = ci.map;
+        if (map != null)
+        {
+            savedDrag = map.allowUserDrag; savedZoom = map.allowUserZoom; savedKeys = map.allowUserKeys; savedOk = true;
+            map.allowUserDrag = false; map.allowUserZoom = false; map.allowUserKeys = false;
+        }
+        root.SetActive(true);
+        cam.enabled = true;
+        if (blocker != null) blocker.SetActive(true);
+        on = true;
+        sunTimer = 0f; markerTimer = 0f;
+        lastCamPos = new Vector3(1e9f, 0f, 0f);
+        Place();
+        Debug.Log("[GLOBE] on, view " + viewLat.ToString("0.0") + " " + viewLon.ToString("0.0") + ", map zoom level " + (map != null ? map.GetZoomLevel().ToString("0.000") : "?")
+            + " (min " + (map != null ? map.zoomMinDistance.ToString("0.000") : "?") + " max " + (map != null ? map.zoomMaxDistance.ToString("0.000") : "?") + ")");
+    }
+
+    private void Off()
+    {
+        on = false;
+        dragging = false;
+        if (cam != null) cam.enabled = false;
+        if (root != null) root.SetActive(false);
+        if (blocker != null) blocker.SetActive(false);
+        CampaignInterface ci = CampaignInterface.instance;
+        if (savedOk && ci != null && ci.map != null)
+        {
+            ci.map.allowUserDrag = savedDrag; ci.map.allowUserZoom = savedZoom; ci.map.allowUserKeys = savedKeys;
+        }
+        Debug.Log("[GLOBE] off");
+    }
+
+    // ---------- every frame while on ----------
+
+    private void Drive(CampaignInterface ci)
+    {
+        // the campaign screen went away (battle, menu): hide
+        if (!CampaignManager.instance.gameObject.activeInHierarchy) { Off(); return; }
+        bool overUi = OverGameUi();
+        // spin by dragging
+        if (!overUi && (Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(1))) { dragging = true; lastMouse = Input.mousePosition; }
+        if (!Input.GetMouseButton(0) && !Input.GetMouseButton(1)) dragging = false;
+        if (dragging)
+        {
+            Vector3 m = Input.mousePosition;
+            float scale = DragSpeed * dist / (ZoomStart * Radius);
+            viewLon -= (m.x - lastMouse.x) * scale;
+            viewLat -= (m.y - lastMouse.y) * scale;
+            lastMouse = m;
+        }
+        float dt = Time.unscaledDeltaTime;
+        if (Input.GetKey(KeyCode.LeftArrow)) viewLon -= KeySpeed * dt;
+        if (Input.GetKey(KeyCode.RightArrow)) viewLon += KeySpeed * dt;
+        if (Input.GetKey(KeyCode.UpArrow)) viewLat += KeySpeed * dt;
+        if (Input.GetKey(KeyCode.DownArrow)) viewLat -= KeySpeed * dt;
+        viewLat = Mathf.Clamp(viewLat, -85f, 85f);
+        while (viewLon < 0f) viewLon += 360f;
+        while (viewLon >= 360f) viewLon -= 360f;
+        // zoom with the wheel
+        float wheel = overUi ? 0f : Input.GetAxis("Mouse ScrollWheel");
+        if (wheel > 0.0001f)
+        {
+            if (dist <= ZoomMin * Radius + 0.01f && AutoDropToMap) { DropToMap(ci); return; }
+            dist *= 1f - ZoomStep;
+        }
+        else if (wheel < -0.0001f) dist *= 1f + ZoomStep;
+        dist = Mathf.Clamp(dist, ZoomMin * Radius, ZoomMax * Radius);
+        Place();
+        sunTimer -= dt;
+        if (sunTimer <= 0f) { sunTimer = 0.5f; Shade(ci); }
+        markerTimer -= dt;
+        if (markerTimer <= 0f) { markerTimer = 1f; Markers(ci); }
+        Facing();
+    }
+
+    private void Place()
+    {
+        Vector3 dir = Dir(viewLat, viewLon);
+        cam.transform.position = centre + dir * dist;
+        cam.transform.LookAt(centre, Vector3.up);
+        if (haloObj != null) { haloObj.transform.position = centre; haloObj.transform.rotation = cam.transform.rotation; }
+        if (starsObj != null) starsObj.transform.position = centre;
+    }
+
+    // true when the mouse is over one of the game's own panels (our invisible blocker does not count)
+    private bool OverGameUi()
+    {
+        try
+        {
+            EventSystem es = EventSystem.current;
+            if (es == null) return false;
+            PointerEventData pd = new PointerEventData(es);
+            pd.position = Input.mousePosition;
+            List<RaycastResult> hits = new List<RaycastResult>();
+            es.RaycastAll(pd, hits);
+            for (int i = 0; i < hits.Count; i++)
+            {
+                if (hits[i].gameObject == null) continue;
+                if (hits[i].gameObject == blocker) continue;
+                return true;
+            }
+            return false;
+        }
+        catch (Exception) { return false; }
+    }
+
+    private void DropToMap(CampaignInterface ci)
+    {
+        CampaignData d = CampaignManager.instance.campaignData;
+        Vector2 p = MapPoint(d, viewLat, viewLon);
+        Off();
+        if (ci.map != null && p.x >= -0.5f && p.x <= 0.5f && p.y >= -0.5f && p.y <= 0.5f)
+        {
+            float z = Mathf.Min(ci.map.zoomMaxDistance, ci.map.zoomMinDistance * 6f);
+            ci.map.FlyToLocation(p, 0.6f, z);
+            Debug.Log("[GLOBE] dropped to map at " + p.x.ToString("0.000") + " " + p.y.ToString("0.000"));
+        }
+    }
+
+    // ---------- geometry ----------
+
+    // unit direction from the globe centre for a latitude/longitude (east to the right when seen from outside)
+    public static Vector3 Dir(float lat, float lon)
+    {
+        float la = lat * Mathf.Deg2Rad, lo = lon * Mathf.Deg2Rad;
+        return new Vector3(Mathf.Cos(la) * Mathf.Cos(lo), Mathf.Sin(la), Mathf.Cos(la) * Mathf.Sin(lo));
+    }
+
+    // map point (-0.5..0.5) of a latitude/longitude, using the campaign's own origin
+    public static Vector2 MapPoint(CampaignData d, float lat, float lon)
+    {
+        double lonW = ModGeo.Lon(d, -0.5f);                 // west edge, 0..360
+        double l = lon; while (l < lonW) l += 360.0; while (l >= lonW + 360.0) l -= 360.0;
+        float x = (float)((l * ModGeo.PxPerDeg - d.mapOriginXY[0]) / d.mapPixelWidth - 0.5);
+        float y = (float)(((lat + 90.0) * ModGeo.PxPerDeg - d.mapOriginXY[1]) / (d.mapPixelWidth * 0.5) - 0.5);
+        return new Vector2(x, y);
+    }
+
+    private Vector3 SunDir(CampaignInterface ci)
+    {
+        DateTime t = ci.dateTime;
+        float offset = UtcOffsetHours;
+        if (offset > 24f || offset < -24f)
+        {
+            CampaignData d = CampaignManager.instance.campaignData;
+            double lon = ModGeo.Lon(d, 0f); if (lon > 180.0) lon -= 360.0;
+            offset = Mathf.Round((float)(lon / 15.0));
+        }
+        float utc = (float)t.TimeOfDay.TotalHours - offset;
+        float decl = 23.44f * Mathf.Sin(2f * Mathf.PI * (284f + t.DayOfYear) / 365f);
+        float sunLon = 180f - 15f * utc;
+        return Dir(decl, sunLon);
+    }
+
+    // day/night as vertex colours (no lights needed, nothing else in the scene is touched)
+    private void Shade(CampaignInterface ci)
+    {
+        if (globeMesh == null || globeNormals == null) return;
+        Vector3 s = SunDir(ci);
+        float lo = -Twilight, hi = Twilight;
+        for (int i = 0; i < globeNormals.Length; i++)
+        {
+            float k = Mathf.InverseLerp(lo, hi, Vector3.Dot(globeNormals[i], s));
+            float v = Mathf.Lerp(Night, 1f, k * k * (3f - 2f * k));
+            globeColors[i] = new Color(v, v, v, 1f);
+        }
+        globeMesh.colors = globeColors;
+    }
+
+    // hide dots and outline on the far side of the globe
+    private void Facing()
+    {
+        Vector3 v = (cam.transform.position - centre).normalized;
+        float limit = Radius / dist; // cos of the angle to the horizon
+        // The particle shader draws both faces and writes no depth, so the far side of the sphere would paint over the near
+        // side wherever it is drawn later. Keep only the triangles that face the camera (rebuilt when the camera moves).
+        if (globeTris != null && (cam.transform.position - lastCamPos).sqrMagnitude > 0.0001f)
+        {
+            lastCamPos = cam.transform.position;
+            frontTris.Clear();
+            Vector3 camLocal = cam.transform.position - centre;
+            for (int t = 0; t < globeTris.Length; t += 3)
+            {
+                int a = globeTris[t], b = globeTris[t + 1], c = globeTris[t + 2];
+                Vector3 n = globeNormals[a] + globeNormals[b] + globeNormals[c];
+                Vector3 p = (globeNormals[a] + globeNormals[b] + globeNormals[c]) * (Radius / 3f);
+                if (Vector3.Dot(n, camLocal - p) > 0f) { frontTris.Add(a); frontTris.Add(b); frontTris.Add(c); }
+            }
+            globeMesh.SetTriangles(frontTris, 0);
+        }
+        for (int i = 0; i < markers.Count; i++)
+            if (markers[i] != null) markers[i].enabled = Vector3.Dot(markerDirs[i], v) > limit;
+        if (ribbonObj != null && ribbonColors != null)
+        {
+            bool changed = false;
+            for (int i = 0; i < ribbonDirs.Count; i++)
+            {
+                float a = Vector3.Dot(ribbonDirs[i], v) > limit ? 1f : 0f;
+                int k = i * 2;
+                if (ribbonColors[k].a != a) { ribbonColors[k].a = a; ribbonColors[k + 1].a = a; changed = true; }
+            }
+            if (changed) ribbonObj.GetComponent<MeshFilter>().sharedMesh.colors = ribbonColors;
+        }
+    }
+
+    // ---------- markers ----------
+
+    private void Markers(CampaignInterface ci)
+    {
+        for (int i = 0; i < markers.Count; i++) if (markers[i] != null) Destroy(markers[i].gameObject);
+        markers.Clear(); markerDirs.Clear(); markerMats.Clear();
+        if (!ShowMarkers) return;
+        CampaignManager cm = CampaignManager.instance;
+        CampaignData d = cm.campaignData;
+        if (cm.landMapLocations != null)
+            for (int i = 0; i < cm.landMapLocations.Count; i++)
+            {
+                MapLocation loc = cm.landMapLocations[i];
+                if (loc == null) continue;
+                Color c = FactionColour(ci, loc.currentFaction);
+                float size = 0.75f + 0.12f * (loc.portLevel + loc.airfieldLevel);
+                AddMarker(d, loc.locationPosition, c, size, false);
+            }
+        if (cm.playerMobile != null)
+            for (int i = 0; i < cm.playerMobile.Count; i++)
+            {
+                GameObjectAnimator g = cm.playerMobile[i];
+                if (g == null || g.mobileMapObject == null || g.mobileMapObject.unitPrefabs == null || g.mobileMapObject.unitPrefabs.Count == 0) continue;
+                AddMarker(d, g.currentMap2DLocation, g.mobileMapObject.type == 1 ? new Color(0.7f, 0.9f, 1f) : Color.white, 1f, true);
+            }
+        if (cm.spottedContacts != null)
+            for (int i = 0; i < cm.spottedContacts.Count; i++)
+            {
+                MobileMapObject m = cm.spottedContacts[i];
+                if (m == null || m.gameObjectAnimator == null) continue;
+                AddMarker(d, m.gameObjectAnimator.currentMap2DLocation, new Color(1f, 0.25f, 0.2f), 1f, true);
+            }
+    }
+
+    private static Color FactionColour(CampaignInterface ci, int f)
+    {
+        try { if (ci.factionColours != null && f >= 0 && f < ci.factionColours.Length) return ci.factionColours[f]; } catch (Exception) { }
+        return Color.grey;
+    }
+
+    private void AddMarker(CampaignData d, Vector2 mapPos, Color c, float size, bool square)
+    {
+        Vector3 dir = Dir((float)ModGeo.Lat(d, mapPos.y), (float)ModGeo.Lon(d, mapPos.x));
+        GameObject g = GameObject.CreatePrimitive(square ? PrimitiveType.Cube : PrimitiveType.Sphere);
+        Collider col = g.GetComponent<Collider>(); if (col != null) Destroy(col);
+        g.name = "GlobeMarker";
+        g.transform.SetParent(markerRoot.transform, false);
+        float s = MarkerSize * Radius * size;
+        g.transform.localScale = new Vector3(s, s, s);
+        g.transform.position = centre + dir * Radius * 1.004f;
+        g.transform.rotation = Quaternion.LookRotation(dir);
+        Renderer r = g.GetComponent<Renderer>();
+        Material m = Unlit(c, 3004);
+        r.sharedMaterial = m;
+        markers.Add(r); markerDirs.Add(dir); markerMats.Add(m);
+    }
+
+    // ---------- build once ----------
+
+    private void Build(CampaignData d)
+    {
+        built = true;
+        shader = Shader.Find("Particles/Alpha Blended");
+        if (shader == null) { shader = Shader.Find("Sprites/Default"); Debug.Log("[GLOBE] Particles/Alpha Blended not found, using Sprites/Default"); }
+        white = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+        white.SetPixels(new Color[] { Color.white, Color.white, Color.white, Color.white }); white.Apply();
+
+        root = new GameObject("ModGlobeRoot");
+        root.transform.position = centre;
+        DontDestroyOnLoad(root);
+
+        GameObject camObj = new GameObject("ModGlobeCamera");
+        camObj.transform.SetParent(root.transform, false);
+        cam = camObj.AddComponent<Camera>();
+        cam.clearFlags = CameraClearFlags.SolidColor;
+        cam.backgroundColor = Color.black;
+        cam.nearClipPlane = 1f;
+        cam.farClipPlane = 60000f;
+        cam.fieldOfView = 40f;
+        Camera main = Camera.main;
+        cam.depth = (main != null ? main.depth : 0f) + 5f;
+        cam.cullingMask = -1;
+        cam.enabled = false;
+
+        // the Earth
+        globeMesh = Sphere(96, 192, Radius, out globeNormals);
+        globeTris = globeMesh.triangles;
+        globeMesh.MarkDynamic();
+        globeColors = new Color[globeNormals.Length];
+        for (int i = 0; i < globeColors.Length; i++) globeColors[i] = Color.white;
+        globeMesh.colors = globeColors;
+        globeObj = MeshObj("Globe", globeMesh, EarthTexture(), Color.white, 3002);
+        // stars behind everything (a big sphere seen from inside; the particle shader draws both faces)
+        Vector3[] dummy;
+        starsObj = MeshObj("Stars", Sphere(24, 48, 30000f, out dummy), StarTexture(), Color.white, 3000);
+        // a soft blue halo on a quad that always faces the camera
+        haloObj = MeshObj("Halo", Quad(Radius * 2.6f), HaloTexture(), new Color(0.45f, 0.65f, 1f, 1f), 3001);
+        // gold outline of the theatre
+        BuildRibbon(d);
+        markerRoot = new GameObject("GlobeMarkers");
+        markerRoot.transform.SetParent(root.transform, false);
+        BuildBlocker();
+        root.SetActive(false);
+        Debug.Log("[GLOBE] built: " + globeNormals.Length + " vertices, shader " + (shader != null ? shader.name : "none"));
+    }
+
+    private Material Unlit(Color c, int queue)
+    {
+        Material m = new Material(shader);
+        m.mainTexture = white;
+        if (m.HasProperty("_TintColor")) m.SetColor("_TintColor", new Color(0.5f, 0.5f, 0.5f, 0.5f));
+        if (m.HasProperty("_Color")) m.color = Color.white;
+        m.renderQueue = queue;
+        // colour comes from the vertices, so set them
+        return Tinted(m, c);
+    }
+
+    private Material Tinted(Material m, Color c)
+    {
+        if (m.HasProperty("_TintColor")) m.SetColor("_TintColor", new Color(c.r * 0.5f, c.g * 0.5f, c.b * 0.5f, c.a * 0.5f));
+        else if (m.HasProperty("_Color")) m.color = c;
+        return m;
+    }
+
+    private GameObject MeshObj(string name, Mesh mesh, Texture2D tex, Color tint, int queue)
+    {
+        GameObject g = new GameObject(name);
+        g.transform.SetParent(root.transform, false);
+        g.AddComponent<MeshFilter>().sharedMesh = mesh;
+        MeshRenderer r = g.AddComponent<MeshRenderer>();
+        Material m = new Material(shader);
+        m.mainTexture = tex;
+        m.renderQueue = queue;
+        Tinted(m, tint);
+        r.sharedMaterial = m;
+        r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        r.receiveShadows = false;
+        return g;
+    }
+
+    private Texture2D EarthTexture()
+    {
+        Texture2D t = null;
+        try { t = AssetLoader.instance.ImportTexture2D("ModAssets/globe/earth.jpg"); } catch (Exception ex) { Debug.Log("[GLOBE] earth.jpg: " + ex.Message); }
+        if (t != null && t.width > 64) { t.wrapMode = TextureWrapMode.Repeat; t.anisoLevel = 4; Debug.Log("[GLOBE] earth.jpg " + t.width + "x" + t.height); return t; }
+        Debug.Log("[GLOBE] override/ModAssets/globe/earth.jpg not found, drawing a plain globe");
+        int w = 1024, h = 512;
+        t = new Texture2D(w, h, TextureFormat.RGB24, false);
+        Color sea = new Color(0.16f, 0.26f, 0.38f), line = new Color(0.4f, 0.5f, 0.6f);
+        Color[] px = new Color[w * h];
+        for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) px[y * w + x] = ((x % (w / 24) == 0) || (y % (h / 12) == 0)) ? line : sea;
+        t.SetPixels(px); t.Apply();
+        return t;
+    }
+
+    private Texture2D StarTexture()
+    {
+        int w = 1024, h = 512;
+        Texture2D t = new Texture2D(w, h, TextureFormat.RGBA32, false);
+        Color[] px = new Color[w * h];
+        for (int i = 0; i < px.Length; i++) px[i] = new Color(0f, 0f, 0f, 1f);
+        System.Random rnd = new System.Random(7);
+        for (int i = 0; i < 1800; i++)
+        {
+            int x = rnd.Next(w), y = rnd.Next(h);
+            float b = 0.35f + 0.65f * (float)rnd.NextDouble();
+            px[y * w + x] = new Color(b, b, b * 0.95f + 0.05f, 1f);
+        }
+        t.SetPixels(px); t.Apply();
+        return t;
+    }
+
+    private Texture2D HaloTexture()
+    {
+        int n = 256;
+        Texture2D t = new Texture2D(n, n, TextureFormat.RGBA32, false);
+        Color[] px = new Color[n * n];
+        float inner = Radius / (Radius * 1.3f), outer = 1f; // in units of the quad half size
+        for (int y = 0; y < n; y++) for (int x = 0; x < n; x++)
+        {
+            float dx = (x + 0.5f) / n * 2f - 1f, dy = (y + 0.5f) / n * 2f - 1f;
+            float r = Mathf.Sqrt(dx * dx + dy * dy);
+            float a = 0f;
+            if (r > inner * 0.98f && r < outer) { float k = (r - inner * 0.98f) / (outer - inner * 0.98f); a = 0.55f * (1f - k) * (1f - k); }
+            px[y * n + x] = new Color(1f, 1f, 1f, a);
+        }
+        t.SetPixels(px); t.Apply();
+        t.wrapMode = TextureWrapMode.Clamp;
+        return t;
+    }
+
+    private static Mesh Sphere(int rings, int segs, float r, out Vector3[] normals)
+    {
+        int nv = (rings + 1) * (segs + 1);
+        Vector3[] v = new Vector3[nv]; Vector3[] n = new Vector3[nv]; Vector2[] uv = new Vector2[nv];
+        int k = 0;
+        for (int i = 0; i <= rings; i++)
+        {
+            float lat = -90f + 180f * i / rings;
+            for (int j = 0; j <= segs; j++)
+            {
+                float lon = -180f + 360f * j / segs;
+                Vector3 dir = Dir(lat, lon);
+                v[k] = dir * r; n[k] = dir; uv[k] = new Vector2((float)j / segs, (float)i / rings);
+                k++;
+            }
+        }
+        int[] tri = new int[rings * segs * 6];
+        int t = 0;
+        for (int i = 0; i < rings; i++)
+            for (int j = 0; j < segs; j++)
+            {
+                int a = i * (segs + 1) + j, b = a + 1, c = a + segs + 1, d = c + 1;
+                tri[t++] = a; tri[t++] = c; tri[t++] = d;
+                tri[t++] = a; tri[t++] = d; tri[t++] = b;
+            }
+        Mesh m = new Mesh();
+        m.name = "GlobeSphere";
+        m.vertices = v; m.normals = n; m.uv = uv; m.triangles = tri;
+        m.RecalculateBounds();
+        normals = n;
+        return m;
+    }
+
+    private static Mesh Quad(float size)
+    {
+        float h = size * 0.5f;
+        Mesh m = new Mesh();
+        m.vertices = new Vector3[] { new Vector3(-h, -h, 0f), new Vector3(h, -h, 0f), new Vector3(-h, h, 0f), new Vector3(h, h, 0f) };
+        m.uv = new Vector2[] { new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0f, 1f), new Vector2(1f, 1f) };
+        m.triangles = new int[] { 0, 2, 3, 0, 3, 1, 0, 3, 2, 0, 1, 3 };
+        m.RecalculateBounds();
+        return m;
+    }
+
+    private void BuildRibbon(CampaignData d)
+    {
+        float lat0 = (float)ModGeo.Lat(d, -0.5f), lat1 = (float)ModGeo.Lat(d, 0.5f);
+        float lon0 = (float)ModGeo.Lon(d, -0.5f);
+        float wdeg = d.mapPixelWidth / ModGeo.PxPerDeg;
+        List<Vector2> pts = new List<Vector2>();
+        int n = Mathf.Max(8, Mathf.RoundToInt(wdeg));
+        for (int i = 0; i <= n; i++) pts.Add(new Vector2(lat0, lon0 + wdeg * i / n));
+        int m2 = Mathf.Max(4, Mathf.RoundToInt(lat1 - lat0));
+        for (int i = 1; i <= m2; i++) pts.Add(new Vector2(lat0 + (lat1 - lat0) * i / m2, lon0 + wdeg));
+        for (int i = n - 1; i >= 0; i--) pts.Add(new Vector2(lat1, lon0 + wdeg * i / n));
+        for (int i = m2 - 1; i >= 0; i--) pts.Add(new Vector2(lat0 + (lat1 - lat0) * i / m2, lon0));
+        float w = Radius * 0.004f, lift = Radius * 1.003f;
+        List<Vector3> v = new List<Vector3>(); List<int> tri = new List<int>(); List<Vector2> uv = new List<Vector2>();
+        ribbonDirs.Clear();
+        for (int i = 0; i < pts.Count; i++)
+        {
+            Vector3 dir = Dir(pts[i].x, pts[i].y);
+            Vector3 next = Dir(pts[(i + 1) % pts.Count].x, pts[(i + 1) % pts.Count].y);
+            Vector3 prev = Dir(pts[(i - 1 + pts.Count) % pts.Count].x, pts[(i - 1 + pts.Count) % pts.Count].y);
+            Vector3 tangent = (next - prev).normalized;
+            Vector3 side = Vector3.Cross(dir, tangent).normalized;
+            v.Add(dir * lift + side * w); v.Add(dir * lift - side * w);
+            uv.Add(Vector2.zero); uv.Add(Vector2.one);
+            ribbonDirs.Add(dir);
+        }
+        int cnt = pts.Count;
+        for (int i = 0; i < cnt; i++)
+        {
+            int a = i * 2, b = a + 1, c = ((i + 1) % cnt) * 2, dd = c + 1;
+            Vector3 nrm = Vector3.Cross(v[c] - v[a], v[b] - v[a]);
+            if (Vector3.Dot(nrm, v[a]) > 0f) { tri.Add(a); tri.Add(c); tri.Add(b); tri.Add(b); tri.Add(c); tri.Add(dd); }
+            else { tri.Add(a); tri.Add(b); tri.Add(c); tri.Add(b); tri.Add(dd); tri.Add(c); }
+        }
+        Mesh mesh = new Mesh();
+        mesh.vertices = v.ToArray(); mesh.uv = uv.ToArray(); mesh.triangles = tri.ToArray();
+        ribbonColors = new Color[v.Count];
+        for (int i = 0; i < ribbonColors.Length; i++) ribbonColors[i] = new Color(1f, 0.8f, 0.25f, 1f);
+        mesh.colors = ribbonColors;
+        mesh.RecalculateBounds();
+        ribbonObj = MeshObj("Theatre", mesh, white, Color.white, 3003);
+        ribbonMat = ribbonObj.GetComponent<MeshRenderer>().sharedMaterial;
+    }
+
+    // an invisible full-screen panel behind the game's panels, so clicks on the globe do not reach the flat map
+    private void BuildBlocker()
+    {
+        try
+        {
+            CampaignInterface ci = CampaignInterface.instance;
+            if (ci == null || ci.pauseButtonImage == null || ci.pauseButtonImage.canvas == null) return;
+            Transform rootCanvas = ci.pauseButtonImage.canvas.rootCanvas.transform;
+            blocker = new GameObject("ModGlobeBlocker", typeof(RectTransform));
+            blocker.transform.SetParent(rootCanvas, false);
+            blocker.transform.SetAsFirstSibling();
+            RectTransform rt = blocker.GetComponent<RectTransform>();
+            rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one; rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
+            Image img = blocker.AddComponent<Image>();
+            img.color = new Color(0f, 0f, 0f, 0f);
+            img.raycastTarget = true;
+            blocker.SetActive(false);
+        }
+        catch (Exception ex) { Debug.Log("[GLOBE] blocker: " + ex.Message); blocker = null; }
+    }
+
+    private void BuildButton(CampaignInterface ci)
+    {
+        if (ci.pauseButtonImage == null || ci.pauseButtonImage.canvas == null) return;
+        Transform root = ci.pauseButtonImage.canvas.rootCanvas.transform;
+        buttonObject = ModTFOverlay.MakeButton(root, 4, null, "3D", "Globe (F10). Drag to spin, wheel to zoom, zoom right in to return to the map", new UnityAction(Toggle), out buttonBack);
+        if (!buttonReported) { buttonReported = true; Debug.Log("[GLOBE] button added"); }
+    }
+}
