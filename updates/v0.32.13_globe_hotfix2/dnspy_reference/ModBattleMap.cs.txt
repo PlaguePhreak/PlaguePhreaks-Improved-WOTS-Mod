@@ -1,0 +1,121 @@
+using System;
+using UnityEngine;
+using UnityEngine.UI;
+
+public static class ModBattleMap
+{
+	public static bool On = true;
+
+	public static int Size = 512;
+
+	private static Texture2D last;
+
+	private static bool reported;
+
+	public static void Apply()
+	{
+		try
+		{
+			if (!On)
+			{
+				return;
+			}
+			CampaignManager instance = CampaignManager.instance;
+			Map instance2 = Map.instance;
+			if (instance == null || instance.campaignData == null || instance2 == null || instance2.mapImage == null)
+			{
+				Debug.Log("[BMAP] no campaign or no minimap image, stock minimap kept");
+				return;
+			}
+			if (EngagementManager.instance == null || EngagementManager.instance.engagementData == null || !EngagementManager.instance.engagementData.isCampaignEngagement)
+			{
+				Debug.Log("[BMAP] not a campaign battle, stock minimap kept");
+				return;
+			}
+			CampaignData campaignData = instance.campaignData;
+			int[] lastEncounterPixelCoords = campaignData.lastEncounterPixelCoords;
+			if (lastEncounterPixelCoords == null || lastEncounterPixelCoords.Length < 2 || campaignData.mapOriginXY == null || campaignData.mapOriginXY.Length < 2 || campaignData.mapPixelWidth <= 0)
+			{
+				Debug.Log("[BMAP] no encounter pixel coords, stock minimap kept");
+				return;
+			}
+			if (instance.mapMaterial == null)
+			{
+				Debug.Log("[BMAP] no campaign map material, stock minimap kept");
+				return;
+			}
+			Texture2D[] array = new Texture2D[4];
+			string[] array2 = ((instance.mapSharderQuads != null && instance.mapSharderQuads.Length == 4) ? instance.mapSharderQuads : new string[4] { "_TexTL", "_TexTR", "_TexBL", "_TexBR" });
+			for (int i = 0; i < 4; i++)
+			{
+				array[i] = instance.mapMaterial.GetTexture(array2[i]) as Texture2D;
+				if (array[i] == null)
+				{
+					Debug.Log("[BMAP] campaign map quad " + array2[i] + " missing, stock minimap kept");
+					return;
+				}
+			}
+			float num = campaignData.mapPixelWidth;
+			float num2 = (float)campaignData.mapPixelWidth * 0.5f;
+			int num3 = Mathf.Clamp(Size, 64, 1024);
+			Texture2D texture2D = new Texture2D(num3, num3, TextureFormat.RGBA32, mipmap: false);
+			texture2D.wrapMode = TextureWrapMode.Clamp;
+			Color[] array3 = new Color[num3 * num3];
+			float num4 = lastEncounterPixelCoords[0] - 256;
+			float num5 = lastEncounterPixelCoords[1] - 256;
+			for (int j = 0; j < num3; j++)
+			{
+				float num6 = num5 + ((float)j + 0.5f) * 512f / (float)num3;
+				float num7 = (num6 - (float)campaignData.mapOriginXY[1]) / num2;
+				for (int k = 0; k < num3; k++)
+				{
+					float num8 = num4 + ((float)k + 0.5f) * 512f / (float)num3;
+					float num9 = num8 - (float)campaignData.mapOriginXY[0];
+					num9 = (num9 % 86400f + 86400f) % 86400f;
+					num9 /= num;
+					Color color;
+					if (num9 < 0f || num9 > 1f || num7 < 0f || num7 > 1f)
+					{
+						color = new Color(0.1f, 0.15f, 0.25f, 1f);
+					}
+					else
+					{
+						int num10 = ((!(num9 < 0.5f)) ? 1 : 0) + ((!(num7 >= 0.5f)) ? 2 : 0);
+						float u = ((num9 < 0.5f) ? num9 : (num9 - 0.5f)) * 2f;
+						float v = ((num7 >= 0.5f) ? (num7 - 0.5f) : num7) * 2f;
+						color = array[num10].GetPixelBilinear(u, v);
+						color.a = 1f;
+					}
+					array3[j * num3 + k] = color;
+				}
+			}
+			texture2D.SetPixels(array3);
+			texture2D.Apply(updateMipmaps: false, makeNoLongerReadable: false);
+			Image component = instance2.mapImage.GetComponent<Image>();
+			if (component == null)
+			{
+				Debug.Log("[BMAP] minimap has no Image component");
+				return;
+			}
+			component.material = null;
+			component.sprite = Sprite.Create(texture2D, new Rect(0f, 0f, num3, num3), new Vector2(0.5f, 0.5f));
+			component.preserveAspect = false;
+			if (last != null)
+			{
+				UnityEngine.Object.Destroy(last);
+			}
+			last = texture2D;
+			Debug.Log("[BMAP] minimap shows the campaign map at pixel " + lastEncounterPixelCoords[0] + "," + lastEncounterPixelCoords[1]);
+		}
+		catch (Exception ex)
+		{
+			if (!reported)
+			{
+				reported = true;
+				Debug.LogError("[BMAP] failed: " + ex.ToString());
+			}
+		}
+	}
+}
+You are not using the latest version of the tool, please update.
+Latest version is '11.2.0.10050' (yours is '8.2.0.7535-95108c96')
