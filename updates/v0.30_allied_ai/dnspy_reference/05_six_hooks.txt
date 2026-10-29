@@ -1,0 +1,29 @@
+0.30 Allied AI: the six one-line hooks (dnSpy: right-click the method > Edit Method, change, Compile)
+Only needed if you build by hand. The Assembly-CSharp.dll in this folder already has all six.
+
+1) CampaignManager.CheckDaily()
+   Find:      ModConvoy.Daily();
+   Add below: ModAllied.Daily();
+
+2) CampaignManager.Check1Min()
+   Find:      ModConvoy.Tick();   (the first line)
+   Add below: ModAllied.Tick();
+
+3) CampaignInterface.SelectMapObject(GameObjectAnimator obj)
+   New first line, above everything else:
+       if (ModAllied.Blocks(obj)) return;
+
+4) CampaignManager.CheckMobileEncounters(List<GameObjectAnimator>, List<GameObjectAnimator>, bool)
+   Find the line:
+       campaignData.canAutoResolve = ModAirResolve.CanResolve(mobileMapObject, mobileMapObject2);
+   Change it to:
+       campaignData.canAutoResolve = ModAirResolve.CanResolve(mobileMapObject, mobileMapObject2) | ModAllied.CanResolve(mobileMapObject, mobileMapObject2);
+   (If dnSpy shows other names inside the brackets, use the same two names it shows.)
+
+5) EngagementPanel.AutoResolve()
+   New first line, above "if (ModAirResolve.Open()) return;":
+       if (ModAllied.AutoResolve()) return;
+
+6) ActionReport.CreateActionReport()
+   Find the two DisplayData(...) lines (players, then others). Below the SECOND one add:
+       if (ModAllied.InBattle()) pointsGained = 0;

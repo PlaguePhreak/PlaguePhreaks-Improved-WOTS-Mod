@@ -1,0 +1,372 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+using WorldMapStrategyKit;
+using Object = UnityEngine.Object;
+using Random = UnityEngine.Random;
+
+// 0.30: the convoy sails to the port's sea waypoint, is found again after a load, is re-sent if it
+// stops, is shown in allied yellow and can't be given orders (ModAllied.Blocks).
+
+public static class ModConvoy
+{
+	public static int minTroops;
+
+	public static int minSupplies;
+
+	public static int minEngineering;
+
+	public static int minFuel;
+
+	public static int minDays;
+
+	public static int maxDays;
+
+	public static int huntHours;
+
+	public static int daysLeft;
+
+	public static GameObjectAnimator convoy;
+
+	public static MapLocation destination;
+
+	private static string Pick(UnitSubType subtype)
+	{
+		List<string> list = new List<string>();
+		foreach (KeyValuePair<string, UnitListData> item in EngagementManager.instance.unitSeaDictionary)
+		{
+			if (CampaignManager.instance.campaignData.nations0.Contains(item.Value.nation) && EngagementManager.instance.unitDataDictionary[item.Key].unitSubtype == subtype)
+			{
+				list.Add(item.Key);
+			}
+		}
+		if (list.Count == 0)
+		{
+			return null;
+		}
+		return list[Random.Range(0, list.Count)];
+	}
+
+	private static int Roll(string prefab, int cargoIndex, int minimum)
+	{
+		List<int> cargo = EngagementManager.instance.unitDataDictionary[prefab].cargo;
+		if (cargo == null || cargo.Count != 4)
+		{
+			return 0;
+		}
+		int num = cargo[cargoIndex];
+		if (num < minimum)
+		{
+			return num;
+		}
+		return Random.Range(minimum, num + 1);
+	}
+
+	public static void Daily()
+	{
+		if (!ModOptions.Convoy)
+		{
+			return;
+		}
+		try
+		{
+			if ((Object)(object)convoy != (Object)null)
+			{
+				return;
+			}
+			if (daysLeft < 0)
+			{
+				daysLeft = Random.Range(minDays, maxDays + 1);
+				Debug.Log((object)("[CONVOY] next convoy in " + daysLeft + " days"));
+				return;
+			}
+			daysLeft--;
+			if (daysLeft <= 0)
+			{
+				if (!Spawn())
+				{
+					daysLeft = 1;
+				}
+				else
+				{
+					daysLeft = -1;
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.Log((object)("[CONVOY] error " + ex.Message + " " + ex.StackTrace));
+			daysLeft = -1;
+		}
+	}
+
+	public static bool Spawn()
+	{
+				CampaignAI instance = CampaignAI.instance;
+		CampaignManager instance2 = CampaignManager.instance;
+		destination = null;
+		for (int i = 0; i < instance.playerHomePorts.Count; i++)
+		{
+			if (instance.playerHomePorts[i].currentFaction == 0)
+			{
+				destination = instance.playerHomePorts[i];
+				break;
+			}
+		}
+		if ((Object)(object)destination == (Object)null)
+		{
+			return false;
+		}
+		List<SeaNavigationWaypoint> list = new List<SeaNavigationWaypoint>();
+		for (int j = 0; j < instance2.seaNavigationPoints.Count; j++)
+		{
+			if (!instance2.seaNavigationPoints[j].isLocation)
+			{
+				list.Add(instance2.seaNavigationPoints[j]);
+			}
+		}
+		list.Sort((SeaNavigationWaypoint a, SeaNavigationWaypoint b) => b.positionRadius.y.CompareTo(a.positionRadius.y));
+		SeaNavigationWaypoint seaNavigationWaypoint = list[Random.Range(0, Math.Min(40, list.Count))];
+		int num = Random.Range(5, 10);
+		int num2 = Random.Range(2, 4);
+		List<string> list2 = new List<string>();
+		List<string> list3 = new List<string>();
+		int[] array = new int[4];
+		for (int k = 0; k < num; k++)
+		{
+			string text = Pick(UnitSubType.Merchant);
+			if (text == null)
+			{
+				Debug.Log((object)"[CONVOY] no allied transport found");
+				return false;
+			}
+			int num3 = k % 3;
+			int num4 = Roll(text, num3, (num3 == 1) ? minSupplies : ((num3 == 0) ? minTroops : minEngineering));
+			array[num3] += num4;
+			list2.Add(text);
+			switch (num3)
+			{
+			case 0:
+				list3.Add(num4 + "|0|0|0");
+				break;
+			case 1:
+				list3.Add("0|" + num4 + "|0|0");
+				break;
+			default:
+				list3.Add("0|0|" + num4 + "|0");
+				break;
+			}
+		}
+		for (int l = 0; l < num2; l++)
+		{
+			string text2 = Pick(UnitSubType.Oiler);
+			if (text2 == null)
+			{
+				Debug.Log((object)"[CONVOY] no allied oiler found");
+				return false;
+			}
+			int num5 = Roll(text2, 3, minFuel);
+			array[3] += num5;
+			list2.Add(text2);
+			list3.Add("0|0|0|" + num5);
+		}
+		int num6 = Random.Range(1, 4);
+		for (int m = 0; m < num6; m++)
+		{
+			string text3 = PickAny(UnitSubType.Destroyer, UnitSubType.Destroyer_Escort, UnitSubType.Light_Cruiser);
+			if (text3 == null)
+			{
+				break;
+			}
+			list2.Add(text3);
+			list3.Add("0|0|0|0");
+		}
+		MobileMapObject newTaskForce = instance.newTaskForce;
+		CampaignInterface.instance.ClearNewGroupData(newTaskForce);
+		newTaskForce.unitPrefabs = list2;
+		for (int n = 0; n < list2.Count; n++)
+		{
+			UnitData unitData = EngagementManager.instance.unitDataDictionary[list2[n]];
+			newTaskForce.unitInstances.Add(0);
+			newTaskForce.unitDisplayNames.Add((unitData.namesInClass.Count > 0) ? unitData.namesInClass[0] : unitData.unitName);
+			newTaskForce.cellVariables.Add(string.Empty);
+			newTaskForce.ammunitionRemaining.Add(string.Empty);
+			newTaskForce.aircraftCooldown.Add(string.Empty);
+			newTaskForce.cargo.Add(list3[n]);
+			newTaskForce.bombardments.Add(0);
+			newTaskForce.paint.Add(0);
+			newTaskForce.speedModifier.Add(1f);
+			newTaskForce.currentAircraft.Add(string.Empty);
+		}
+		newTaskForce.formation = 8;
+		newTaskForce.formationSpacing = 0;
+		newTaskForce.mobileName = "SUPPLY CONVOY";
+		newTaskForce.customName = true;
+		instance2.SetMobileMapObjectSensors(newTaskForce);
+		newTaskForce.currentFaction = 0;
+		GameObjectAnimator currentMapObject = CampaignInterface.instance.currentMapObject;
+		GameObjectAnimator gameObjectAnimator = CampaignInterface.instance.CreateNewMobileObject(CampaignObjectType.Sea, newTaskForce, new Vector2(seaNavigationWaypoint.positionRadius.x, seaNavigationWaypoint.positionRadius.y), isLoading: false, null, string.Empty);
+		CampaignInterface.instance.currentMapObject = currentMapObject;
+		convoy = gameObjectAnimator;
+		// 0.30: the port's own map point is on land, which gives a sea group no route, so it never moved.
+		// Aim at the port's sea waypoint instead; the name is kept so it is found again after a load.
+		gameObjectAnimator.mobileMapObject.mobileName = "SUPPLY CONVOY";
+		gameObjectAnimator.mobileMapObject.customName = true;
+		ModAllied.SendTo(gameObjectAnimator, ModAllied.Sea(destination));
+		gameObjectAnimator.mobileMapObject.spottedTimer = (float)huntHours * 3600f;
+		if (!instance2.spottedContacts.Contains(gameObjectAnimator.mobileMapObject))
+		{
+			instance2.spottedContacts.Add(gameObjectAnimator.mobileMapObject);
+		}
+		Debug.Log((object)("[CONVOY] spawned at " + seaNavigationWaypoint.waypointName + " heading for " + destination.locationName + " troops " + array[0] + " supplies " + array[1] + " engineering " + array[2] + " fuel " + array[3] + " escorts " + num6));
+		CampaignEvent.instance.CreateEvent("convoyspawn");
+		CampaignEvent.instance.contentText.text = CampaignEvent.instance.contentText.text + "\n\n<b>Cargo:</b> " + array[0] + " troops, " + array[1] + " supplies, " + array[2] + " engineering, " + array[3] + " fuel.\n<b>Destination:</b> " + destination.locationName + ".";
+		return true;
+	}
+
+	public static void Tick()
+	{
+		if (!ModOptions.Convoy)
+		{
+			return;
+		}
+		try
+		{
+			if ((Object)(object)convoy == (Object)null)
+			{
+				Find();
+				if ((Object)(object)convoy == (Object)null)
+				{
+					return;
+				}
+			}
+			MobileMapObject mobileMapObject = convoy.mobileMapObject;
+			if ((Object)(object)mobileMapObject == (Object)null || (Utilities.DoesMobileContainSubtype(mobileMapObject, UnitSubType.Merchant).Count == 0 && Utilities.DoesMobileContainSubtype(mobileMapObject, UnitSubType.Oiler).Count == 0))
+			{
+				Lost();
+				return;
+			}
+			mobileMapObject.fuelUsedDays = 0f;
+			if ((Object)(object)destination == (Object)null || destination.currentFaction != 0)
+			{
+				destination = HomePort();
+				if ((Object)(object)destination == (Object)null)
+				{
+					return;
+				}
+				ModAllied.SendTo(convoy, ModAllied.Sea(destination));
+			}
+			if (!ModAllied.Near(convoy, destination.gameObjectAnimator.currentMap2DLocation, ModAllied.ArriveKm) || (convoy.isMoving && !ModAllied.Near(convoy, destination.gameObjectAnimator.currentMap2DLocation, 15f)))
+			{
+				if (convoy.isMoving)
+				{
+					idle = 0;
+				}
+				else if (++idle >= 60)
+				{
+					idle = 0;
+					Debug.Log((object)"[CONVOY] stopped short of port: sent again");
+					ModAllied.SendTo(convoy, ModAllied.Sea(destination));
+				}
+				return;
+			}
+			// unloaded straight into the home port (no takeover check, the port is already ours)
+			int[] array = new int[4];
+			for (int i = 0; i < mobileMapObject.cargo.Count; i++)
+			{
+				string[] array2 = mobileMapObject.cargo[i].Split(new char[1] { '|' });
+				for (int j = 0; j < 4 && j < array2.Length; j++)
+				{
+					array[j] += int.Parse(array2[j]);
+				}
+				mobileMapObject.cargo[i] = "0|0|0|0";
+			}
+			destination.troops[0] += array[0];
+			destination.supplies[0] += array[1];
+			destination.engineering[0] += array[2];
+			destination.fuel[0] += array[3];
+			GameObjectAnimator obj = convoy;
+			convoy = null;
+			ModAllied.Remove(obj);
+			Debug.Log((object)("[CONVOY] arrived at " + destination.locationName + " troops " + array[0] + " supplies " + array[1] + " engineering " + array[2] + " fuel " + array[3]));
+			CampaignEvent.instance.CreateEvent("convoyarrived");
+			CampaignEvent.instance.contentText.text = CampaignEvent.instance.contentText.text + "\n\n<b>Delivered:</b> " + array[0] + " troops, " + array[1] + " supplies, " + array[2] + " engineering, " + array[3] + " fuel.";
+		}
+		catch (Exception ex)
+		{
+			Debug.Log((object)("[CONVOY] tick error " + ex.Message + " " + ex.StackTrace));
+		}
+	}
+
+	public static int idle;
+
+	// after a load the static reference is gone: find the convoy again by its name
+	private static void Find()
+	{
+		List<GameObjectAnimator> pm = CampaignManager.instance.playerMobile;
+		for (int i = 0; i < pm.Count; i++)
+		{
+			if ((Object)(object)pm[i] != (Object)null && ModAllied.IsConvoy(pm[i].mobileMapObject))
+			{
+				convoy = pm[i];
+				destination = HomePort();
+				if ((Object)(object)destination != (Object)null)
+				{
+					ModAllied.SendTo(convoy, ModAllied.Sea(destination));
+				}
+				Debug.Log((object)"[CONVOY] found the convoy again after a load");
+				return;
+			}
+		}
+	}
+
+	private static MapLocation HomePort()
+	{
+		List<MapLocation> hp = CampaignAI.instance.playerHomePorts;
+		for (int i = 0; i < hp.Count; i++)
+		{
+			if (hp[i].currentFaction == 0)
+			{
+				return hp[i];
+			}
+		}
+		return null;
+	}
+
+	private static void Lost()
+	{
+		convoy = null;
+		Debug.Log((object)"[CONVOY] convoy lost");
+		CampaignEvent.instance.CreateEvent("convoylost");
+	}
+
+	static ModConvoy()
+	{
+		minTroops = 2000;
+		minSupplies = 2000;
+		minEngineering = 100;
+		minFuel = 100;
+		minDays = 20;
+		maxDays = 30;
+		huntHours = 6;
+		daysLeft = -1;
+	}
+
+	private static string PickAny(params UnitSubType[] subtypes)
+	{
+		List<UnitSubType> list = new List<UnitSubType>(subtypes);
+		List<string> list2 = new List<string>();
+		foreach (KeyValuePair<string, UnitListData> item in EngagementManager.instance.unitSeaDictionary)
+		{
+			if (CampaignManager.instance.campaignData.nations0.Contains(item.Value.nation) && list.Contains(EngagementManager.instance.unitDataDictionary[item.Key].unitSubtype))
+			{
+				list2.Add(item.Key);
+			}
+		}
+		if (list2.Count == 0)
+		{
+			return null;
+		}
+		return list2[Random.Range(0, list2.Count)];
+	}
+}

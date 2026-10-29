@@ -1,0 +1,515 @@
+using System;
+using System.Collections.Generic;
+using System.Reflection;
+using UnityEngine;
+using WorldMapStrategyKit;
+
+// 0.30 sea auto resolve for battles an allied group (or the supply convoy) is in: ships against
+// ships, and planes against ships. Planes against planes stay with ModAirResolve.
+// Ships against ships: each side's value is ship cost x health; the stronger side usually wins and
+// lands more hits. Planes against ships: each bomber or torpedo plane rolls to hit, the ships' AA
+// rolls to shoot planes down. A hit damages a ship (compartments knocked out) or sinks it.
+// Results go through CampaignManager.ProcessMobileObjectPostCombat like a played battle.
+public static class ModSeaResolve
+{
+	private class Ship
+	{
+		public string name;
+		public string type;
+		public UnitSubType sub;
+		public float value;
+		public int hits;
+		public bool sunk;
+	}
+
+	private class Side
+	{
+		public MobileMapObject mmo;
+		public bool air;
+		public List<Ship> ships = new List<Ship>();
+		public float value;
+		public int planesLost;
+		public int bombers;
+		public int fighters;
+	}
+
+	public static float SinkSmall = 0.45f;
+	public static float SinkCruiser = 0.22f;
+	public static float SinkCapital = 0.1f;
+	public static float SinkPerExtraHit = 0.25f;
+	public static float PlaneHit = 0.22f;
+	public static float AAPerShip = 0.04f;
+	public static float AAMax = 0.45f;
+
+	public static bool windowOpen;
+	public static string resultText;
+	public static string resultHead;
+	public static float chance;
+	public static string oursText = "";
+	public static string theirsText = "";
+	public static string oursName = "";
+	public static string theirsName = "";
+	private static Side ours;
+	private static Side theirs;
+
+	// ship groups against ship groups, or planes against ships (either way round)
+	public static bool Handles(MobileMapObject a, MobileMapObject b)
+	{
+		if (a == null || b == null || a.unitPrefabs == null || b.unitPrefabs == null || a.unitPrefabs.Count == 0 || b.unitPrefabs.Count == 0)
+		{
+			return false;
+		}
+		MobileMapObject mine = a.currentFaction == 0 ? a : b;
+		if (!ModAllied.IsAllied(mine) && !ModAllied.IsConvoy(mine))
+		{
+			return false;
+		}
+		bool airA = IsAir(a);
+		bool airB = IsAir(b);
+		return !(airA && airB);
+	}
+
+	public static bool Open(MobileMapObject a, MobileMapObject b)
+	{
+		try
+		{
+			ours = Build(a);
+			theirs = Build(b);
+			oursName = a.mobileName;
+			theirsName = (b.spottedTimer > 0f || b.type == 1) ? "Enemy" : "Unknown enemy";
+			oursText = List(ours, true);
+			theirsText = List(theirs, true);
+			chance = Estimate();
+			resultText = null;
+			windowOpen = true;
+			ModAllied.EnsureWindow();
+			Debug.Log("[SEARESOLVE] window opened: " + oursName + " (" + oursText.Replace("\n", ", ") + ") against " + theirsText.Replace("\n", ", ") + ", chance " + chance.ToString("F0") + "%");
+			return true;
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[SEARESOLVE] could not open: " + ex.Message + " " + ex.StackTrace);
+			windowOpen = false;
+			return false;
+		}
+	}
+
+	public static void Close()
+	{
+		windowOpen = false;
+		ours = null;
+		theirs = null;
+	}
+
+	public static string Band()
+	{
+		if (chance >= 80f)
+		{
+			return "Very likely";
+		}
+		if (chance >= 60f)
+		{
+			return "Likely";
+		}
+		if (chance >= 40f)
+		{
+			return "Even";
+		}
+		if (chance >= 20f)
+		{
+			return "Unlikely";
+		}
+		return "Very unlikely";
+	}
+
+	private static bool IsAir(MobileMapObject m)
+	{
+		UnitData ud;
+		return m.type == 1 || (EngagementManager.instance.unitDataDictionary.TryGetValue(m.unitPrefabs[0], out ud) && ud.unitType == UnitType.Air);
+	}
+
+	private static Side Build(MobileMapObject m)
+	{
+		Side s = new Side();
+		s.mmo = m;
+		s.air = IsAir(m);
+		for (int i = 0; i < m.unitPrefabs.Count; i++)
+		{
+			Ship sh = new Ship();
+			UnitData ud;
+			EngagementManager.instance.unitDataDictionary.TryGetValue(m.unitPrefabs[i], out ud);
+			sh.sub = ModAllied.Sub(m.unitPrefabs[i]);
+			sh.type = ModAllied.TypeName(sh.sub);
+			sh.name = (i < m.unitDisplayNames.Count && !string.IsNullOrEmpty(m.unitDisplayNames[i])) ? m.unitDisplayNames[i] : (ud != null ? ud.unitName : m.unitPrefabs[i]);
+			if (s.air)
+			{
+				sh.name = ud != null ? ud.unitName : m.unitPrefabs[i];
+				if (sh.sub == UnitSubType.Fighter)
+				{
+					s.fighters++;
+				}
+				else if (sh.sub != UnitSubType.Scout)
+				{
+					s.bombers++;
+				}
+				sh.value = 1f;
+			}
+			else
+			{
+				UnitListData uld;
+				float cost = EngagementManager.instance.unitSeaDictionary.TryGetValue(m.unitPrefabs[i], out uld) ? (float)Mathf.Max(1, uld.cost) : 5f;
+				if (sh.sub == UnitSubType.Merchant || sh.sub == UnitSubType.Oiler)
+				{
+					cost *= 0.15f;
+				}
+				sh.value = cost * (1f - ModAllied.Damage(m, i));
+			}
+			s.value += sh.value;
+			s.ships.Add(sh);
+		}
+		return s;
+	}
+
+	private static string List(Side s, bool counts)
+	{
+		Dictionary<string, int> c = new Dictionary<string, int>();
+		List<string> order = new List<string>();
+		for (int i = 0; i < s.ships.Count; i++)
+		{
+			string key = s.air ? s.ships[i].name : s.ships[i].type;
+			if (!c.ContainsKey(key))
+			{
+				c[key] = 0;
+				order.Add(key);
+			}
+			c[key]++;
+		}
+		string t = "";
+		for (int j = 0; j < order.Count; j++)
+		{
+			t += c[order[j]] + " x " + order[j] + "\n";
+		}
+		return t.TrimEnd('\n');
+	}
+
+	private static float Estimate()
+	{
+		int wins = 0;
+		for (int i = 0; i < 400; i++)
+		{
+			Reset(ours);
+			Reset(theirs);
+			if (Fight(ours, theirs))
+			{
+				wins++;
+			}
+		}
+		Reset(ours);
+		Reset(theirs);
+		return 100f * (float)wins / 400f;
+	}
+
+	private static void Reset(Side s)
+	{
+		s.planesLost = 0;
+		for (int i = 0; i < s.ships.Count; i++)
+		{
+			s.ships[i].hits = 0;
+			s.ships[i].sunk = false;
+		}
+	}
+
+	// true when our side wins
+	private static bool Fight(Side a, Side b)
+	{
+		if (a.air || b.air)
+		{
+			Side planes = a.air ? a : b;
+			Side ships = a.air ? b : a;
+			AirAttack(planes, ships);
+			int lostShips = Lost(ships);
+			bool planesWin = lostShips > 0 || Hits(ships) >= Mathf.Max(1, ships.ships.Count / 2);
+			return (a == planes) ? planesWin : !planesWin;
+		}
+		float pa = Mathf.Pow(Mathf.Max(0.1f, a.value), 1.3f);
+		float pb = Mathf.Pow(Mathf.Max(0.1f, b.value), 1.3f);
+		bool aWins = UnityEngine.Random.value < pa / (pa + pb);
+		Side w = aWins ? a : b;
+		Side l = aWins ? b : a;
+		int onLoser = Mathf.RoundToInt(UnityEngine.Random.Range(0.5f, 1.2f) * (float)Mathf.Min(l.ships.Count, 1 + w.ships.Count / 2));
+		int onWinner = Mathf.RoundToInt(UnityEngine.Random.Range(0.1f, 0.5f) * (float)Mathf.Min(w.ships.Count, 1 + l.ships.Count / 2));
+		Shoot(l, Mathf.Max(1, onLoser));
+		Shoot(w, onWinner);
+		return aWins;
+	}
+
+	private static void AirAttack(Side planes, Side ships)
+	{
+		int afloat = ships.ships.Count;
+		float aa = Mathf.Min(AAMax, AAPerShip * (float)afloat);
+		int lost = 0;
+		int hits = 0;
+		for (int i = 0; i < planes.ships.Count; i++)
+		{
+			Ship p = planes.ships[i];
+			bool shot = UnityEngine.Random.value < ((p.sub == UnitSubType.Fighter) ? aa * 0.5f : aa);
+			if (shot)
+			{
+				p.sunk = true;
+				lost++;
+				if (UnityEngine.Random.value < 0.5f)
+				{
+					continue;
+				}
+			}
+			if (p.sub != UnitSubType.Fighter && p.sub != UnitSubType.Scout && UnityEngine.Random.value < PlaneHit)
+			{
+				hits++;
+			}
+		}
+		planes.planesLost = lost;
+		Shoot(ships, hits);
+	}
+
+	private static void Shoot(Side s, int hits)
+	{
+		for (int h = 0; h < hits; h++)
+		{
+			List<Ship> live = new List<Ship>();
+			for (int i = 0; i < s.ships.Count; i++)
+			{
+				if (!s.ships[i].sunk)
+				{
+					live.Add(s.ships[i]);
+				}
+			}
+			if (live.Count == 0)
+			{
+				return;
+			}
+			Ship t = live[UnityEngine.Random.Range(0, live.Count)];
+			t.hits++;
+			if (UnityEngine.Random.value < SinkChance(t.sub) + SinkPerExtraHit * (float)(t.hits - 1))
+			{
+				t.sunk = true;
+			}
+		}
+	}
+
+	private static float SinkChance(UnitSubType st)
+	{
+		switch (st)
+		{
+		case UnitSubType.Battleship:
+		case UnitSubType.Battlecruiser:
+		case UnitSubType.Aircraft_Carrier:
+			return SinkCapital;
+		case UnitSubType.Heavy_Cruiser:
+		case UnitSubType.Light_Cruiser:
+		case UnitSubType.Light_Carrier:
+			return SinkCruiser;
+		default:
+			return SinkSmall;
+		}
+	}
+
+	private static int Lost(Side s)
+	{
+		int n = 0;
+		for (int i = 0; i < s.ships.Count; i++)
+		{
+			if (s.ships[i].sunk)
+			{
+				n++;
+			}
+		}
+		return n;
+	}
+
+	private static int Hits(Side s)
+	{
+		int n = 0;
+		for (int i = 0; i < s.ships.Count; i++)
+		{
+			n += s.ships[i].hits;
+		}
+		return n;
+	}
+
+	public static void Resolve()
+	{
+		try
+		{
+			if (ours == null || theirs == null)
+			{
+				Close();
+				return;
+			}
+			Reset(ours);
+			Reset(theirs);
+			bool win = Fight(ours, theirs);
+			string a = Losses(ours);
+			string b = Losses(theirs);
+			resultHead = win ? "Victory" : "Defeat";
+			resultText = oursName + " lost " + ((a.Length > 0) ? a : "nothing") + ". The enemy lost " + ((b.Length > 0) ? b : "nothing") + ".";
+			Debug.Log("[SEARESOLVE] resolved (chance was " + chance.ToString("F0") + "%): " + resultHead + ". " + resultText);
+			// the sunk list takes its date from the last battle loaded; give it today's
+			if (EngagementData.instance != null && EngagementData.instance.date != null && EngagementData.instance.date.Length >= 3)
+			{
+				DateTime now = CampaignInterface.instance.dateTime;
+				EngagementData.instance.date[0] = now.Day;
+				EngagementData.instance.date[1] = now.Month;
+				EngagementData.instance.date[2] = now.Year;
+			}
+			Apply(ours);
+			Apply(theirs);
+			if (EngagementPanel.instance != null)
+			{
+				EngagementPanel.instance.ClearEncounterData();
+				EngagementPanel.instance.gameObject.SetActive(false);
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[SEARESOLVE] resolve failed: " + ex.Message + " " + ex.StackTrace);
+			resultHead = null;
+			resultText = "Auto resolve failed (see the log). Nothing was changed.";
+		}
+		windowOpen = false;
+		ours = null;
+		theirs = null;
+	}
+
+	private static string Losses(Side s)
+	{
+		string sunk = "";
+		string hit = "";
+		int planes = 0;
+		for (int i = 0; i < s.ships.Count; i++)
+		{
+			Ship sh = s.ships[i];
+			if (s.air)
+			{
+				if (sh.sunk)
+				{
+					planes++;
+				}
+				continue;
+			}
+			if (sh.sunk)
+			{
+				sunk += ((sunk.Length > 0) ? ", " : "") + sh.name + " (" + sh.type + ")";
+			}
+			else if (sh.hits > 0)
+			{
+				hit += ((hit.Length > 0) ? ", " : "") + sh.name;
+			}
+		}
+		if (s.air)
+		{
+			return (planes > 0) ? (planes + " plane" + ((planes > 1) ? "s" : "")) : "";
+		}
+		string t = (sunk.Length > 0) ? ("sunk: " + sunk) : "";
+		if (hit.Length > 0)
+		{
+			t += ((t.Length > 0) ? "; " : "") + "damaged: " + hit;
+		}
+		return t;
+	}
+
+	// write the result into the group the way a played battle does, then let the game tidy up
+	private static void Apply(Side s)
+	{
+		MobileMapObject m = s.mmo;
+		if (m == null)
+		{
+			return;
+		}
+		int count = m.unitPrefabs.Count;
+		if (s.air)
+		{
+			m.cellVariables = new List<string>();
+			for (int i = 0; i < count; i++)
+			{
+				m.cellVariables.Add((i < s.ships.Count && s.ships[i].sunk) ? "DESTROYED" : string.Empty);
+			}
+			while (m.ammunitionRemaining.Count < count)
+			{
+				m.ammunitionRemaining.Add(string.Empty);
+			}
+		}
+		else
+		{
+			while (m.cellVariables.Count < count)
+			{
+				m.cellVariables.Add(string.Empty);
+			}
+			for (int j = 0; j < count && j < s.ships.Count; j++)
+			{
+				if (s.ships[j].sunk)
+				{
+					m.cellVariables[j] = "DESTROYED";
+				}
+				else if (s.ships[j].hits > 0)
+				{
+					m.cellVariables[j] = Hurt(m.unitPrefabs[j], m.cellVariables[j], s.ships[j].hits);
+				}
+			}
+		}
+		MethodInfo mi = typeof(CampaignManager).GetMethod("ProcessMobileObjectPostCombat", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+		if (mi == null)
+		{
+			Debug.LogError("[SEARESOLVE] CampaignManager.ProcessMobileObjectPostCombat not found: losses not applied");
+			return;
+		}
+		mi.Invoke(CampaignManager.instance, new object[1] { m });
+	}
+
+	// each hit knocks out 2 to 4 compartments, in the same "cell|json|cell|json" form the game saves
+	private static string Hurt(string prefab, string old, int hits)
+	{
+		UnitData ud = EngagementManager.instance.unitDataDictionary[prefab];
+		if (ud.cellDictionary == null || ud.cellDictionary.Count == 0)
+		{
+			return old;
+		}
+		Dictionary<string, string> cells = new Dictionary<string, string>();
+		List<string> order = new List<string>();
+		if (!string.IsNullOrEmpty(old) && old != "DESTROYED")
+		{
+			string[] parts = old.Split('|');
+			for (int i = 0; i + 1 < parts.Length; i += 2)
+			{
+				if (!cells.ContainsKey(parts[i]))
+				{
+					order.Add(parts[i]);
+				}
+				cells[parts[i]] = parts[i + 1];
+			}
+		}
+		List<string> keys = new List<string>(ud.cellDictionary.Keys);
+		int n = 0;
+		for (int h = 0; h < hits; h++)
+		{
+			n += UnityEngine.Random.Range(2, 5);
+		}
+		for (int k = 0; k < n && keys.Count > 0; k++)
+		{
+			string key = keys[UnityEngine.Random.Range(0, keys.Count)];
+			keys.Remove(key);
+			bool destroyed = UnityEngine.Random.value < 0.5f;
+			float integrity = destroyed ? 0f : UnityEngine.Random.Range(30f, 70f);
+			if (!cells.ContainsKey(key))
+			{
+				order.Add(key);
+			}
+			cells[key] = "{\"maxIntegrity\":" + integrity.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) + ",\"integrity\":" + integrity.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) + ",\"isDestroyed\":" + (destroyed ? "true" : "false") + ",\"needsPortRepair\":true}";
+		}
+		string t = "";
+		for (int j = 0; j < order.Count; j++)
+		{
+			t += ((t.Length > 0) ? "|" : "") + order[j] + "|" + cells[order[j]];
+		}
+		return t;
+	}
+}

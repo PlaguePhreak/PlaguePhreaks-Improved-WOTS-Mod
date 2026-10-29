@@ -1,0 +1,10 @@
+ModVersion
+0.29.11
+---
+0.30
+===
+ModVersion
+Plague's Better WOTS mod\n<color=#E0B030>Version 0.29.11</color>
+---
+Plague's Better WOTS mod\n<color=#E0B030>Version 0.30</color>
+===

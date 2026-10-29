@@ -1,0 +1,1768 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+using WorldMapStrategyKit;
+
+// 0.30 Allied AI: RAN task forces on the player's side. They are faction 0 task forces the mod
+// spawns and steers (like the supply convoy), shown in yellow, and the player can't order them.
+// Groups are found again after a load by their name ("RAN ..."), so no save fields are needed.
+// Hooks: CampaignManager.CheckDaily -> Daily, CampaignManager.Check1Min -> Tick,
+// CampaignInterface.SelectMapObject -> Blocks, CampaignManager.CheckMobileEncounters -> CanResolve,
+// EngagementPanel.AutoResolve -> AutoResolve, ActionReport.CreateActionReport -> InBattle.
+public static class ModAllied
+{
+	public class Group
+	{
+		public MobileMapObject mmo;
+		public string kind = "cruiser";      // carrier, cruiser, destroyer, merchant, strike
+		public string job = "Patrol";        // Patrol, Escort, Attack, Strike, Home, Refit, Deliver
+		public GameObjectAnimator target;
+		public MapLocation home;
+		public MapLocation dest;
+		public Vector2 goal;
+		public bool hasGoal;
+		public int startShips;
+		public int daysOut;
+		public int refitDays;
+		public float strikeWait;
+		public int idleMinutes;
+		public string note = "";
+	}
+
+	public static bool On = true;
+	public static string AllyNation = "australia";
+	public static string Prefix = "RAN ";
+	public static string ConvoyName = "SUPPLY CONVOY";
+	public static string[] HomeIds = new string[3] { "cooktown", "ptmoresby", "milnebay" };
+	public static string CargoFrom = "cooktown";
+	public static int MaxGroups = 2;
+	public static int MaxMerchants = 1;
+	public static int FirstDaysMin = 3;
+	public static int FirstDaysMax = 7;
+	public static int RespawnDaysMin = 15;
+	public static int RespawnDaysMax = 25;
+	public static int MerchantDaysMin = 10;
+	public static int MerchantDaysMax = 15;
+	public static int CarrierAfterDays = 90;
+	public static float CarrierChance = 0.3f;
+	public static float CruiserChance = 0.5f;
+	public static float PatrolKm = 600f;
+	public static float AttackKm = 250f;
+	public static float AttackOdds = 0.8f;
+	public static float StrikeKm = 250f;
+	public static float StrikeHours = 24f;
+	public static float EscortKm = 400f;
+	public static float ThreatKm = 300f;
+	public static int PatrolDays = 12;
+	public static int RefitDays = 5;
+	public static float ArriveKm = 60f;
+	public static int CargoSupplies = 1000;
+	public static int CargoFuel = 50;
+	public static int KeepSupplies = 2000;
+	public static int KeepFuel = 100;
+	public static int NeedSupplies = 3000;
+	public static int NeedFuel = 300;
+	public static Color32 Yellow = new Color32(212, 181, 28, 255);
+
+	public static Dictionary<MobileMapObject, Group> groups = new Dictionary<MobileMapObject, Group>();
+	public static int spawnDays = -1;
+	public static int merchantDays = -1;
+	public static int serial = 1;
+	public static GameObjectAnimator infoGoa;
+	private static GameObject host;
+	private static int minute;
+	private static object owner;
+
+	// ---------------- hooks ----------------
+
+	public static void Tick()
+	{
+		if (!On)
+		{
+			return;
+		}
+		try
+		{
+			if (!Ready())
+			{
+				return;
+			}
+			Sync();
+			Paint();
+			minute++;
+			foreach (Group g in new List<Group>(groups.Values))
+			{
+				if (g.mmo == null)
+				{
+					continue;
+				}
+				g.mmo.fuelUsedDays = 0f;
+				if (g.kind == "strike")
+				{
+					StrikeTick(g);
+				}
+				else if (minute % 60 == 0 || !g.hasGoal)
+				{
+					Think(g);
+				}
+				else if (minute % 10 == 0)
+				{
+					Unstick(g);
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[ALLIED] tick error " + ex.Message + " " + ex.StackTrace);
+		}
+	}
+
+	public static void Daily()
+	{
+		if (!On)
+		{
+			return;
+		}
+		try
+		{
+			if (!Ready())
+			{
+				return;
+			}
+			Sync();
+			if (!Active())
+			{
+				return;
+			}
+			foreach (Group g in new List<Group>(groups.Values))
+			{
+				if (g.mmo == null || g.kind == "strike")
+				{
+					continue;
+				}
+				if (g.job == "Refit")
+				{
+					g.refitDays--;
+					if (g.refitDays <= 0)
+					{
+						Refit(g.mmo);
+						g.daysOut = 0;
+						g.startShips = g.mmo.unitPrefabs.Count;
+						SetJob(g, "Patrol", null);
+						Say(g.mmo.mobileName + " has finished its refit at " + Name(g.home) + " and is sailing again.");
+					}
+				}
+				else
+				{
+					g.daysOut++;
+				}
+			}
+			int fighting = Count(false);
+			if (spawnDays < 0)
+			{
+				spawnDays = (fighting == 0) ? UnityEngine.Random.Range(FirstDaysMin, FirstDaysMax + 1) : UnityEngine.Random.Range(RespawnDaysMin, RespawnDaysMax + 1);
+				Debug.Log("[ALLIED] next allied group in " + spawnDays + " days");
+			}
+			else if (fighting < MaxGroups)
+			{
+				spawnDays--;
+				if (spawnDays <= 0)
+				{
+					spawnDays = SpawnFighting() ? -1 : 1;
+				}
+			}
+			if (merchantDays < 0)
+			{
+				merchantDays = UnityEngine.Random.Range(MerchantDaysMin, MerchantDaysMax + 1);
+			}
+			else if (Count(true) < MaxMerchants)
+			{
+				merchantDays--;
+				if (merchantDays <= 0)
+				{
+					merchantDays = SpawnMerchants() ? -1 : 2;
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[ALLIED] daily error " + ex.Message + " " + ex.StackTrace);
+		}
+	}
+
+	// SelectMapObject: an allied group (or the convoy) opens the info window instead of being selected
+	public static bool Blocks(GameObjectAnimator obj)
+	{
+		try
+		{
+			if (obj == null || obj.mobileMapObject == null || obj.mobileMapObject.currentFaction != 0)
+			{
+				return false;
+			}
+			if (!IsAllied(obj.mobileMapObject) && !IsConvoy(obj.mobileMapObject))
+			{
+				return false;
+			}
+			infoGoa = obj;
+			Ensure();
+			if (TooltipManager.instance != null)
+			{
+				TooltipManager.instance.ClearToolTip();
+			}
+			return true;
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[ALLIED] select error " + ex.Message);
+			return false;
+		}
+	}
+
+	// CheckMobileEncounters: allied battles always offer Auto resolve (air against air stays with ModAirResolve)
+	public static bool CanResolve(MobileMapObject a, MobileMapObject b)
+	{
+		try
+		{
+			MobileMapObject ours = (a != null && a.currentFaction == 0) ? a : b;
+			if (ours == null || (!IsAllied(ours) && !IsConvoy(ours)))
+			{
+				return false;
+			}
+			return ModSeaResolve.Handles(a, b) || ModAirResolve.CanResolve(a, b);
+		}
+		catch (Exception)
+		{
+			return false;
+		}
+	}
+
+	// EngagementPanel.AutoResolve: true when the sea resolve window took over
+	public static bool AutoResolve()
+	{
+		try
+		{
+			CampaignData cd = CampaignManager.instance.campaignData;
+			if (cd.playerObjectEngaged < 0 || cd.otherObjectEngaged < 0)
+			{
+				return false;
+			}
+			MobileMapObject ours = CampaignManager.instance.playerMobile[cd.playerObjectEngaged].mobileMapObject;
+			MobileMapObject theirs = CampaignManager.instance.otherMobile[cd.otherObjectEngaged].mobileMapObject;
+			if (!ModSeaResolve.Handles(ours, theirs))
+			{
+				return false;
+			}
+			if (!ModSeaResolve.Open(ours, theirs))
+			{
+				return false;
+			}
+			Ensure();
+			return true;
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[ALLIED] auto resolve error " + ex.Message + " " + ex.StackTrace);
+			return false;
+		}
+	}
+
+	// ActionReport.CreateActionReport: no command points for a battle an allied group fought
+	public static bool InBattle()
+	{
+		try
+		{
+			CampaignManager cm = CampaignManager.instance;
+			if (cm == null || cm.campaignData == null)
+			{
+				return false;
+			}
+			int i = cm.campaignData.playerObjectEngaged;
+			if (i < 0 || i >= cm.playerMobile.Count || cm.playerMobile[i] == null)
+			{
+				return false;
+			}
+			MobileMapObject m = cm.playerMobile[i].mobileMapObject;
+			bool allied = m != null && IsAllied(m);
+			if (allied)
+			{
+				Debug.Log("[ALLIED] battle fought by " + m.mobileName + ": no command points");
+			}
+			return allied;
+		}
+		catch (Exception)
+		{
+			return false;
+		}
+	}
+
+	// ---------------- who is who ----------------
+
+	public static bool IsAllied(MobileMapObject m)
+	{
+		return m != null && m.currentFaction == 0 && m.mobileName != null && m.mobileName.StartsWith(Prefix);
+	}
+
+	public static bool IsConvoy(MobileMapObject m)
+	{
+		return m != null && m.currentFaction == 0 && m.mobileName == ConvoyName;
+	}
+
+	public static Group Get(MobileMapObject m)
+	{
+		Group g;
+		if (m != null && groups.TryGetValue(m, out g))
+		{
+			return g;
+		}
+		return null;
+	}
+
+	private static bool Ready()
+	{
+		CampaignManager cm = CampaignManager.instance;
+		return cm != null && cm.campaignData != null && CampaignInterface.instance != null && cm.playerMobile != null && cm.landMapLocations != null && cm.landMapLocations.Count > 0;
+	}
+
+	// the RAN only fights in a campaign where australia is on the player's side
+	private static bool Active()
+	{
+		List<string> n = CampaignManager.instance.campaignData.nations0;
+		return n != null && n.Contains(AllyNation);
+	}
+
+	// rebuild the group list from the map (after a load the dictionary is empty)
+	private static void Sync()
+	{
+		CampaignManager cm = CampaignManager.instance;
+		if (owner != cm.landMapLocations)
+		{
+			owner = cm.landMapLocations;
+			groups.Clear();
+			spawnDays = -1;
+			merchantDays = -1;
+			infoGoa = null;
+		}
+		List<MobileMapObject> dead = new List<MobileMapObject>();
+		foreach (KeyValuePair<MobileMapObject, Group> kv in groups)
+		{
+			if (kv.Key == null || kv.Key.gameObjectAnimator == null || !cm.playerMobile.Contains(kv.Key.gameObjectAnimator))
+			{
+				dead.Add(kv.Key);
+			}
+		}
+		for (int i = 0; i < dead.Count; i++)
+		{
+			Group g = groups[dead[i]];
+			groups.Remove(dead[i]);
+			if (g.kind != "strike")
+			{
+				Debug.Log("[ALLIED] group gone: " + g.note);
+				if (g.kind != "merchant" && spawnDays < 0)
+				{
+					spawnDays = UnityEngine.Random.Range(RespawnDaysMin, RespawnDaysMax + 1);
+					Say("An allied " + g.kind + " force has been lost. The RAN will send another in about " + spawnDays + " days.");
+				}
+			}
+		}
+		for (int j = 0; j < cm.playerMobile.Count; j++)
+		{
+			GameObjectAnimator goa = cm.playerMobile[j];
+			if (goa == null || goa.mobileMapObject == null || !IsAllied(goa.mobileMapObject) || groups.ContainsKey(goa.mobileMapObject))
+			{
+				continue;
+			}
+			Group g2 = new Group();
+			g2.mmo = goa.mobileMapObject;
+			g2.kind = KindFromName(g2.mmo.mobileName);
+			g2.home = Home();
+			g2.startShips = g2.mmo.unitPrefabs.Count;
+			g2.note = g2.mmo.mobileName;
+			if (g2.kind == "merchant")
+			{
+				g2.dest = NeediestBase();
+				SetJob(g2, (g2.dest != null && CargoTotal(g2.mmo) > 0) ? "Deliver" : "Home", null);
+			}
+			else if (g2.kind == "strike")
+			{
+				g2.job = "Strike";
+			}
+			groups[g2.mmo] = g2;
+			int n;
+			string tail = g2.mmo.mobileName.Substring(g2.mmo.mobileName.LastIndexOf(' ') + 1);
+			if (int.TryParse(tail, out n) && n >= serial)
+			{
+				serial = n + 1;
+			}
+			Debug.Log("[ALLIED] found " + g2.mmo.mobileName + " (" + g2.kind + ", " + g2.mmo.unitPrefabs.Count + ")");
+		}
+	}
+
+	private static string KindFromName(string n)
+	{
+		if (n.Contains("CARRIER"))
+		{
+			return "carrier";
+		}
+		if (n.Contains("CRUISER"))
+		{
+			return "cruiser";
+		}
+		if (n.Contains("DESTROYER"))
+		{
+			return "destroyer";
+		}
+		if (n.Contains("MERCHANT"))
+		{
+			return "merchant";
+		}
+		if (n.Contains("STRIKE"))
+		{
+			return "strike";
+		}
+		return "cruiser";
+	}
+
+	private static int Count(bool merchants)
+	{
+		int c = 0;
+		foreach (Group g in groups.Values)
+		{
+			if (g.kind == "strike")
+			{
+				continue;
+			}
+			if ((g.kind == "merchant") == merchants)
+			{
+				c++;
+			}
+		}
+		return c;
+	}
+
+	// yellow on the map, every minute (the game paints faction 0 blue on create and on deselect)
+	private static void Paint()
+	{
+		List<GameObjectAnimator> pm = CampaignManager.instance.playerMobile;
+		for (int i = 0; i < pm.Count; i++)
+		{
+			GameObjectAnimator goa = pm[i];
+			if (goa == null || goa.mobileMapObject == null)
+			{
+				continue;
+			}
+			if (IsAllied(goa.mobileMapObject) || IsConvoy(goa.mobileMapObject))
+			{
+				SpriteRenderer sr = goa.GetComponentInChildren<SpriteRenderer>();
+				if (sr != null)
+				{
+					sr.color = Yellow;
+				}
+			}
+		}
+	}
+
+	// ---------------- jobs ----------------
+
+	private static void Think(Group g)
+	{
+		MobileMapObject m = g.mmo;
+		if (m.unitPrefabs.Count == 0 || m.type != 0)
+		{
+			return;
+		}
+		if (g.home == null || g.home.currentFaction != 0)
+		{
+			g.home = Home();
+			if (g.home == null)
+			{
+				return;
+			}
+		}
+		if (g.kind == "merchant")
+		{
+			ThinkMerchant(g);
+			return;
+		}
+		if (g.job == "Refit")
+		{
+			return;
+		}
+		if (g.job == "Home")
+		{
+			if (Near(m.gameObjectAnimator, g.home.gameObjectAnimator.currentMap2DLocation, ArriveKm))
+			{
+				g.refitDays = RefitDays;
+				SetJob(g, "Refit", null);
+				m.gameObjectAnimator.Stop();
+				Say(m.mobileName + " is back at " + Name(g.home) + " for a " + RefitDays + " day refit.");
+			}
+			else
+			{
+				Go(g, Sea(g.home));
+			}
+			return;
+		}
+		string why = NeedsHome(g);
+		if (why != null)
+		{
+			SetJob(g, "Home", null);
+			Go(g, Sea(g.home));
+			Say(m.mobileName + " is returning to " + Name(g.home) + ": " + why + ".");
+			return;
+		}
+		GameObjectAnimator escort = FindEscortJob(g);
+		if (escort != null)
+		{
+			if (g.job != "Escort" || g.target != escort)
+			{
+				Say(m.mobileName + " is escorting " + escort.mobileMapObject.mobileName + ".");
+			}
+			SetJob(g, "Escort", escort);
+			if (Km(m.gameObjectAnimator.currentMap2DLocation, escort.currentMap2DLocation) > 15f)
+			{
+				Go(g, escort.currentMap2DLocation);
+			}
+			return;
+		}
+		if (g.kind == "carrier")
+		{
+			GameObjectAnimator prey = FindPrey(g, StrikeKm, false);
+			if (prey != null)
+			{
+				SetJob(g, "Strike", prey);
+				if (g.strikeWait <= 0f && LaunchStrike(g, prey))
+				{
+					g.strikeWait = StrikeHours;
+				}
+				g.strikeWait -= 1f;
+				Patrol(g, false);
+				return;
+			}
+			g.strikeWait -= 1f;
+		}
+		else
+		{
+			GameObjectAnimator prey2 = FindPrey(g, AttackKm, true);
+			if (prey2 != null)
+			{
+				if (g.job != "Attack" || g.target != prey2)
+				{
+					Say(m.mobileName + " is moving to attack an enemy group.");
+				}
+				SetJob(g, "Attack", prey2);
+				Go(g, prey2.currentMap2DLocation);
+				return;
+			}
+		}
+		if (g.job != "Patrol")
+		{
+			SetJob(g, "Patrol", null);
+		}
+		Patrol(g, false);
+	}
+
+	private static void SetJob(Group g, string job, GameObjectAnimator target)
+	{
+		if (g.job != job)
+		{
+			g.hasGoal = false;
+		}
+		g.job = job;
+		g.target = target;
+	}
+
+	private static void Patrol(Group g, bool force)
+	{
+		GameObjectAnimator goa = g.mmo.gameObjectAnimator;
+		if (!force && g.job == "Patrol" && g.hasGoal && goa.isMoving)
+		{
+			return;
+		}
+		if (g.hasGoal && goa.isMoving && g.job != "Patrol")
+		{
+			return;
+		}
+		Vector2 p;
+		if (RandomSeaPoint(g.home.gameObjectAnimator.currentMap2DLocation, PatrolKm, out p))
+		{
+			Go(g, p);
+		}
+	}
+
+	// re-send a group that has stopped short of where it was told to go
+	private static void Unstick(Group g)
+	{
+		GameObjectAnimator goa = g.mmo.gameObjectAnimator;
+		if (goa == null || goa.isMoving || !g.hasGoal || g.job == "Refit")
+		{
+			g.idleMinutes = 0;
+			return;
+		}
+		if (Km(goa.currentMap2DLocation, g.goal) < 10f)
+		{
+			g.idleMinutes = 0;
+			if (g.job == "Patrol")
+			{
+				Patrol(g, true);
+			}
+			return;
+		}
+		g.idleMinutes += 10;
+		if (g.idleMinutes >= 60)
+		{
+			g.idleMinutes = 0;
+			Go(g, g.goal);
+		}
+	}
+
+	private static string NeedsHome(Group g)
+	{
+		MobileMapObject m = g.mmo;
+		if (g.daysOut >= PatrolDays)
+		{
+			return PatrolDays + " days at sea";
+		}
+		if (g.startShips > 1 && m.unitPrefabs.Count * 2 <= g.startShips)
+		{
+			return "half its ships are lost";
+		}
+		CampaignData cd = CampaignManager.instance.campaignData;
+		float high = 0f;
+		float sum = 0f;
+		for (int i = 0; i < m.unitPrefabs.Count; i++)
+		{
+			float d = Damage(m, i);
+			sum += d;
+			if (d > high)
+			{
+				high = d;
+			}
+			UnitSubType st = Sub(m.unitPrefabs[i]);
+			if (d > cd.taskForceRetreatCapitalDestroyed && (st == UnitSubType.Battleship || st == UnitSubType.Battlecruiser || st == UnitSubType.Aircraft_Carrier || st == UnitSubType.Light_Carrier || st == UnitSubType.Heavy_Cruiser))
+			{
+				return "a capital ship is damaged";
+			}
+		}
+		if (high > cd.taskForceRetreatHighestDestroyed || (m.unitPrefabs.Count > 0 && sum / m.unitPrefabs.Count > cd.taskForceRetreatAverageDestroyed))
+		{
+			return "battle damage";
+		}
+		if (g.kind == "carrier" && PlanesLeft(m, false) == 0)
+		{
+			return "no strike planes left";
+		}
+		return null;
+	}
+
+	// the supply convoy, an allied merchant force, or one of the player's own merchant groups that needs it
+	private static GameObjectAnimator FindEscortJob(Group g)
+	{
+		if (g.kind == "carrier")
+		{
+			return null;
+		}
+		GameObjectAnimator me = g.mmo.gameObjectAnimator;
+		if (g.job == "Escort" && g.target != null && g.target.mobileMapObject != null && CampaignManager.instance.playerMobile.Contains(g.target) && Km(me.currentMap2DLocation, g.target.currentMap2DLocation) < EscortKm * 1.5f && StillNeeds(g.target))
+		{
+			return g.target;
+		}
+		GameObjectAnimator best = null;
+		float bestKm = EscortKm;
+		List<GameObjectAnimator> pm = CampaignManager.instance.playerMobile;
+		for (int i = 0; i < pm.Count; i++)
+		{
+			GameObjectAnimator o = pm[i];
+			if (o == null || o == me || o.mobileMapObject == null || o.mobileMapObject.type != 0 || TakenBy(o) != null)
+			{
+				continue;
+			}
+			if (!StillNeeds(o))
+			{
+				continue;
+			}
+			float km = Km(me.currentMap2DLocation, o.currentMap2DLocation);
+			if (km < bestKm)
+			{
+				bestKm = km;
+				best = o;
+			}
+		}
+		return best;
+	}
+
+	private static bool StillNeeds(GameObjectAnimator o)
+	{
+		MobileMapObject m = o.mobileMapObject;
+		if (IsConvoy(m))
+		{
+			return true;
+		}
+		Group og = Get(m);
+		if (og != null)
+		{
+			return og.kind == "merchant";
+		}
+		if (IsAllied(m) || m.unitPrefabs.Count == 0)
+		{
+			return false;
+		}
+		int merchants = 0;
+		int dds = 0;
+		for (int i = 0; i < m.unitPrefabs.Count; i++)
+		{
+			UnitSubType st = Sub(m.unitPrefabs[i]);
+			if (st == UnitSubType.Merchant || st == UnitSubType.Oiler)
+			{
+				merchants++;
+			}
+			else if (st == UnitSubType.Destroyer || st == UnitSubType.Destroyer_Escort)
+			{
+				dds++;
+			}
+			else if (st != UnitSubType.Submarine)
+			{
+				return false;
+			}
+		}
+		if (merchants * 2 < m.unitPrefabs.Count || dds >= 2)
+		{
+			return false;
+		}
+		return ThreatNear(o.currentMap2DLocation, ThreatKm);
+	}
+
+	private static Group TakenBy(GameObjectAnimator o)
+	{
+		foreach (Group g in groups.Values)
+		{
+			if (g.job == "Escort" && g.target == o)
+			{
+				return g;
+			}
+		}
+		return null;
+	}
+
+	private static bool ThreatNear(Vector2 at, float km)
+	{
+		List<MobileMapObject> sc = CampaignManager.instance.spottedContacts;
+		for (int i = 0; i < sc.Count; i++)
+		{
+			MobileMapObject e = sc[i];
+			if (e == null || e.currentFaction == 0 || e.gameObjectAnimator == null || e.unitPrefabs.Count == 0)
+			{
+				continue;
+			}
+			if (Km(at, e.gameObjectAnimator.currentMap2DLocation) < km)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// a spotted enemy sea group within range that the group can beat (ships) or reach (planes)
+	private static GameObjectAnimator FindPrey(Group g, float km, bool oddsCheck)
+	{
+		GameObjectAnimator me = g.mmo.gameObjectAnimator;
+		float ours = Value(g.mmo);
+		GameObjectAnimator best = null;
+		float bestKm = km;
+		List<MobileMapObject> sc = CampaignManager.instance.spottedContacts;
+		for (int i = 0; i < sc.Count; i++)
+		{
+			MobileMapObject e = sc[i];
+			if (e == null || e.currentFaction == 0 || e.type != 0 || e.gameObjectAnimator == null || e.unitPrefabs.Count == 0)
+			{
+				continue;
+			}
+			if (CampaignManager.instance.IsMobileSubOnly(e))
+			{
+				continue;
+			}
+			if (oddsCheck && Value(e) * AttackOdds > ours)
+			{
+				continue;
+			}
+			float d = Km(me.currentMap2DLocation, e.gameObjectAnimator.currentMap2DLocation);
+			if (d < bestKm)
+			{
+				bestKm = d;
+				best = e.gameObjectAnimator;
+			}
+		}
+		return best;
+	}
+
+	// ---------------- carrier strikes ----------------
+
+	private static bool LaunchStrike(Group g, GameObjectAnimator prey)
+	{
+		CampaignManager cm = CampaignManager.instance;
+		if (!cm.campaignData.airOpHours[CampaignInterface.instance.dateTime.Hour])
+		{
+			return false;
+		}
+		MobileMapObject m = g.mmo;
+		GameObjectAnimator lead = null;
+		int launched = 0;
+		for (int pass = 0; pass < 2; pass++)
+		{
+			for (int i = 0; i < m.unitPrefabs.Count; i++)
+			{
+				UnitData ud = cm.campaignData != null ? EngagementManager.instance.unitDataDictionary[m.unitPrefabs[i]] : null;
+				if (ud == null || ud.aircraftOnBoard == null || ud.aircraftOnBoard.Count == 0 || m.currentAircraft[i] == string.Empty)
+				{
+					continue;
+				}
+				if (Damage(m, i) > 0.2f)
+				{
+					continue;
+				}
+				List<int> have = cm.GetIntListFromString(m.currentAircraft[i]);
+				for (int k = 0; k < ud.aircraftOnBoard.Count && k < have.Count; k++)
+				{
+					UnitSubType st = Sub(ud.aircraftOnBoard[k]);
+					bool fighter = st == UnitSubType.Fighter;
+					if (st == UnitSubType.Scout || (pass == 0) == fighter || have[k] <= 0)
+					{
+						continue;
+					}
+					int n = fighter ? Mathf.Max(1, have[k] / 2) : have[k];
+					if (fighter && lead == null)
+					{
+						continue;
+					}
+					GameObjectAnimator a = MakeStrike(g, i, ud.aircraftOnBoard[k], n, prey);
+					if (a == null)
+					{
+						continue;
+					}
+					have[k] -= n;
+					m.currentAircraft[i] = cm.SetIntListToString(have);
+					launched += n;
+					if (fighter)
+					{
+						a.mobileMapObject.escortingThisGOA = lead;
+					}
+					else if (lead == null)
+					{
+						lead = a;
+					}
+				}
+			}
+		}
+		if (launched > 0)
+		{
+			Say(m.mobileName + " has launched an air strike of " + launched + " planes.");
+		}
+		return launched > 0;
+	}
+
+	private static GameObjectAnimator MakeStrike(Group g, int shipIndex, string prefab, int number, GameObjectAnimator prey)
+	{
+		MobileMapObject ship = g.mmo;
+		MobileMapObject tf = CampaignAI.instance.newTaskForce;
+		CampaignInterface.instance.ClearNewGroupData(tf);
+		tf.unitPrefabs = new List<string>();
+		for (int i = 0; i < number; i++)
+		{
+			tf.unitPrefabs.Add(prefab);
+		}
+		List<string> by = new List<string>();
+		by.Add(ship.unitPrefabs[shipIndex]);
+		by.Add(ship.unitInstances[shipIndex].ToString());
+		CampaignManager.instance.SetMobileMapObjectSensors(tf);
+		tf.formation = 2;
+		tf.formationSpacing = 2;
+		tf.payload.Clear();
+		tf.payload.Add(0);
+		tf.paint.Add(0);
+		tf.currentFaction = 0;
+		tf.mobileName = Prefix + "STRIKE " + serial++;
+		tf.customName = true;
+		GameObjectAnimator goa = CampaignInterface.instance.CreateNewMobileObject(CampaignObjectType.Air, tf, ship.gameObjectAnimator.currentMap2DLocation, false, by, ship.unitDisplayNames[shipIndex]);
+		if (goa == null)
+		{
+			return null;
+		}
+		goa.mobileMapObject.mobileName = tf.mobileName;
+		goa.mobileMapObject.customName = true;
+		Group s = new Group();
+		s.mmo = goa.mobileMapObject;
+		s.kind = "strike";
+		s.job = "Strike";
+		s.target = prey;
+		s.home = g.home;
+		s.note = s.mmo.mobileName + " from " + ship.mobileName;
+		groups[s.mmo] = s;
+		CampaignAI.instance.StartCoroutine(CampaignAI.instance.MoveMobileNextFrame(goa, prey.currentMap2DLocation, true));
+		Debug.Log("[ALLIED] " + s.note + ": " + number + " x " + prefab + " launched");
+		return goa;
+	}
+
+	// strike planes follow their target until they have fought, then fly home (the game lands them)
+	private static void StrikeTick(Group s)
+	{
+		MobileMapObject m = s.mmo;
+		if (m.type != 1 || m.currentCampaignAction == 1)
+		{
+			return;
+		}
+		bool done = m.postEngagementTimer > 0f || m.endurance <= 0f || s.target == null || s.target.mobileMapObject == null || !CampaignManager.instance.otherMobile.Contains(s.target);
+		if (done)
+		{
+			m.escortingThisGOA = null;
+			CampaignManager.instance.AirReturnToBase(m.gameObjectAnimator);
+			s.job = "Home";
+			return;
+		}
+		if (m.escortingThisGOA == null && minute % 5 == 0)
+		{
+			CampaignInterface.instance.MoveMobileToDestination(m.gameObjectAnimator, s.target.currentMap2DLocation, true);
+		}
+	}
+
+	// ---------------- merchants ----------------
+
+	private static void ThinkMerchant(Group g)
+	{
+		MobileMapObject m = g.mmo;
+		GameObjectAnimator goa = m.gameObjectAnimator;
+		MapLocation cook = Loc(CargoFrom) ?? g.home;
+		if (g.job == "Deliver")
+		{
+			if (g.dest == null || g.dest.currentFaction != 0)
+			{
+				g.dest = NeediestBase();
+				if (g.dest == null)
+				{
+					SetJob(g, "Home", null);
+					return;
+				}
+				Say(m.mobileName + " is heading for " + Name(g.dest) + " instead.");
+			}
+			if (Near(goa, g.dest.gameObjectAnimator.currentMap2DLocation, ArriveKm))
+			{
+				int[] c = Unload(m, g.dest);
+				goa.Stop();
+				Say(m.mobileName + " has delivered " + c[1] + " supplies and " + c[3] + " fuel to " + Name(g.dest) + ".");
+				SetJob(g, "Home", null);
+				return;
+			}
+			Go(g, Sea(g.dest));
+			return;
+		}
+		if (g.job == "Home" || g.job == "Patrol")
+		{
+			g.job = "Home";
+			if (cook != null && Near(goa, cook.gameObjectAnimator.currentMap2DLocation, ArriveKm))
+			{
+				Unload(m, cook);
+				Debug.Log("[ALLIED] " + m.mobileName + " is home and stands down");
+				Remove(m.gameObjectAnimator);
+				return;
+			}
+			if (cook != null)
+			{
+				Go(g, Sea(cook));
+			}
+		}
+	}
+
+	private static MapLocation NeediestBase()
+	{
+		MapLocation best = null;
+		float worst = 2f;
+		List<MapLocation> ls = CampaignManager.instance.landMapLocations;
+		for (int i = 0; i < ls.Count; i++)
+		{
+			MapLocation ml = ls[i];
+			if (ml == null || ml.currentFaction != 0 || ml.locationID == CargoFrom || ml.portLevel <= 0)
+			{
+				continue;
+			}
+			float need = Mathf.Min((float)ml.supplies[0] / NeedSupplies, (float)ml.fuel[0] / NeedFuel);
+			if (need < 1f && need < worst)
+			{
+				worst = need;
+				best = ml;
+			}
+		}
+		return best;
+	}
+
+	private static int CargoTotal(MobileMapObject m)
+	{
+		int t = 0;
+		for (int i = 0; i < m.cargo.Count; i++)
+		{
+			List<int> c = CampaignManager.instance.GetIntListFromString(m.cargo[i]);
+			for (int j = 0; j < c.Count; j++)
+			{
+				t += c[j];
+			}
+		}
+		return t;
+	}
+
+	// cargo goes straight into a base the player already holds; never troops, never a takeover check
+	private static int[] Unload(MobileMapObject m, MapLocation ml)
+	{
+		int[] sum = new int[4];
+		for (int i = 0; i < m.cargo.Count; i++)
+		{
+			List<int> c = CampaignManager.instance.GetIntListFromString(m.cargo[i]);
+			for (int j = 0; j < 4 && j < c.Count; j++)
+			{
+				sum[j] += c[j];
+			}
+			m.cargo[i] = "0|0|0|0";
+		}
+		if (ml != null && ml.currentFaction == 0)
+		{
+			ml.supplies[0] += sum[1];
+			ml.engineering[0] += sum[2];
+			ml.fuel[0] += sum[3];
+			Debug.Log("[ALLIED] " + m.mobileName + " unloaded at " + ml.locationName + ": supplies " + sum[1] + " engineering " + sum[2] + " fuel " + sum[3]);
+		}
+		return sum;
+	}
+
+	// ---------------- spawning ----------------
+
+	private static bool SpawnFighting()
+	{
+		MapLocation home = Home();
+		if (home == null)
+		{
+			Debug.Log("[ALLIED] no allied home port held: nothing spawns");
+			return false;
+		}
+		List<string> carriers = Ships(UnitSubType.Aircraft_Carrier, UnitSubType.Light_Carrier);
+		List<string> cruisers = Ships(UnitSubType.Heavy_Cruiser, UnitSubType.Light_Cruiser);
+		List<string> dds = Ships(UnitSubType.Destroyer, UnitSubType.Destroyer_Escort);
+		if (dds.Count == 0 && cruisers.Count == 0)
+		{
+			Debug.Log("[ALLIED] no RAN warships available");
+			return false;
+		}
+		bool carrierOk = carriers.Count > 0 && (CampaignInterface.instance.dateTime - CampaignInterface.instance.startDate).TotalDays >= CarrierAfterDays && !HasKind("carrier");
+		float r = UnityEngine.Random.value;
+		string kind;
+		List<string> pick = new List<string>();
+		if (carrierOk && r < CarrierChance)
+		{
+			kind = "carrier";
+			pick.Add(carriers[UnityEngine.Random.Range(0, carriers.Count)]);
+			if (cruisers.Count > 0)
+			{
+				pick.Add(cruisers[UnityEngine.Random.Range(0, cruisers.Count)]);
+			}
+			AddSome(pick, dds, 3, 4);
+		}
+		else if (cruisers.Count > 0 && r < CarrierChance + CruiserChance)
+		{
+			kind = "cruiser";
+			AddSome(pick, cruisers, 1, 2);
+			AddSome(pick, dds, 2, 4);
+		}
+		else if (dds.Count > 0)
+		{
+			kind = "destroyer";
+			AddSome(pick, dds, 3, 5);
+		}
+		else
+		{
+			kind = "cruiser";
+			AddSome(pick, cruisers, 1, 2);
+		}
+		string name = Prefix + kind.ToUpper() + " FORCE " + serial++;
+		GameObjectAnimator goa = Create(name, pick, null, home, 9);
+		if (goa == null)
+		{
+			return false;
+		}
+		Group g = new Group();
+		g.mmo = goa.mobileMapObject;
+		g.kind = kind;
+		g.home = home;
+		g.startShips = g.mmo.unitPrefabs.Count;
+		g.note = name;
+		groups[g.mmo] = g;
+		Say(name + " (" + Describe(g.mmo) + ") has sailed from " + Name(home) + " to fight alongside you.");
+		return true;
+	}
+
+	private static bool SpawnMerchants()
+	{
+		MapLocation from = Loc(CargoFrom);
+		if (from == null || from.currentFaction != 0 || HomeFallbackOnly())
+		{
+			return false;
+		}
+		MapLocation to = NeediestBase();
+		if (to == null)
+		{
+			return false;
+		}
+		int supplies = Mathf.Min(CargoSupplies, from.supplies[0] - KeepSupplies);
+		int fuel = Mathf.Min(CargoFuel, from.fuel[0] - KeepFuel);
+		if (supplies <= 0 && fuel <= 0)
+		{
+			Debug.Log("[ALLIED] " + from.locationName + " is short itself: no merchant run");
+			return false;
+		}
+		supplies = Mathf.Max(0, supplies);
+		fuel = Mathf.Max(0, fuel);
+		List<string> merchants = OtherShips(UnitSubType.Merchant);
+		List<string> oilers = OtherShips(UnitSubType.Oiler);
+		List<string> dds = Ships(UnitSubType.Destroyer, UnitSubType.Destroyer_Escort);
+		if (merchants.Count == 0)
+		{
+			Debug.Log("[ALLIED] no transports to borrow");
+			return false;
+		}
+		List<string> pick = new List<string>();
+		List<string> cargo = new List<string>();
+		int ships = UnityEngine.Random.Range(3, 6);
+		int leftS = supplies;
+		int leftF = fuel;
+		AddSome(pick, dds, 1, 2);
+		for (int i = 0; i < pick.Count; i++)
+		{
+			cargo.Add("0|0|0|0");
+		}
+		for (int j = 0; j < ships; j++)
+		{
+			bool oiler = oilers.Count > 0 && leftF > 0 && (j == ships - 1 || leftS <= 0);
+			string p = oiler ? oilers[UnityEngine.Random.Range(0, oilers.Count)] : merchants[UnityEngine.Random.Range(0, merchants.Count)];
+			int cap = Capacity(p, oiler ? 3 : 1);
+			int load;
+			if (oiler)
+			{
+				load = Mathf.Min(leftF, cap);
+				leftF -= load;
+				cargo.Add("0|0|0|" + load);
+			}
+			else
+			{
+				load = Mathf.Min(leftS, cap);
+				leftS -= load;
+				cargo.Add("0|" + load + "|0|0");
+			}
+			pick.Add(p);
+		}
+		int loadedS = supplies - leftS;
+		int loadedF = fuel - leftF;
+		if (loadedS + loadedF <= 0)
+		{
+			return false;
+		}
+		// merchants first is how stock task forces get stuck retreating, so the escort leads
+		string name = Prefix + "MERCHANTS " + serial++;
+		GameObjectAnimator goa = Create(name, pick, cargo, from, 8);
+		if (goa == null)
+		{
+			return false;
+		}
+		from.supplies[0] -= loadedS;
+		from.fuel[0] -= loadedF;
+		Group g = new Group();
+		g.mmo = goa.mobileMapObject;
+		g.kind = "merchant";
+		g.home = from;
+		g.dest = to;
+		g.startShips = pick.Count;
+		g.note = name;
+		groups[g.mmo] = g;
+		SetJob(g, "Deliver", null);
+		Say(name + " has left " + Name(from) + " with " + loadedS + " supplies and " + loadedF + " fuel for " + Name(to) + ".");
+		return true;
+	}
+
+	private static bool HomeFallbackOnly()
+	{
+		return !Active();
+	}
+
+	private static bool HasKind(string kind)
+	{
+		foreach (Group g in groups.Values)
+		{
+			if (g.kind == kind)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static void AddSome(List<string> into, List<string> from, int min, int max)
+	{
+		if (from.Count == 0)
+		{
+			return;
+		}
+		int n = UnityEngine.Random.Range(min, max + 1);
+		for (int i = 0; i < n; i++)
+		{
+			into.Add(from[UnityEngine.Random.Range(0, from.Count)]);
+		}
+	}
+
+	// RAN classes of these types that are in service today (the carrier also waits CarrierAfterDays)
+	private static List<string> Ships(params UnitSubType[] types)
+	{
+		List<UnitSubType> want = new List<UnitSubType>(types);
+		List<string> list = new List<string>();
+		foreach (KeyValuePair<string, UnitListData> kv in EngagementManager.instance.unitSeaDictionary)
+		{
+			if (kv.Value.nation != AllyNation || !EngagementManager.instance.unitDataDictionary.ContainsKey(kv.Key))
+			{
+				continue;
+			}
+			if (!want.Contains(EngagementManager.instance.unitDataDictionary[kv.Key].unitSubtype) || !InService(kv.Key))
+			{
+				continue;
+			}
+			list.Add(kv.Key);
+		}
+		return list;
+	}
+
+	// transports and oilers of the player's other nations (the RAN has none), borrowed for merchant runs
+	private static List<string> OtherShips(UnitSubType type)
+	{
+		List<string> list = new List<string>();
+		List<string> n0 = CampaignManager.instance.campaignData.nations0;
+		foreach (KeyValuePair<string, UnitListData> kv in EngagementManager.instance.unitSeaDictionary)
+		{
+			if (kv.Value.nation == AllyNation || !n0.Contains(kv.Value.nation) || !EngagementManager.instance.unitDataDictionary.ContainsKey(kv.Key))
+			{
+				continue;
+			}
+			if (EngagementManager.instance.unitDataDictionary[kv.Key].unitSubtype == type && InService(kv.Key))
+			{
+				list.Add(kv.Key);
+			}
+		}
+		return list;
+	}
+
+	private static bool InService(string prefab)
+	{
+		try
+		{
+			return UnitReference.instance == null || UnitReference.instance.IsShipClassAvailable(prefab) == string.Empty;
+		}
+		catch (Exception)
+		{
+			return true;
+		}
+	}
+
+	private static int Capacity(string prefab, int index)
+	{
+		List<int> c = EngagementManager.instance.unitDataDictionary[prefab].cargo;
+		if (c == null || c.Count != 4)
+		{
+			return 0;
+		}
+		return c[index];
+	}
+
+	// builds the task force like ModConvoy does, with real ship names the player doesn't own
+	private static GameObjectAnimator Create(string name, List<string> prefabs, List<string> cargo, MapLocation at, int formation)
+	{
+		CampaignManager cm = CampaignManager.instance;
+		MobileMapObject tf = CampaignAI.instance.newTaskForce;
+		CampaignInterface.instance.ClearNewGroupData(tf);
+		tf.unitPrefabs = new List<string>();
+		for (int n = 0; n < prefabs.Count; n++)
+		{
+			string p = prefabs[n];
+			UnitData ud = EngagementManager.instance.unitDataDictionary[p];
+			int inst = FreeInstance(p, tf);
+			if (inst < 0)
+			{
+				continue;
+			}
+			tf.unitPrefabs.Add(p);
+			tf.unitInstances.Add(inst);
+			tf.unitDisplayNames.Add((ud.namesInClass != null && ud.namesInClass.Count > inst) ? ud.namesInClass[inst] : ud.unitName);
+			tf.cellVariables.Add(string.Empty);
+			tf.ammunitionRemaining.Add(string.Empty);
+			tf.aircraftCooldown.Add(string.Empty);
+			tf.cargo.Add((cargo != null && n < cargo.Count) ? cargo[n] : "0|0|0|0");
+			tf.bombardments.Add(0);
+			tf.paint.Add(0);
+			tf.speedModifier.Add(1f);
+			tf.currentAircraft.Add((ud.aircraftTotal != null && ud.aircraftTotal.Count > 0) ? cm.SetIntListToString(ud.aircraftTotal) : string.Empty);
+		}
+		if (tf.unitPrefabs.Count == 0)
+		{
+			Debug.Log("[ALLIED] no free ship names left for " + name);
+			return null;
+		}
+		tf.formation = formation;
+		tf.formationSpacing = 0;
+		tf.mobileName = name;
+		tf.customName = true;
+		cm.SetMobileMapObjectSensors(tf);
+		tf.currentFaction = 0;
+		Vector2 spawn = Sea(at);
+		GameObjectAnimator keep = CampaignInterface.instance.currentMapObject;
+		GameObjectAnimator goa = CampaignInterface.instance.CreateNewMobileObject(CampaignObjectType.Sea, tf, spawn, false, null, string.Empty);
+		CampaignInterface.instance.currentMapObject = keep;
+		if (goa == null)
+		{
+			return null;
+		}
+		goa.mobileMapObject.mobileName = name;
+		goa.mobileMapObject.customName = true;
+		Debug.Log("[ALLIED] spawned " + name + " at " + at.locationName + ": " + Describe(goa.mobileMapObject));
+		return goa;
+	}
+
+	// an instance (index into namesInClass) that the player doesn't own and no other allied ship uses
+	private static int FreeInstance(string prefab, MobileMapObject building)
+	{
+		CampaignManager cm = CampaignManager.instance;
+		UnitData ud = EngagementManager.instance.unitDataDictionary[prefab];
+		int count = (ud.namesInClass != null && ud.namesInClass.Count > 0) ? ud.namesInClass.Count : 1;
+		List<int> order = new List<int>();
+		for (int i = 0; i < count; i++)
+		{
+			order.Insert(UnityEngine.Random.Range(0, order.Count + 1), i);
+		}
+		for (int j = 0; j < order.Count; j++)
+		{
+			int inst = order[j];
+			if (cm.IsPlayerShipInstanceAvailable(prefab, inst) != -1)
+			{
+				continue;
+			}
+			if (cm.GetGameObjectAnimatorContainingShip(cm.playerMobile, prefab, inst) != null)
+			{
+				continue;
+			}
+			bool used = false;
+			for (int k = 0; k < building.unitPrefabs.Count; k++)
+			{
+				if (building.unitPrefabs[k] == prefab && building.unitInstances[k] == inst)
+				{
+					used = true;
+				}
+			}
+			if (!used)
+			{
+				return inst;
+			}
+		}
+		return -1;
+	}
+
+	// repaired, rearmed, refuelled and planes refilled, free, with nothing taken from the port
+	private static void Refit(MobileMapObject m)
+	{
+		CampaignManager cm = CampaignManager.instance;
+		for (int i = 0; i < m.unitPrefabs.Count; i++)
+		{
+			m.cellVariables[i] = string.Empty;
+			if (i < m.ammunitionRemaining.Count)
+			{
+				m.ammunitionRemaining[i] = string.Empty;
+			}
+			if (i < m.bombardments.Count)
+			{
+				m.bombardments[i] = 0;
+			}
+			if (i < m.aircraftCooldown.Count)
+			{
+				m.aircraftCooldown[i] = string.Empty;
+			}
+			UnitData ud = EngagementManager.instance.unitDataDictionary[m.unitPrefabs[i]];
+			if (i < m.currentAircraft.Count && ud.aircraftTotal != null && ud.aircraftTotal.Count > 0)
+			{
+				m.currentAircraft[i] = cm.SetIntListToString(ud.aircraftTotal);
+			}
+		}
+		m.fuelUsedDays = 0f;
+		m.fuelSavedSpeed = 0f;
+		m.speed = cm.GetMobileMapObjectSpeed(m);
+		Debug.Log("[ALLIED] " + m.mobileName + " refitted");
+	}
+
+	// DestroyMapMobileObject takes the ships' cost off the CP spent; allied ships never added it
+	public static void Remove(GameObjectAnimator goa)
+	{
+		if (goa == null || goa.mobileMapObject == null)
+		{
+			return;
+		}
+		MobileMapObject m = goa.mobileMapObject;
+		if (m.type == 0)
+		{
+			int cost = 0;
+			for (int i = 0; i < m.unitPrefabs.Count; i++)
+			{
+				UnitListData uld;
+				if (EngagementManager.instance.unitSeaDictionary.TryGetValue(m.unitPrefabs[i], out uld))
+				{
+					cost += uld.cost;
+				}
+			}
+			CampaignManager.instance.campaignData.commandPointSpent[0] += cost;
+		}
+		groups.Remove(m);
+		if (infoGoa == goa)
+		{
+			infoGoa = null;
+		}
+		CampaignInterface.instance.DestroyMapMobileObject(goa);
+	}
+
+	// ---------------- map helpers ----------------
+
+	public static MapLocation Home()
+	{
+		for (int i = 0; i < HomeIds.Length; i++)
+		{
+			MapLocation ml = Loc(HomeIds[i]);
+			if (ml != null && ml.currentFaction == 0)
+			{
+				return ml;
+			}
+		}
+		List<MapLocation> hp = CampaignAI.instance.playerHomePorts;
+		for (int j = 0; j < hp.Count; j++)
+		{
+			if (hp[j] != null && hp[j].currentFaction == 0)
+			{
+				return hp[j];
+			}
+		}
+		return null;
+	}
+
+	public static MapLocation Loc(string id)
+	{
+		List<MapLocation> ls = CampaignManager.instance.landMapLocations;
+		for (int i = 0; i < ls.Count; i++)
+		{
+			if (ls[i] != null && ls[i].locationID == id)
+			{
+				return ls[i];
+			}
+		}
+		return null;
+	}
+
+	public static string Name(MapLocation ml)
+	{
+		return ml != null ? ml.locationName : "port";
+	}
+
+	// the port's own sea waypoint (named after the location); else the nearest open-sea waypoint
+	public static Vector2 Sea(MapLocation ml)
+	{
+		List<SeaNavigationWaypoint> wps = CampaignManager.instance.seaNavigationPoints;
+		Vector2 at = ml.gameObjectAnimator.currentMap2DLocation;
+		for (int i = 0; i < wps.Count; i++)
+		{
+			if (wps[i].waypointName == ml.locationID)
+			{
+				return new Vector2(wps[i].positionRadius.x, wps[i].positionRadius.y);
+			}
+		}
+		return NearestOpenSea(at);
+	}
+
+	public static Vector2 NearestOpenSea(Vector2 at)
+	{
+		List<SeaNavigationWaypoint> wps = CampaignManager.instance.seaNavigationPoints;
+		Vector2 best = at;
+		float bestKm = float.MaxValue;
+		for (int i = 0; i < wps.Count; i++)
+		{
+			if (wps[i].isLocation)
+			{
+				continue;
+			}
+			Vector2 p = new Vector2(wps[i].positionRadius.x, wps[i].positionRadius.y);
+			float d = Km(at, p);
+			if (d < bestKm)
+			{
+				bestKm = d;
+				best = p;
+			}
+		}
+		return best;
+	}
+
+	private static bool RandomSeaPoint(Vector2 around, float km, out Vector2 p)
+	{
+		List<SeaNavigationWaypoint> wps = CampaignManager.instance.seaNavigationPoints;
+		List<Vector2> ok = new List<Vector2>();
+		for (int i = 0; i < wps.Count; i++)
+		{
+			if (wps[i].isLocation)
+			{
+				continue;
+			}
+			Vector2 q = new Vector2(wps[i].positionRadius.x, wps[i].positionRadius.y);
+			if (Km(around, q) <= km)
+			{
+				ok.Add(q);
+			}
+		}
+		if (ok.Count == 0)
+		{
+			p = around;
+			return false;
+		}
+		p = ok[UnityEngine.Random.Range(0, ok.Count)];
+		return true;
+	}
+
+	// sea groups only move along sea routes; a target on land gives no route, so fall back to open sea
+	public static bool SendTo(GameObjectAnimator goa, Vector2 to)
+	{
+		if (goa == null || goa.mobileMapObject == null)
+		{
+			return false;
+		}
+		goa.mobileMapObject.mapWaypoints.Clear();
+		if (goa.isMoving)
+		{
+			goa.Stop();
+		}
+		float dur = CampaignInterface.instance.GetMoveDuration(goa.currentMap2DLocation, to, goa.mobileMapObject.speed);
+		bool ok = goa.MoveTo(to, dur, DURATION_TYPE.Route) && goa.isMoving;
+		if (!ok)
+		{
+			Vector2 sea = NearestOpenSea(to);
+			dur = CampaignInterface.instance.GetMoveDuration(goa.currentMap2DLocation, sea, goa.mobileMapObject.speed);
+			ok = goa.MoveTo(sea, dur, DURATION_TYPE.Route) && goa.isMoving;
+			Debug.Log("[ALLIED] " + goa.mobileMapObject.mobileName + ": no sea route to the target, sent to the nearest open sea point instead" + (ok ? "" : " (that failed too)"));
+		}
+		return ok;
+	}
+
+	private static void Go(Group g, Vector2 to)
+	{
+		GameObjectAnimator goa = g.mmo.gameObjectAnimator;
+		if (g.hasGoal && goa.isMoving && Km(g.goal, to) < 10f)
+		{
+			return;
+		}
+		g.goal = to;
+		g.hasGoal = true;
+		g.idleMinutes = 0;
+		SendTo(goa, to);
+	}
+
+	public static bool Near(GameObjectAnimator goa, Vector2 p, float km)
+	{
+		return Km(goa.currentMap2DLocation, p) <= km;
+	}
+
+	public static float Km(Vector2 a, Vector2 b)
+	{
+		return CampaignManager.instance.GetDistanceInMetresBetweenMapObjects(a, b) / 1000f;
+	}
+
+	public static UnitSubType Sub(string prefab)
+	{
+		UnitData ud;
+		if (EngagementManager.instance.unitDataDictionary.TryGetValue(prefab, out ud))
+		{
+			return ud.unitSubtype;
+		}
+		return UnitSubType.Merchant;
+	}
+
+	// share of the ship's compartments damaged or destroyed, the way the game's retreat check counts it
+	public static float Damage(MobileMapObject m, int i)
+	{
+		if (i >= m.cellVariables.Count || string.IsNullOrEmpty(m.cellVariables[i]))
+		{
+			return 0f;
+		}
+		if (m.cellVariables[i] == "DESTROYED")
+		{
+			return 1f;
+		}
+		UnitData ud = EngagementManager.instance.unitDataDictionary[m.unitPrefabs[i]];
+		int cells = (ud.cellDictionary != null && ud.cellDictionary.Count > 0) ? ud.cellDictionary.Count : 40;
+		return Mathf.Clamp01((float)m.cellVariables[i].Split('|').Length / 2f / (float)cells);
+	}
+
+	public static float Value(MobileMapObject m)
+	{
+		float v = 0f;
+		for (int i = 0; i < m.unitPrefabs.Count; i++)
+		{
+			UnitListData uld;
+			float c = EngagementManager.instance.unitSeaDictionary.TryGetValue(m.unitPrefabs[i], out uld) ? (float)Mathf.Max(1, uld.cost) : 5f;
+			v += c * (1f - Damage(m, i));
+		}
+		return v;
+	}
+
+	public static int PlanesLeft(MobileMapObject m, bool fighters)
+	{
+		int n = 0;
+		for (int i = 0; i < m.unitPrefabs.Count && i < m.currentAircraft.Count; i++)
+		{
+			if (m.currentAircraft[i] == string.Empty)
+			{
+				continue;
+			}
+			UnitData ud = EngagementManager.instance.unitDataDictionary[m.unitPrefabs[i]];
+			List<int> have = CampaignManager.instance.GetIntListFromString(m.currentAircraft[i]);
+			for (int k = 0; k < have.Count && k < ud.aircraftOnBoard.Count; k++)
+			{
+				UnitSubType st = Sub(ud.aircraftOnBoard[k]);
+				if (st != UnitSubType.Scout && (st == UnitSubType.Fighter) == fighters)
+				{
+					n += have[k];
+				}
+			}
+		}
+		return n;
+	}
+
+	public static string Describe(MobileMapObject m)
+	{
+		Dictionary<string, int> c = new Dictionary<string, int>();
+		List<string> order = new List<string>();
+		for (int i = 0; i < m.unitPrefabs.Count; i++)
+		{
+			string t = TypeName(Sub(m.unitPrefabs[i]));
+			if (!c.ContainsKey(t))
+			{
+				c[t] = 0;
+				order.Add(t);
+			}
+			c[t]++;
+		}
+		string s = "";
+		for (int j = 0; j < order.Count; j++)
+		{
+			s += ((s.Length > 0) ? ", " : "") + c[order[j]] + " " + order[j] + ((c[order[j]] > 1) ? "s" : "");
+		}
+		return s;
+	}
+
+	public static string TypeName(UnitSubType st)
+	{
+		switch (st)
+		{
+		case UnitSubType.Aircraft_Carrier:
+			return "carrier";
+		case UnitSubType.Light_Carrier:
+			return "light carrier";
+		case UnitSubType.Battleship:
+			return "battleship";
+		case UnitSubType.Battlecruiser:
+			return "battlecruiser";
+		case UnitSubType.Heavy_Cruiser:
+			return "heavy cruiser";
+		case UnitSubType.Light_Cruiser:
+			return "light cruiser";
+		case UnitSubType.Destroyer:
+			return "destroyer";
+		case UnitSubType.Destroyer_Escort:
+			return "escort";
+		case UnitSubType.Submarine:
+			return "submarine";
+		case UnitSubType.Oiler:
+			return "oiler";
+		case UnitSubType.Merchant:
+			return "transport";
+		default:
+			return "plane";
+		}
+	}
+
+	public static string DamageWord(MobileMapObject m, int i)
+	{
+		float d = Damage(m, i);
+		if (d <= 0f)
+		{
+			return "undamaged";
+		}
+		if (d < 0.1f)
+		{
+			return "light damage";
+		}
+		if (d < 0.25f)
+		{
+			return "moderate damage";
+		}
+		return "heavy damage";
+	}
+
+	// what the info window prints for the job
+	public static string JobLine(MobileMapObject m)
+	{
+		if (IsConvoy(m))
+		{
+			return "Sailing to " + Name(ModConvoy.destination) + " with Admiralty supplies";
+		}
+		Group g = Get(m);
+		if (g == null)
+		{
+			return "Waiting for orders";
+		}
+		string t = (g.target != null && g.target.mobileMapObject != null) ? g.target.mobileMapObject.mobileName : "";
+		switch (g.job)
+		{
+		case "Patrol":
+			return "Patrolling within " + PatrolKm.ToString("F0") + " km of " + Name(g.home);
+		case "Escort":
+			return "Escorting " + t;
+		case "Attack":
+			return "Moving to attack a spotted enemy group";
+		case "Strike":
+			return (g.kind == "strike") ? "Air strike on an enemy group" : "Launching air strikes on a spotted enemy group";
+		case "Home":
+			return (g.kind == "merchant") ? ("Returning to " + Name(g.home)) : ("Returning to " + Name(g.home) + " for repairs");
+		case "Refit":
+			return "Refitting at " + Name(g.home) + ", " + g.refitDays + " days left";
+		case "Deliver":
+			return "Carrying supplies to " + Name(g.dest);
+		default:
+			return g.job;
+		}
+	}
+
+	public static void Say(string text)
+	{
+		Debug.Log("[ALLIED] " + text);
+		try
+		{
+			ModNotify.AddEvent("allied", "Allied forces", text);
+		}
+		catch (Exception)
+		{
+		}
+	}
+
+	private static void Ensure()
+	{
+		if (host == null)
+		{
+			host = new GameObject("ModAllyWindow");
+			UnityEngine.Object.DontDestroyOnLoad(host);
+			host.AddComponent<ModAllyWindow>();
+		}
+	}
+
+	public static void EnsureWindow()
+	{
+		Ensure();
+	}
+}
