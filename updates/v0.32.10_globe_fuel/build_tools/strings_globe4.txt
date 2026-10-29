@@ -1,0 +1,15 @@
+ModVersion
+0.32.3
+---
+0.32.4
+===
+~ModVersion
+Version 0.32.3 globe test 3
+---
+Version 0.32.4 globe test 4
+===
+~ModVersion
+<b>0.32.3</b></color> globe, phase 2 (test build 3):
+---
+<b>0.32.4</b></color> globe, phase 3 (test build 4):\n- The flat map's own icons and names drawn on the globe, sized with the zoom\n- On the flat map, scrolling out past the farthest zoom opens the globe at that spot\n<color=#E0B030><b>0.32.3</b></color> globe, phase 2 (test build 3):
+===

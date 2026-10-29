@@ -1,0 +1,15 @@
+ModVersion
+0.32.8
+---
+0.32.9
+===
+~ModVersion
+Version 0.32.8 globe test 8
+---
+Version 0.32.9 globe test 9
+===
+~ModVersion
+<b>0.32.8</b></color> globe, phase 6 (test build 8):
+---
+<b>0.32.9</b></color> globe, phase 6 (test build 9):\n- The grey battle-zone disc on the tactical map now matches the 110 km zone\n<color=#E0B030><b>0.32.8</b></color> globe, phase 6 (test build 8):
+===

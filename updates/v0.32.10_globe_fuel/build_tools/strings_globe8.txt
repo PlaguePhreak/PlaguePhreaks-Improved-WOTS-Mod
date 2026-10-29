@@ -1,0 +1,15 @@
+ModVersion
+0.32.7
+---
+0.32.8
+===
+~ModVersion
+Version 0.32.7 globe test 7
+---
+Version 0.32.8 globe test 8
+===
+~ModVersion
+<b>0.32.7</b></color> globe, phase 5 (test build 7):
+---
+<b>0.32.8</b></color> globe, phase 6 (test build 8):\n- Forces up to 110 km away join a battle at their true position (was 50 km) and can steam in\n- The battle zone is 110 km from the centre before a unit is parked (was 50 km)\n- The battle minimap shows the campaign map's own picture of the battle square\n<color=#E0B030><b>0.32.7</b></color> globe, phase 5 (test build 7):
+===
