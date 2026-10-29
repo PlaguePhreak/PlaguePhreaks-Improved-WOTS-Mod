@@ -1,3 +1,8 @@
+## 0.32.14
+- New class ModHistory (the 0.29 Pacific War one, unchanged; source in build_tools). Hook: CampaignManager.CheckDaily, `ModHistory.Daily();` right after `ModConvoy.Daily();` (patcher HOOKS_HISTORY=1). Reads campaign/<id>/history.txt; campaigns without the file are untouched.
+- ModGlobe: knobs DayNight, SunKey (N), MapLabels, MapLabelScale (540); second ModTFOverlay button (index 5, "SUN", shown only while the globe is open) -> ToggleSun(); ShadeBy paints white when DayNight is off; Markers() copies the flat map mapLabels TextMeshes (direct children of CampaignInterface.mapLabels inside the -0.5..0.5 square) as always-shown overlay labels; Entry.always.
+- Base: tester hotfix 2 DLL 091a6546, all globe hooks re-applied as in 0.32.13.
+
 ## 0.32.13 (base change!)
 Built on the tester hotfix 2 DLL 091a6546 (= 0.30 Mega Patch 01 + fuel hotfix + hotfix 2 14 fixes + 0.30.1 low flight), NOT on 0.32.12. All globe hooks re-applied with the Cecil patcher (HOOKS_GEO, HOOKS_GLOBE, HOOKS_BATTLE, HOOKS_BATTLE2; the fuel hook is already in that base). ModGlobe changes: OnDestroy() destroys root/blocker/button and clears inst (fixes blank icons when a second campaign is opened in one sitting); AddEntry forces icon alpha 1. Decompile diff vs 0.32.12 = only the hotfix 2 / low-flight changes; vs hotfix 2 = only the globe hooks and classes.
 
