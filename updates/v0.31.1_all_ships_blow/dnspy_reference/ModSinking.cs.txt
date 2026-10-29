@@ -38,9 +38,9 @@ public static class ModSinking
 	// Which ships break in two when a torpedo breaks their back. Aaron asked for destroyers.
 	public static bool BreakDestroyers = true;          // Destroyer
 	public static bool BreakEscorts = true;             // Destroyer_Escort
-	public static bool BreakMerchants = true;           // Merchant and Oiler (0.31.1: on)
-	public static bool BreakCruisers = true;            // Light_Cruiser (0.31.1: on)
-	public static bool BreakOthers = true;              // 0.31.1: every other ship (heavy cruisers, battleships, carriers...), not submarines
+	public static bool BreakMerchants = false;          // Merchant and Oiler (torpedo break-back is for destroyers only, per Aaron)
+	public static bool BreakCruisers = false;           // Light_Cruiser (off: destroyers only)
+	public static bool BreakOthers = false;             // every other ship (off: destroyers only). Magazine blasts still break every ship.
 
 	public static int LethalCells = 9;                  // magazine blast bigger than this many squares = ship lost
 	public static float LethalSplitChance = 0.75f;      // a lethal magazine blast breaks the ship (else it just plunges fast)...
