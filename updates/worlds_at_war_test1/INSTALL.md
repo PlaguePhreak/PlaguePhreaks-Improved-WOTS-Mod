@@ -8,7 +8,8 @@ changes for this part. Use it with 0.32.9 (or later) so distances, the globe and
    (campaign/wawallies, campaign/wawaxis, language/english/campaign/wawallies and wawaxis, maps/worldsatwar).
 3. Open your `StreamingAssets/language/english/campaign/campaigns.txt` (or your Override copy) and add the two lines
    from `campaigns_lines.txt` as new lines under the existing campaign lines. Do not replace the whole file.
-4. Start the game, choose Campaign, and pick **Worlds at War: Allies** or **Worlds at War: Axis**.
+4. (rules.txt is included in both campaign language folders from this build on.)
+5. Start the game, choose Campaign, and pick **Worlds at War: Allies** or **Worlds at War: Axis**.
 
 ## What is in it
 - The whole world, 100W eastwards round to 100W (so the Americas are split at 100W, through land), pole to pole.
