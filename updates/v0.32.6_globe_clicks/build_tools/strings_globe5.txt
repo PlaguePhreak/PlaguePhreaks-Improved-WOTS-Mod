@@ -1,0 +1,15 @@
+ModVersion
+0.32.4
+---
+0.32.5
+===
+~ModVersion
+Version 0.32.4 globe test 4
+---
+Version 0.32.5 globe test 5
+===
+~ModVersion
+<b>0.32.4</b></color> globe, phase 3 (test build 4):
+---
+<b>0.32.5</b></color> globe, phase 3 (test build 5):\n- Mouse wheel direction fixed: scrolling out on the flat map opens the globe, zooming in on the globe lands at a middle zoom (not fully out)\n- Short cooldown so a fast wheel cannot bounce between the two views\n<color=#E0B030><b>0.32.4</b></color> globe, phase 3 (test build 4):
+===
