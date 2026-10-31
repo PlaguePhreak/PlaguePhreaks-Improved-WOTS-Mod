@@ -1,0 +1,10 @@
+// Historical start fleets, 8 December 1941 (read by ModStartFleets in 0.32.20+, new campaigns only).
+// One task force per line: name (empty = named after its ship), at (waypoint), to (waypoint, optional), formation, ships (class:ship).
+// If a ship name is not found in its class, the first free ship of that class is used instead (see the [STARTFLEET] log lines).
+{"name": "Enterprise Carrier Force", "at": "G15_06", "to": "", "formation": 12, "ships": ["yorktown:enterprise", "northampton:northampton", "northampton:chester", "pensacola:salt lake city", "porter:balch", "gridley:maury", "gridley:craven", "benham:benham", "benham:ellet", "mahan:dunlap"]}
+{"name": "Lexington Carrier Force", "at": "G14_06", "to": "", "formation": 12, "ships": ["lexington:lexington", "northampton:chicago", "portland:portland", "new_orleans:astoria", "porter:porter", "mahan:drayton", "mahan:flusser", "mahan:lamson", "mahan:mahan"]}
+{"name": "Saratoga Carrier Force", "at": "sandiego", "to": "", "formation": 12, "ships": ["lexington:saratoga", "farragut:dewey", "farragut:macdonough", "farragut:worden"]}
+{"name": "Pearl Harbor Cruiser Force", "at": "G16_05", "to": "", "formation": 17, "ships": ["new_orleans:minneapolis", "brooklyn:phoenix", "brooklyn:st. louis", "omaha:detroit", "farragut:aylwin", "farragut:dale", "farragut:monaghan", "porter:phelps"]}
+{"name": "Asiatic Fleet", "at": "G02_03", "to": "", "formation": 13, "ships": ["northampton:houston", "omaha:marblehead", "clemson:paul jones", "clemson:john d. ford", "clemson:pope", "clemson:peary"]}
+{"name": "", "at": "G09_05", "to": "", "formation": 0, "ships": ["tambor:tambor"]}
+{"name": "", "at": "G10_05", "to": "", "formation": 0, "ships": ["tambor:triton"]}

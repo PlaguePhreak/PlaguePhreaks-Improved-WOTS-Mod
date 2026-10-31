@@ -1,0 +1,13 @@
+// Historical start fleets, 8 December 1941 (read by ModStartFleets in 0.32.20+, new campaigns only).
+// One task force per line: name (empty = named after its ship), at (waypoint), to (waypoint, optional), formation, ships (class:ship).
+// If a ship name is not found in its class, the first free ship of that class is used instead (see the [STARTFLEET] log lines).
+{"name": "Kido Butai", "at": "G60_19", "to": "kure", "formation": 15, "ships": ["?ctm_akagi42:akagi", "?ctm_kaga:kaga", "?ctm_soryu:soryu", "?ctm_hiryu:hiryu", "shokaku:shokaku", "shokaku:zuikaku", "kongo:hiei", "kongo:kirishima", "tone:tone", "tone:chikuma", "nagara:abukuma", "kagero:tanikaze", "kagero:urakaze", "kagero:isokaze", "kagero:hamakaze", "kagero:kagero"]}
+{"name": "Southern Force", "at": "G41_14", "to": "", "formation": 17, "ships": ["kongo:kongo", "kongo:haruna", "takao:atago", "takao:takao", "asashio:asashio", "asashio:oshio", "shiratsuyu:shiratsuyu", "shiratsuyu:shigure"]}
+{"name": "Malaya Cruiser Force", "at": "G40_14", "to": "", "formation": 13, "ships": ["takao:chokai", "mogami:mogami", "mogami:mikuma", "mogami:suzuya", "mogami:kumano", "sendai:sendai", "fubuki:fubuki", "fubuki:shirayuki", "fubuki:hatsuyuki", "fubuki:murakumo"]}
+{"name": "Philippines Force", "at": "Luzon", "to": "", "formation": 13, "ships": ["myoko:ashigara", "kuma:kuma", "nagara:natori", "akatsuki:ikazuchi", "akatsuki:inazuma", "hatsuharu:hatsuharu"]}
+{"name": "Ryujo Carrier Force", "at": "G45_14", "to": "", "formation": 12, "ships": ["ryujo:ryujo", "myoko:myoko", "myoko:nachi", "myoko:haguro", "sendai:jintsu", "shiratsuyu:yudachi", "shiratsuyu:murasame"]}
+{"name": "Main Body", "at": "kure", "to": "", "formation": 17, "ships": ["nagato:nagato", "nagato:mutsu", "fuso:fuso", "fuso:yamashiro", "ise:ise", "ise:hyuga", "hosho:hosho", "akatsuki:akatsuki", "akatsuki:hibiki"]}
+{"name": "Wake Invasion Force", "at": "kwajalein", "to": "", "formation": 13, "ships": ["yubari:yubari", "tenryu:tenryu", "tenryu:tatsuta", "mutsuki:mutsuki", "mutsuki:kisaragi", "mutsuki:yayoi", "mutsuki:mochizuki"]}
+{"name": "", "at": "Pearl", "to": "", "formation": 0, "ships": ["type_b1:i-15"]}
+{"name": "", "at": "Pearl", "to": "", "formation": 0, "ships": ["type_b1:i-17"]}
+{"name": "", "at": "Oahu", "to": "", "formation": 0, "ships": ["type_b1:i-19"]}
