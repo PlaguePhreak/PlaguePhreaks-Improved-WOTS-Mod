@@ -54,6 +54,13 @@ class P {
     File.Copy(R+"/stock.dll", Dll, true); st=I.Inspect(G); Expect(st.ManifestButChanged, "detected change: "+st.Describe);
     ui.asked.Clear(); Expect(I.Install(st), "install ok"); Expect(ui.asked.Contains("Game DLL changed"), "asked about the change"); Expect(StockFp.FileMd5(Dll)==hf3, "new base is original -> DLL == hotfix 3");
     st=I.Inspect(G); Expect(I.Restore(st), "restore ok"); Expect(StockFp.FileMd5(Dll)==StockFp.FileMd5(R+"/stock.dll"), "back to the new original");
+    // 7
+    Console.WriteLine("== 7. full copy of an existing override folder");
+    Fresh(R+"/stock.dll"); ov0=TreeHash(Ov); ui=new Ui(); I=new Installer(MF, ui); st=I.Inspect(G); I.Install(st);
+    Expect(TreeHash(G+"/WOTS Mod Backup/override before mod")==ov0, "full copy matches the player's folder");
+    File.Delete(Ov+"/keep.txt"); // player's own file lost somehow after install
+    st=I.Inspect(G); I.Install(st); Expect(!File.Exists(G+"/WOTS Mod Backup/override before mod/zzz"), "copy not retaken on update");
+    st=I.Inspect(G); I.Restore(st); Expect(TreeHash(Ov)==ov0, "restore brings back even the lost player file");
     // 6
     Console.WriteLine("== 6. game has newer build 0.32.19, installer has 0.31.15 (hotfix 3)");
     Fresh(R+"/g19.dll"); ui=new Ui(); ui.answers.Enqueue(false); I=new Installer(MF, ui); st=I.Inspect(G); Console.WriteLine("  state: "+st.Describe);

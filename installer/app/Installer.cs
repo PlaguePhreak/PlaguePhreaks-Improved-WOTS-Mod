@@ -270,6 +270,7 @@ namespace WotsInstaller
 
             // 4. Override files: first undo the previous install's files, then copy the new ones
             RestoreOverride(s, man);
+            SnapshotOverride(s);
             InstallOverride(s, man);
             man.Save(s.BackupDir);
             ui.Log("Done. " + ModName + (ModVersion != "" ? " " + ModVersion : "") + " is installed.");
@@ -363,6 +364,49 @@ namespace WotsInstaller
             ui.Log(string.Format("Override: {0} files new, {1} replaced (originals saved in the backup), {2} already up to date.", created.Count, backedUp.Count, same));
         }
 
+        public const string SnapshotName = "override before mod";
+
+        // Full copy of the player's override folder, made once before the mod first touches it.
+        void SnapshotOverride(GameState s)
+        {
+            var snap = Path.Combine(s.BackupDir, SnapshotName);
+            if (Directory.Exists(snap) || !Directory.Exists(ModOverride)) return;
+            if (!Directory.Exists(s.OverrideDir) || !Directory.EnumerateFiles(s.OverrideDir, "*", SearchOption.AllDirectories).Any())
+            {
+                Directory.CreateDirectory(snap); // empty marker: there was nothing to keep
+                return;
+            }
+            ui.Log("You already have an override folder: saving a full copy of it first...");
+            var files = Directory.GetFiles(s.OverrideDir, "*", SearchOption.AllDirectories);
+            int n = 0;
+            foreach (var f in files)
+            {
+                var dest = Path.Combine(snap, f.Substring(s.OverrideDir.Length).TrimStart('\\', '/'));
+                Directory.CreateDirectory(Path.GetDirectoryName(dest));
+                File.Copy(f, dest, true);
+                if (++n % 1000 == 0) ui.Log("  saved " + n + " of " + files.Length + " files...");
+            }
+            ui.Log("Saved a copy of your override folder (" + files.Length + " files) in " + snap);
+        }
+
+        // After Restore: make sure every file of the saved copy is back exactly as it was.
+        void RestoreSnapshot(GameState s)
+        {
+            var snap = Path.Combine(s.BackupDir, SnapshotName);
+            if (!Directory.Exists(snap)) return;
+            int fixedN = 0;
+            foreach (var f in Directory.GetFiles(snap, "*", SearchOption.AllDirectories))
+            {
+                var dest = Path.Combine(s.OverrideDir, f.Substring(snap.Length).TrimStart('\\', '/'));
+                if (File.Exists(dest) && SameFile(f, dest)) continue;
+                Directory.CreateDirectory(Path.GetDirectoryName(dest));
+                File.Copy(f, dest, true);
+                fixedN++;
+            }
+            if (fixedN > 0) ui.Log("Put back " + fixedN + " more files from the saved copy of your override folder.");
+            ui.Log("Your override folder is back as it was before the mod.");
+        }
+
         static bool SameFile(string a, string b)
         {
             var fa = new FileInfo(a); var fb = new FileInfo(b);
@@ -441,6 +485,7 @@ namespace WotsInstaller
             File.Copy(backupDll, s.DllPath, true);
             ui.Log("Put back your original Assembly-CSharp.dll.");
             RestoreOverride(s, man);
+            RestoreSnapshot(s);
             Directory.Delete(s.BackupDir, true);
             ui.Log("Restore finished. The game is back to how it was before the mod.");
             return true;
