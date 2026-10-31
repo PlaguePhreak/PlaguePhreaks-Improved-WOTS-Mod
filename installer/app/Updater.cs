@@ -107,7 +107,7 @@ namespace WotsInstaller
         {
             var idx = all.IndexOf(rel);
             var older = all.Skip(idx).ToList(); // rel and everything older, newest first
-            var baseRel = older.FirstOrDefault(r => r.Asset(OverrideAsset) != null);
+            var baseRel = older.FirstOrDefault(r => BaseParts(r).Count > 0);
             var updates = new List<ReleaseAsset>();
             foreach (var r in older)
             {
@@ -134,9 +134,12 @@ namespace WotsInstaller
             var ov = Path.Combine(build, "override");
             if (baseRel != null)
             {
-                var zip = Download(baseRel.Asset(OverrideAsset));
-                ui.Log("Unpacking " + OverrideAsset + " from " + baseRel.Label + "...");
-                Extract(zip, ov);
+                foreach (var part in BaseParts(baseRel))
+                {
+                    var zip = Download(part);
+                    ui.Log("Unpacking " + part.Name + " from " + baseRel.Label + "...");
+                    Extract(zip, ov);
+                }
             }
             foreach (var u in updates)
             {
@@ -151,6 +154,83 @@ namespace WotsInstaller
             foreach (var d in Directory.GetDirectories(Path.Combine(CacheDir, "builds")))
                 if (!string.Equals(d, build, StringComparison.OrdinalIgnoreCase)) try { Directory.Delete(d, true); } catch { }
             return build;
+        }
+
+        // The full art set: "override.zip" and/or any "override_<part>.zip" (except override_update.zip),
+        // so it can be split into several zips under GitHub's 2 GB limit. Unpacked in name order.
+        public static List<ReleaseAsset> BaseParts(Release r)
+        {
+            return r.Assets.Where(a =>
+            {
+                var n = (a.Name ?? "").ToLowerInvariant();
+                if (!n.EndsWith(".zip") || !n.StartsWith("override")) return false;
+                if (n == OverrideUpdateAsset || n.StartsWith("override_update")) return false;
+                return n == OverrideAsset || n.StartsWith("override_") || n.StartsWith("override.") || n.StartsWith("override-");
+            }).OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        // Author tool: packs an override folder into override_01.zip, override_02.zip ... each under 'limit' bytes.
+        // Files identical to the base game's StreamingAssets\default copy are left out (players already have them).
+        // The kept files are also copied to outDir\override (mod files only) so the author can look at them.
+        public static List<string> MakeUploadZips(string overrideDir, string defaultDir, string outDir, IUi ui, long limit = 1800L * 1024 * 1024)
+        {
+            Directory.CreateDirectory(outDir);
+            foreach (var old in Directory.GetFiles(outDir, "override*.zip")) File.Delete(old);
+            var folderCopy = Path.Combine(outDir, "override (mod files only)");
+            if (Directory.Exists(folderCopy)) Directory.Delete(folderCopy, true);
+            var all = Directory.GetFiles(overrideDir, "*", SearchOption.AllDirectories).OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
+            var files = new List<string>();
+            long skippedBytes = 0, keptBytes = 0; int checkedN = 0;
+            ui.Log("Comparing " + all.Count + " override files with the base game files...");
+            foreach (var f in all)
+            {
+                var rel = f.Substring(overrideDir.Length).TrimStart('\\', '/');
+                var name = Path.GetFileName(f).ToLowerInvariant();
+                if (name == "override.zip" || name.EndsWith(".part")) continue;
+                var baseFile = Path.Combine(defaultDir, rel);
+                var len = new FileInfo(f).Length;
+                if (File.Exists(baseFile) && Installer.SameFile(f, baseFile)) skippedBytes += len;
+                else { files.Add(f); keptBytes += len; }
+                if (++checkedN % 2000 == 0) ui.Log("  compared " + checkedN + " of " + all.Count + "...");
+            }
+            ui.Log(string.Format("Mod files: {0} ({1:0} MB). Left out {2} base-game files ({3:0} MB).",
+                files.Count, keptBytes / 1048576.0, all.Count - files.Count, skippedBytes / 1048576.0));
+            ui.Log("Copying the mod files to " + folderCopy + "...");
+            foreach (var f in files)
+            {
+                var dest = Path.Combine(folderCopy, f.Substring(overrideDir.Length).TrimStart('\\', '/'));
+                Directory.CreateDirectory(Path.GetDirectoryName(dest));
+                File.Copy(f, dest, true);
+            }
+            var made = new List<string>();
+            FileStream fs = null; ZipArchive zip = null;
+            int part = 0, n = 0;
+            Action next = () =>
+            {
+                if (zip != null) { zip.Dispose(); fs.Dispose(); }
+                part++;
+                var path = Path.Combine(outDir, "override_" + part.ToString("00") + ".zip");
+                made.Add(path);
+                fs = new FileStream(path, FileMode.Create);
+                zip = new ZipArchive(fs, ZipArchiveMode.Create);
+                ui.Log("Writing " + Path.GetFileName(path) + "...");
+            };
+            next();
+            foreach (var f in files)
+            {
+                var len = new FileInfo(f).Length;
+                if (fs.Length > 0 && fs.Length + len > limit) next();
+                var rel = f.Substring(overrideDir.Length).TrimStart('\\', '/').Replace('\\', '/');
+                var ext = Path.GetExtension(f).ToLowerInvariant();
+                var level = (ext == ".png" || ext == ".jpg" || ext == ".zip" || ext == ".ogg" || ext == ".mp4") ? CompressionLevel.NoCompression : CompressionLevel.Optimal;
+                var e = zip.CreateEntry(rel, level);
+                using (var es = e.Open()) using (var src = File.OpenRead(f)) src.CopyTo(es);
+                fs.Flush();
+                if (++n % 1000 == 0) ui.Log("  packed " + n + " of " + files.Count + " files...");
+            }
+            zip.Dispose(); fs.Dispose();
+            foreach (var m in made) ui.Log(string.Format("  {0}: {1:0} MB", Path.GetFileName(m), new FileInfo(m).Length / 1048576.0));
+            return made;
         }
 
         static string Safe(string s)

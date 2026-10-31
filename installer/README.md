@@ -26,3 +26,10 @@ Newest non-draft release with an `Assembly-CSharp.dll` asset wins. Override file
 plus every later `override_update.zip`, oldest first. Downloads are cached in `%LOCALAPPDATA%\WOTS Mod Installer`.
 `update_source.txt` next to the exe (`repo=` / `api=`) points it elsewhere for tests.
 Version guard: `ModVersion.Current` of the game DLL vs the new DLL; an older build over a newer one needs an explicit Yes (default No).
+
+## Split art + author tool (31 Oct 2026)
+Override art is ~4.5 GB, over GitHub's 2 GB asset limit. A release may carry any number of `override_XX.zip` parts
+(all non-update `override*.zip` assets of the newest release that has them are unpacked in name order).
+The author's copy (with a `Mod Files` folder) shows "Make GitHub upload zips": it drops override files identical to
+`StreamingAssets\default` (base game), copies the rest to `Release upload\override (mod files only)` and packs them into
+zips of at most 1.8 GB.

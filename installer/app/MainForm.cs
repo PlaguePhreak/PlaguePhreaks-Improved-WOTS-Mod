@@ -16,7 +16,7 @@ namespace WotsInstaller
         readonly TextBox pathBox = new TextBox();
         readonly Label stateLabel = new Label();
         readonly TextBox logBox = new TextBox();
-        readonly Button installBtn = new Button(), restoreBtn = new Button(), browseBtn = new Button(), closeBtn = new Button(), localBtn = new Button();
+        readonly Button zipBtn = new Button(), installBtn = new Button(), restoreBtn = new Button(), browseBtn = new Button(), closeBtn = new Button(), localBtn = new Button();
         readonly Label onlineLabel = new Label();
         readonly string exeDir, localDir;
         readonly Updater updater;
@@ -57,13 +57,16 @@ namespace WotsInstaller
             browseBtn.Text = "Browse..."; browseBtn.SetBounds(620, 69, 88, 26); browseBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             browseBtn.Click += (s, e) => Browse();
             stateLabel.SetBounds(12, 102, 696, 36); stateLabel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            onlineLabel.SetBounds(12, 138, 696, 20); onlineLabel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            onlineLabel.SetBounds(12, 138, 530, 20); onlineLabel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             onlineLabel.Text = "Checking for the newest version online...";
             installBtn.Text = "Install / update"; installBtn.SetBounds(12, 162, 170, 34);
             installBtn.Click += (s, e) => Run(Job.Online);
             localBtn.Text = "Install from Mod Files"; localBtn.SetBounds(190, 162, 170, 34);
             localBtn.Click += (s, e) => Run(Job.Local);
             localBtn.Visible = hasLocal;
+            zipBtn.Text = "Make GitHub upload zips"; zipBtn.SetBounds(546, 132, 162, 26); zipBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            zipBtn.Visible = hasLocal; // only in the author's copy (players have no Mod Files folder)
+            zipBtn.Click += (s, e) => MakeZips();
             restoreBtn.Text = "Restore original files"; restoreBtn.SetBounds(hasLocal ? 368 : 190, 162, 170, 34);
             restoreBtn.Click += (s, e) => Run(Job.Restore);
             closeBtn.Text = "Close"; closeBtn.SetBounds(620, 162, 88, 34); closeBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
@@ -71,7 +74,7 @@ namespace WotsInstaller
             logBox.Multiline = true; logBox.ReadOnly = true; logBox.ScrollBars = ScrollBars.Vertical; logBox.WordWrap = true;
             logBox.SetBounds(12, 206, 696, 252); logBox.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             logBox.BackColor = Color.White;
-            Controls.AddRange(new Control[] { title, pl, pathBox, browseBtn, stateLabel, onlineLabel, installBtn, localBtn, restoreBtn, closeBtn, logBox });
+            Controls.AddRange(new Control[] { zipBtn, title, pl, pathBox, browseBtn, stateLabel, onlineLabel, installBtn, localBtn, restoreBtn, closeBtn, logBox });
 
             Log(inst.ModName + " installer.");
             if (hasLocal) Log("Mod Files folder found next to the installer: " + (inst.ModVersion != "" ? inst.ModVersion : "version not set") + ".");
@@ -87,6 +90,35 @@ namespace WotsInstaller
         }
 
         enum Job { Online, Local, Restore }
+
+        // Author tool: packs the game's override folder into zips under 2 GB for a GitHub release.
+        void MakeZips()
+        {
+            if (state == null || busy) return;
+            var outDir = Path.Combine(exeDir, "Release upload");
+            if (!Ask("Make upload zips", "This takes your game's override folder\n" + state.OverrideDir + "\nleaves out files that are the same as the base game's, and puts the rest in\n" + outDir + "\nas a folder plus zips under 2 GB each (for the GitHub release).\n\nIt can take a while and needs free space for two copies of the mod files. Go?")) return;
+            busy = true; zipBtn.Enabled = installBtn.Enabled = localBtn.Enabled = restoreBtn.Enabled = false;
+            var ovDir = state.OverrideDir;
+            var t = new Thread(() =>
+            {
+                try
+                {
+                    Log(""); Log("---- Making GitHub upload zips ----");
+                    long lim = 1800L * 1024 * 1024; long mb;
+                    if (long.TryParse(Environment.GetEnvironmentVariable("WOTS_ZIP_LIMIT_KB") ?? "", out mb)) lim = mb * 1024;
+                    var defDir = Path.Combine(Path.GetDirectoryName(ovDir), "default");
+                    var made = Updater.MakeUploadZips(ovDir, defDir, outDir, this, lim);
+                    var dll = Path.Combine(localDir, "Assembly-CSharp.dll");
+                    if (File.Exists(dll)) File.Copy(dll, Path.Combine(outDir, "Assembly-CSharp.dll"), true);
+                    File.Copy(Application.ExecutablePath, Path.Combine(outDir, "WOTS Mod Installer.exe"), true);
+                    Log("Done. Upload everything in '" + outDir + "' to the GitHub release (" + made.Count + " zips + DLL + installer).");
+                    try { Process.Start("explorer.exe", "\"" + outDir + "\""); } catch { }
+                }
+                catch (Exception e) { Log("ERROR: " + e.Message); Tell("Could not make the zips", e.Message); }
+                BeginInvoke((Action)(() => { busy = false; zipBtn.Enabled = true; Check(state.GameDir); }));
+            });
+            t.IsBackground = true; t.Start();
+        }
 
         void CheckOnline()
         {
@@ -191,6 +223,8 @@ namespace WotsInstaller
                             var dir = updater.Prepare(latest, all, inst.ModName);
                             inst.SetSource(dir);
                             inst.Install(s);
+                            inst.SetSource(localDir);
+                            try { Directory.Delete(dir, true); } catch { } // the unpacked copy; downloads stay cached
                         }
                     }
                 }

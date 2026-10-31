@@ -407,7 +407,7 @@ namespace WotsInstaller
             ui.Log("Your override folder is back as it was before the mod.");
         }
 
-        static bool SameFile(string a, string b)
+        public static bool SameFile(string a, string b)
         {
             var fa = new FileInfo(a); var fb = new FileInfo(b);
             if (fa.Length != fb.Length) return false;
