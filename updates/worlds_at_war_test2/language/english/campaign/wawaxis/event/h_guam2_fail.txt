@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "GUAM FALLEN", "imagePath": "", "content": "<size=18><b>21 July 1944</b></size>\nWith no warships to stop them, the enemy has landed at <color=#caa809>GUAM</color> and taken it. <b>-75 command points.</b>\n\n<i>Guam was retaken from 21 July 1944.</i>"}

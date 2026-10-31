@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "IWO JIMA: ONE WEEK", "imagePath": "", "content": "<size=18><b>19 February 1945</b></size>\nThe landing force for <color=#caa809>IWO JIMA</color> sails to arrive on 19 February 1945. It needs at least 8 warships within 500 km to cover it, or it will not go in."}

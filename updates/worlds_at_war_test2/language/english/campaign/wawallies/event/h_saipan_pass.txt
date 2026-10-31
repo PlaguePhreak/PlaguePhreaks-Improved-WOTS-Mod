@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "SAIPAN TAKEN", "imagePath": "", "content": "<size=18><b>15 June 1944</b></size>\nCovered by our carriers, the landing force has taken <color=#caa809>SAIPAN</color>. <b>+200 command points.</b>\n\n<i>The landing on Saipan on 15 June 1944 brought on the Battle of the Philippine Sea and the loss of three Japanese carriers.</i>"}

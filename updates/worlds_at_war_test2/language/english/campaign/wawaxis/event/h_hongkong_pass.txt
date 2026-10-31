@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "HONG KONG TAKEN", "imagePath": "", "content": "<size=18><b>25 December 1941</b></size>\nCovered by our warships, the landing force has taken <color=#caa809>HONG KONG</color>. <b>+50 command points.</b>\n\n<i>The colony fell on Christmas Day 1941 after eighteen days of fighting.</i>"}

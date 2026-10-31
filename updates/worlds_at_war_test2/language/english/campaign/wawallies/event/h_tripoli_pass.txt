@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "TRIPOLI TAKEN", "imagePath": "", "content": "<size=18><b>23 January 1943</b></size>\nCovered by our warships, the landing force has taken <color=#caa809>TRIPOLI</color>. <b>+100 command points.</b>\n\n<i>The Eighth Army entered Tripoli on 23 January 1943.</i>"}

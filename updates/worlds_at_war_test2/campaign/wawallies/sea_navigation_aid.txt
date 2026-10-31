@@ -1,0 +1,1 @@
+{"missionString":"PrimaryLost","mustUseWaypoints":["G60_17"],"prohibitedWaypoints":[]}

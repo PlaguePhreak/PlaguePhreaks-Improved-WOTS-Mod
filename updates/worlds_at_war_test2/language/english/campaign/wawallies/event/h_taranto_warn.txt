@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "TARANTO: ONE WEEK", "imagePath": "", "content": "<size=18><b>9 September 1943</b></size>\nThe landing force for <color=#caa809>TARANTO</color> sails to arrive on 9 September 1943. It needs at least 4 warships within 500 km to cover it, or it will not go in."}

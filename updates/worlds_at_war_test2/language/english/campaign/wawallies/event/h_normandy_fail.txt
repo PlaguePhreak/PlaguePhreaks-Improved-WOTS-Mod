@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "NORMANDY", "imagePath": "", "content": "<size=18><b>6 June 1944</b></size>\nWe had no warships within 500 km of <color=#caa809>PORTSMOUTH</color> when it mattered. <b>150 command points.</b>\n\n<i>Nearly 7,000 vessels put the Allied armies ashore in Normandy on 6 June 1944.</i>"}

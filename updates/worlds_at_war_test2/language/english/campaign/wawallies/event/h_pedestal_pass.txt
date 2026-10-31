@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "MALTA AND OPERATION PEDESTAL", "imagePath": "", "content": "<size=18><b>13 August 1942</b></size>\nOur warships were on hand at <color=#caa809>MALTA</color>. <b>+150 command points.</b>\n\n<i>Five of fourteen merchant ships reached Malta on 13 August 1942, the tanker Ohio among them, at the cost of a carrier, two cruisers and a destroyer.</i>"}

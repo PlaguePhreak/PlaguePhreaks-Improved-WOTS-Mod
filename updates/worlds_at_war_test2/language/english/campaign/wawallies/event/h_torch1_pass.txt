@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "CASABLANCA TAKEN", "imagePath": "", "content": "<size=18><b>8 November 1942</b></size>\nCovered by our warships, the landing force has taken <color=#caa809>CASABLANCA</color>. <b>+150 command points.</b>\n\n<i>Operation Torch landed at Casablanca, Oran and Algiers on 8 November 1942; the French fleet at Casablanca fought for two days.</i>"}

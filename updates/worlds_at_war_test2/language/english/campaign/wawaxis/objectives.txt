@@ -1,0 +1,29 @@
+
+<b><size=18>WORLDS AT WAR: THE AXIS</size></b>
+
+<b>December 8th 1941</b>
+December 1941. Japan has struck Pearl Harbor and the Axis fleets hold Europe's coasts. Cut the Allied sea lanes in every ocean and take their great bases before their shipyards outbuild you.
+
+You must:
+
+1) Take control of:
+   - <color=#caa809>PEARL HARBOR</color>
+   - <color=#caa809>MIDWAY</color>
+   - <color=#caa809>SINGAPORE</color>
+   - <color=#caa809>COLOMBO</color>
+   - <color=#caa809>DARWIN</color>
+   - <color=#caa809>ALEXANDRIA</color>
+   - <color=#caa809>MALTA</color>
+   - <color=#caa809>GIBRALTAR</color>
+   - <color=#caa809>SCAPA FLOW</color>
+   - <color=#caa809>NEW YORK</color>
+
+2) Maintain control of:
+   - <color=#caa809>YOKOSUKA</color>
+   - <color=#caa809>TRUK</color>
+   - <color=#caa809>WILHELMSHAVEN</color>
+   - <color=#caa809>TARANTO</color>
+   - <color=#caa809>TOULON</color>
+   - <color=#caa809>SAIGON</color>
+
+All of these must be held at the same time to win the campaign.

@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "MIDWAY THREATENED", "imagePath": "", "content": "<size=18><b>4 June 1942</b></size>\nIntelligence expects an enemy move against <color=#caa809>MIDWAY</color> around 4 June 1942. Have at least 2 carriers within 800 km by then, or it may fall."}

@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "CONVOY PQ 17: ONE WEEK", "imagePath": "", "content": "<size=18><b>4 July 1942</b></size>\nSomething is brewing around <color=#caa809>MURMANSK</color>. Have at least 4 warships within 800 km of it by 4 July 1942 to make the most of it."}

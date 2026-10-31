@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "OKINAWA: ONE WEEK", "imagePath": "", "content": "<size=18><b>1 April 1945</b></size>\nThe landing force for <color=#caa809>OKINAWA</color> sails to arrive on 1 April 1945. It needs at least 10 warships within 500 km to cover it, or it will not go in."}

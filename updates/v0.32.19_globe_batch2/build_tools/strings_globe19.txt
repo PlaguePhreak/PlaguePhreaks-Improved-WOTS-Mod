@@ -1,0 +1,15 @@
+ModVersion
+0.32.18
+---
+0.32.19
+===
+~ModVersion
+Version 0.32.18 globe test 18
+---
+Version 0.32.19 globe test 19
+===
+~ModVersion
+<color=#E0B030><b>0.32.18</b></color> 1 ship 1 model:
+---
+<color=#E0B030><b>0.32.19</b></color> globe test 19, Worlds at War batch 2:\n- Convoy routes with purpose: timetabled convoys on both sides (HX, SC, PQ, Malta, Libya, Japan oil and more; campaign convoys.txt). Yours sail yellow and steer themselves, the enemy's are run by the AI; getting through or sinking one scores victory points\n- Victory points and an end date (campaign score.txt): ships sunk, ports taken and convoys count; the war ends 2 September 1945 and the side with more points wins. Standings top right on the globe, warning pop-up a month before\n- Nation colouring on the globe: land tinted by the side holding the nearest port, redrawn when a port falls\n- Distance readout at the cursor while plotting a course or using the ruler on the globe: great-circle km and days at the force's speed\n- Search box at the top of the globe: type a port, task force or sea name and press Enter\n<color=#E0B030><b>0.32.18</b></color> 1 ship 1 model:
+===

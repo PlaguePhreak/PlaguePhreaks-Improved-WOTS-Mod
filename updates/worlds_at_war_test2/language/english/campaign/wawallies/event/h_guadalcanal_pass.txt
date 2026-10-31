@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "TULAGI AND GUADALCANAL TAKEN", "imagePath": "", "content": "<size=18><b>7 August 1942</b></size>\nCovered by our warships, the landing force has taken <color=#caa809>TULAGI</color>. <b>+150 command points.</b>\n\n<i>The 1st Marine Division landed at Tulagi and Guadalcanal on 7 August 1942, the first Allied offensive of the Pacific war.</i>"}

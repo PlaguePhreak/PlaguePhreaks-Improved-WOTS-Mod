@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "BATAVIA FALLEN", "imagePath": "", "content": "<size=18><b>8 March 1942</b></size>\nWith no warships to stop them, the enemy has landed at <color=#caa809>BATAVIA</color> and taken it. <b>-50 command points.</b>\n\n<i>The Dutch East Indies surrendered on 8 March 1942.</i>"}

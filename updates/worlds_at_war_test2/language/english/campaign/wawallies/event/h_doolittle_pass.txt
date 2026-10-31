@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "THE DOOLITTLE RAID TAKEN", "imagePath": "", "content": "<size=18><b>18 April 1942</b></size>\nCovered by our carriers, the landing force has taken <color=#caa809>YOKOSUKA</color>. <b>+100 command points.</b>\n\n<i>Sixteen B-25s flew off Hornet on 18 April 1942 and bombed Tokyo.</i>"}

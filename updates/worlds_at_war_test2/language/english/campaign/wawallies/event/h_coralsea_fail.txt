@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "PORT MORESBY FALLEN", "imagePath": "", "content": "<size=18><b>7 May 1942</b></size>\nWith no warships to stop them, the enemy has landed at <color=#caa809>PORT MORESBY</color> and taken it. <b>-75 command points.</b>\n\n<i>The invasion force turned back after the Battle of the Coral Sea, 7 and 8 May 1942: the first carrier battle in history.</i>"}

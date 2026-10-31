@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "WAKE ISLAND THREATENED", "imagePath": "", "content": "<size=18><b>23 December 1941</b></size>\nIntelligence expects an enemy move against <color=#caa809>WAKE ISLAND</color> around 23 December 1941. Have at least 4 warships within 500 km by then, or it may fall."}

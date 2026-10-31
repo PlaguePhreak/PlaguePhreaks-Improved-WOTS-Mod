@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "TARAWA: ONE WEEK", "imagePath": "", "content": "<size=18><b>20 November 1943</b></size>\nThe landing force for <color=#caa809>TARAWA</color> sails to arrive on 20 November 1943. It needs at least 6 warships within 400 km to cover it, or it will not go in."}

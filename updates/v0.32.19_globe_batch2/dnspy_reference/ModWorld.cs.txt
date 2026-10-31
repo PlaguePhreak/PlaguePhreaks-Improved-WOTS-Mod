@@ -1,0 +1,116 @@
+using System;
+using System.Collections.Generic;
+using System.Reflection;
+using UnityEngine;
+
+public static class ModWorld
+{
+	public static bool On = true;
+
+	public static void Daily()
+	{
+		if (!On)
+		{
+			return;
+		}
+		try
+		{
+			ModRoutes.Daily();
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[WORLD] routes daily: " + ex);
+		}
+		try
+		{
+			ModScore.Daily();
+		}
+		catch (Exception ex2)
+		{
+			Debug.LogError("[WORLD] score daily: " + ex2);
+		}
+	}
+
+	public static void Tick()
+	{
+		if (!On)
+		{
+			return;
+		}
+		try
+		{
+			ModRoutes.Tick();
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[WORLD] routes tick: " + ex);
+		}
+	}
+
+	private static FieldInfo SaveField()
+	{
+		return typeof(CampaignData).GetField("modWorld", BindingFlags.Instance | BindingFlags.Public);
+	}
+
+	public static void Save(CampaignData data)
+	{
+		try
+		{
+			if (!(data == null))
+			{
+				FieldInfo fieldInfo = SaveField();
+				if (fieldInfo != null)
+				{
+					List<string> list = new List<string>();
+					ModRoutes.Write(list);
+					ModScore.Write(list);
+					fieldInfo.SetValue(data, list);
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[WORLD] save failed: " + ex.Message);
+		}
+	}
+
+	public static List<string> Saved()
+	{
+		try
+		{
+			FieldInfo fieldInfo = SaveField();
+			CampaignManager instance = CampaignManager.instance;
+			if (fieldInfo == null || instance == null || instance.campaignData == null)
+			{
+				return null;
+			}
+			return fieldInfo.GetValue(instance.campaignData) as List<string>;
+		}
+		catch (Exception)
+		{
+			return null;
+		}
+	}
+
+	public static bool Ready()
+	{
+		CampaignManager instance = CampaignManager.instance;
+		return instance != null && instance.campaignData != null && CampaignInterface.instance != null && instance.landMapLocations != null && instance.landMapLocations.Count > 0 && instance.playerMobile != null;
+	}
+
+	public static DateTime Start(CampaignData d)
+	{
+		try
+		{
+			int[] startDate = d.startDate;
+			if (startDate != null && startDate.Length >= 6)
+			{
+				return new DateTime(startDate[5], startDate[4], startDate[3]);
+			}
+		}
+		catch (Exception)
+		{
+		}
+		return CampaignInterface.instance.dateTime.Date;
+	}
+}

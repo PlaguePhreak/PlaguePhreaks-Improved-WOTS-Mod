@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "TARAWA: LANDING CALLED OFF", "imagePath": "", "content": "<size=18><b>20 November 1943</b></size>\nWith fewer than 6 warships within 400 km of <color=#caa809>TARAWA</color>, the landing force turned back.\n\n<i>The 2nd Marine Division took Betio in 76 hours from 20 November 1943.</i>"}

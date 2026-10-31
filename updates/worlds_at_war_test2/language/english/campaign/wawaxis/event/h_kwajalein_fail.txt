@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "KWAJALEIN FALLEN", "imagePath": "", "content": "<size=18><b>31 January 1944</b></size>\nWith no warships to stop them, the enemy has landed at <color=#caa809>KWAJALEIN</color> and taken it. <b>-75 command points.</b>\n\n<i>Kwajalein and Roi-Namur were taken between 31 January and 3 February 1944.</i>"}

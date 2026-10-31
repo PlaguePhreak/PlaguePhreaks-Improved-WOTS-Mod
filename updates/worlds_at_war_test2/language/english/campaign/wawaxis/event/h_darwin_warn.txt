@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "THE DARWIN RAID: ONE WEEK", "imagePath": "", "content": "<size=18><b>19 February 1942</b></size>\nThe landing force for <color=#caa809>DARWIN</color> sails to arrive on 19 February 1942. It needs at least 2 carriers within 600 km to cover it, or it will not go in."}

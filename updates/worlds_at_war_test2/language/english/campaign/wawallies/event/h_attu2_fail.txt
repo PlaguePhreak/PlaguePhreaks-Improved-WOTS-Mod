@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "ATTU: LANDING CALLED OFF", "imagePath": "", "content": "<size=18><b>11 May 1943</b></size>\nWith fewer than 4 warships within 400 km of <color=#caa809>ATTU</color>, the landing force turned back.\n\n<i>The 7th Infantry Division landed on Attu on 11 May 1943 and retook the island in three weeks.</i>"}

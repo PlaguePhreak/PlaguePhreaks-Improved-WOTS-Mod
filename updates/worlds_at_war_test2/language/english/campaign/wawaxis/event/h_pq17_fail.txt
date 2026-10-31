@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "CONVOY PQ 17", "imagePath": "", "content": "<size=18><b>4 July 1942</b></size>\nWe had no warships within 800 km of <color=#caa809>MURMANSK</color> when it mattered. <b>50 command points.</b>\n\n<i>Ordered to scatter on 4 July 1942 for fear of Tirpitz, PQ 17 lost 24 of its 35 merchant ships to aircraft and U-boats.</i>"}

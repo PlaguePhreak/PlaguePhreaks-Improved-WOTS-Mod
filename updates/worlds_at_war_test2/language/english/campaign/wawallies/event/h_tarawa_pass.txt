@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "TARAWA TAKEN", "imagePath": "", "content": "<size=18><b>20 November 1943</b></size>\nCovered by our warships, the landing force has taken <color=#caa809>TARAWA</color>. <b>+150 command points.</b>\n\n<i>The 2nd Marine Division took Betio in 76 hours from 20 November 1943.</i>"}

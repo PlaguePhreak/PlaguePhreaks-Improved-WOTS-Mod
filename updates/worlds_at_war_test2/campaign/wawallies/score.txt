@@ -1,0 +1,2 @@
+// Victory points and the end date (read by ModScore). One JSON line.
+{"submarine": 3, "destroyerEscort": 2, "destroyer": 3, "lightCruiser": 5, "heavyCruiser": 7, "battlecruiser": 9, "battleship": 12, "lightCarrier": 9, "carrier": 14, "oiler": 2, "merchant": 2, "portPoints": 15, "warnDays": 30, "endDay": 2, "endMonth": 9, "endYear": 1945, "side0": "Allies", "side1": "Axis"}

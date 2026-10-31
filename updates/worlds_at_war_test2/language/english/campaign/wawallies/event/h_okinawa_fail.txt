@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "OKINAWA: LANDING CALLED OFF", "imagePath": "", "content": "<size=18><b>1 April 1945</b></size>\nWith fewer than 10 warships within 500 km of <color=#caa809>OKINAWA</color>, the landing force turned back.\n\n<i>Operation Iceberg landed on Okinawa on 1 April 1945; the fleet fought off the kamikazes for three months.</i>"}

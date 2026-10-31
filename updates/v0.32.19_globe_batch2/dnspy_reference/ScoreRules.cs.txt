@@ -1,0 +1,41 @@
+using System;
+
+[Serializable]
+public class ScoreRules
+{
+	public int endDay = 2;
+
+	public int endMonth = 9;
+
+	public int endYear = 1945;
+
+	public int warnDays = 30;
+
+	public int portPoints = 15;
+
+	public int submarine = 3;
+
+	public int destroyerEscort = 2;
+
+	public int destroyer = 3;
+
+	public int lightCruiser = 5;
+
+	public int heavyCruiser = 7;
+
+	public int battlecruiser = 9;
+
+	public int battleship = 12;
+
+	public int lightCarrier = 9;
+
+	public int carrier = 14;
+
+	public int oiler = 2;
+
+	public int merchant = 2;
+
+	public string side0 = "Allies";
+
+	public string side1 = "Axis";
+}

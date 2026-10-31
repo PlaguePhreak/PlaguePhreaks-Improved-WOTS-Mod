@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "SICILY: ONE WEEK", "imagePath": "", "content": "<size=18><b>10 July 1943</b></size>\nThe landing force for <color=#caa809>MESSINA</color> sails to arrive on 10 July 1943. It needs at least 8 warships within 500 km to cover it, or it will not go in."}

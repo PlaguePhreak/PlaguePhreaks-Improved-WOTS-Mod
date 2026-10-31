@@ -1,0 +1,36 @@
+using System;
+using System.Collections.Generic;
+
+[Serializable]
+public class ConvoyRoute
+{
+	public string id = "";
+
+	public string name = "";
+
+	public int faction = 0;
+
+	public string from = "";
+
+	public string to = "";
+
+	public List<string> via = new List<string>();
+
+	public int everyDays = 10;
+
+	public int firstDay = 0;
+
+	public int firstNumber = 100;
+
+	public int merchants = 6;
+
+	public int oilers = 1;
+
+	public int escorts = 3;
+
+	public int points = 10;
+
+	public string cargo = "supplies";
+
+	public string note = "";
+}

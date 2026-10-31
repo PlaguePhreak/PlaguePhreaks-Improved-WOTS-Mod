@@ -1,0 +1,29 @@
+
+<b><size=18>WORLDS AT WAR: THE ALLIES</size></b>
+
+<b>December 8th 1941</b>
+December 1941. The war is now truly a world war. Hold the sea lanes in every ocean, break the Axis fleets and carry the war to Truk, Taranto and Wilhelmshaven.
+
+You must:
+
+1) Take control of:
+   - <color=#caa809>TRUK</color>
+   - <color=#caa809>KWAJALEIN</color>
+   - <color=#caa809>SAIPAN</color>
+   - <color=#caa809>RABAUL</color>
+   - <color=#caa809>SINGAPORE</color>
+   - <color=#caa809>MANILA</color>
+   - <color=#caa809>TARANTO</color>
+   - <color=#caa809>BREST</color>
+   - <color=#caa809>TRIPOLI</color>
+   - <color=#caa809>WILHELMSHAVEN</color>
+
+2) Maintain control of:
+   - <color=#caa809>PEARL HARBOR</color>
+   - <color=#caa809>SAN DIEGO</color>
+   - <color=#caa809>SYDNEY</color>
+   - <color=#caa809>SCAPA FLOW</color>
+   - <color=#caa809>NORFOLK</color>
+   - <color=#caa809>ALEXANDRIA</color>
+
+All of these must be held at the same time to win the campaign.

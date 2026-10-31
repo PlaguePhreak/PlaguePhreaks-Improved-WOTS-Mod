@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "NAPLES FALLEN", "imagePath": "", "content": "<size=18><b>9 September 1943</b></size>\nWith no warships to stop them, the enemy has landed at <color=#caa809>NAPLES</color> and taken it. <b>-75 command points.</b>\n\n<i>The Fifth Army landed at Salerno on 9 September 1943, the day Italy's surrender was announced, and took Naples on 1 October.</i>"}

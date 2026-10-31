@@ -1,0 +1,1 @@
+{"nextAction": "SUMMARY", "header": "Defeat", "imagePath": "", "content": "The Axis fleets have lost control of the oceans."}

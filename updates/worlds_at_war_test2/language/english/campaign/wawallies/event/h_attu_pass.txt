@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "ATTU HELD", "imagePath": "", "content": "<size=18><b>7 June 1942</b></size>\nOur warships off <color=#caa809>ATTU</color> turned the enemy landing force back. <b>+50 command points.</b>\n\n<i>Attu was occupied on 7 June 1942.</i>"}

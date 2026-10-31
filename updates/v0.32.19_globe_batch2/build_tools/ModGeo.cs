@@ -1,0 +1,171 @@
+using System;
+using UnityEngine;
+using WorldMapStrategyKit;
+
+// 0.32.1 Globe phase 1: true distances on a round Earth.
+// The campaign map is a flat latitude/longitude picture (240 map pixels per degree, from mapOriginXY and mapPixelWidth in
+// setup.txt). The stock game measured distance straight across that flat picture, so a degree of longitude counted as
+// equator-length everywhere. ModGeo measures along the Earth's surface instead (great circle). On the equator the
+// numbers are exactly the stock ones; further north or south, east-west distances shrink to the real value.
+// Everything that goes through CampaignManager.GetDistanceInMetresBetweenMapObjects follows: travel times, fuel,
+// detection, strike and escort ranges, which forces join a battle.
+public static class ModGeo
+{
+    // ===== knobs =====
+    public static bool On = true;          // false = stock flat distances everywhere
+    public static float MinCos = 0.1f;     // stretch limit for range circles near the poles (0.1 = 84 degrees)
+    public static float JoinRadiusMetres = 110000f;  // phase 6: forces this close to the attacked force join the battle (stock 50000)
+    public static float ZoneRadiusUnits = 11000f;    // phase 6: battle units (10 m) from the centre before a unit is warned, then parked (stock 5000)
+
+    // the grey battle-zone disc on the tactical map (EngagementManager.StartCombat): diameter in km-ish units so that
+    // sizeDelta = size / 0.1 / 0.1 equals the zone diameter in battle units
+    public static float EngagementSize() { return On ? ZoneRadiusUnits * 0.02f : 100f; }
+
+    public const float PxPerDeg = 240f;    // campaign map pixels per degree (stock rule, same as the battle height map)
+    public const int WorldPx = 86400;      // 360 degrees of map pixels
+    public const int DemTilesX = 24;       // battle height map tiles around the world
+
+    private static string logged; // campaignID object last reported (a new string each time a campaign loads)
+
+    private static CampaignData Data()
+    {
+        if (!On || CampaignManager.instance == null) return null;
+        CampaignData d = CampaignManager.instance.campaignData;
+        if (d == null || d.mapOriginXY == null || d.mapOriginXY.Length < 2 || d.mapPixelWidth <= 0 || d.mapWidthMetres <= 0f) return null;
+        if (!ReferenceEquals(logged, d.campaignID) && CampaignManager.instance.landMapLocations != null && CampaignManager.instance.landMapLocations.Count > 1) { logged = d.campaignID; Report(d); }
+        return d;
+    }
+
+    // Latitude in degrees of a map point (-0.5..0.5, north up).
+    public static double Lat(CampaignData d, float y)
+    {
+        return (d.mapOriginXY[1] + (y + 0.5) * d.mapPixelWidth * 0.5) / PxPerDeg - 90.0;
+    }
+
+    // Longitude in degrees east of Greenwich, 0..360.
+    public static double Lon(CampaignData d, float x)
+    {
+        double lon = (d.mapOriginXY[0] + (x + 0.5) * d.mapPixelWidth) / PxPerDeg;
+        lon %= 360.0;
+        if (lon < 0.0) lon += 360.0;
+        return lon;
+    }
+
+    // Cosine of the latitude of a map point (1 on the equator).
+    public static float Cos(Vector2 p)
+    {
+        CampaignData d = Data();
+        if (d == null) return 1f;
+        return Mathf.Max(MinCos, (float)Math.Cos(Lat(d, p.y) * Math.PI / 180.0));
+    }
+
+    // Stock formula, kept for when ModGeo is off or the map has no origin.
+    public static float Flat(Vector2 a, Vector2 b)
+    {
+        a.y /= 2f;
+        b.y /= 2f;
+        return Vector2.Distance(a, b) * CampaignManager.instance.campaignData.mapWidthMetres;
+    }
+
+    // Replaces CampaignManager.GetDistanceInMetresBetweenMapObjects.
+    public static float Metres(Vector2 a, Vector2 b)
+    {
+        CampaignData d = Data();
+        if (d == null) return Flat(a, b);
+        double r = Radius(d);
+        double rad = Math.PI / 180.0;
+        double lat1 = Lat(d, a.y) * rad;
+        double lat2 = Lat(d, b.y) * rad;
+        double dLon = (b.x - a.x) * d.mapPixelWidth / PxPerDeg * rad;
+        double sLat = Math.Sin((lat2 - lat1) * 0.5);
+        double sLon = Math.Sin(dLon * 0.5);
+        double h = sLat * sLat + Math.Cos(lat1) * Math.Cos(lat2) * sLon * sLon;
+        if (h > 1.0) h = 1.0;
+        return (float)(2.0 * r * Math.Asin(Math.Sqrt(h)));
+    }
+
+    // Earth radius in the campaign's own scale, so that equator distances match the stock game exactly.
+    public static double Radius(CampaignData d)
+    {
+        double metresPerPx = d.mapWidthMetres / d.mapPixelWidth;
+        return metresPerPx * PxPerDeg * 180.0 / Math.PI;
+    }
+
+    // Battle placement: CampaignManager turns the map gap between two forces into battle units (10 m) with
+    // (a - b) * mapWidthMetres * 0.1. That counts east-west at equator size; this shrinks it to the real gap.
+    public static Vector2 Battle(Vector2 offset, GameObjectAnimator centre)
+    {
+        if (centre == null) return offset;
+        offset.x *= Cos(centre.currentMap2DLocation);
+        return offset;
+    }
+
+    // CampaignManager.GetXYPixelCoord: battle height map pixels run 0..86400 from Greenwich. A map that crosses
+    // 0 degrees (or a world map) gives pixels past the end; wrap them round.
+    public static int[] WrapPixel(int[] px)
+    {
+        if (px != null && px.Length > 0)
+        {
+            px[0] %= WorldPx;
+            if (px[0] < 0) px[0] += WorldPx;
+        }
+        return px;
+    }
+
+    // TerrainTiles.GetDEMTile: tile 24 is tile 0 again (stock left this empty).
+    public static int WrapTile(int x)
+    {
+        x %= DemTilesX;
+        if (x < 0) x += DemTilesX;
+        return x;
+    }
+
+    // MapRadii.SetMapRadii, last line: base spotting circles get wider east-west away from the equator, so they cover
+    // the same real distance in every direction.
+    public static void Radii()
+    {
+        if (Data() == null || MapRadii.instance == null) return;
+        var locs = CampaignManager.instance.landMapLocations;
+        var rings = MapRadii.instance.mapRadiiMeshRenderers;
+        if (locs == null || rings == null || locs.Count == 0) return;
+        for (int i = 0; i < rings.Count; i++)
+        {
+            if (rings[i] == null) continue;
+            MapLocation loc = locs[i % locs.Count];
+            if (loc == null) continue;
+            Transform t = rings[i].transform;
+            Vector3 s = t.localScale;
+            s.x = s.y / Cos(loc.locationPosition);
+            t.localScale = s;
+        }
+    }
+
+    // One log block per campaign, to check the map in output_log.txt.
+    private static void Report(CampaignData d)
+    {
+        try
+        {
+            string s = "[GEO] " + d.campaignID + " map: lat " + Lat(d, -0.5f).ToString("0.0") + " to " + Lat(d, 0.5f).ToString("0.0")
+                + ", lon " + Lon(d, -0.5f).ToString("0.0") + "E to " + Lon(d, 0.5f).ToString("0.0") + "E, earth radius "
+                + (Radius(d) / 1000.0).ToString("0") + " km";
+            var locs = CampaignManager.instance.landMapLocations;
+            if (locs != null)
+            {
+                int n = 0;
+                for (int i = 0; i + 1 < locs.Count && n < 4; i += 2, n++)
+                {
+                    MapLocation a = locs[i], b = locs[locs.Count - 1 - i];
+                    if (a == null || b == null || a == b) continue;
+                    s += "\n[GEO] " + a.locationName + " (" + Lat(d, a.locationPosition.y).ToString("0.0") + ") to " + b.locationName + " ("
+                        + Lat(d, b.locationPosition.y).ToString("0.0") + "): flat " + (Flat(a.locationPosition, b.locationPosition) / 1000f).ToString("0")
+                        + " km, round " + (Metres(a.locationPosition, b.locationPosition) / 1000f).ToString("0") + " km";
+                }
+            }
+            Debug.Log(s);
+        }
+        catch (Exception ex)
+        {
+            Debug.Log("[GEO] report failed: " + ex.Message);
+        }
+    }
+}

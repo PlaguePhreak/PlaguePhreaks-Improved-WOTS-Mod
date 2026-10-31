@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "THE CHANNEL DASH", "imagePath": "", "content": "<size=18><b>12 February 1942</b></size>\nOur warships were on hand at <color=#caa809>BREST</color>. <b>+100 command points.</b>\n\n<i>Scharnhorst, Gneisenau and Prinz Eugen ran up the Channel from Brest to Germany in daylight on 12 February 1942.</i>"}

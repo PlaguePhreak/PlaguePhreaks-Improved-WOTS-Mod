@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "TRIPOLI: LANDING CALLED OFF", "imagePath": "", "content": "<size=18><b>23 January 1943</b></size>\nWith fewer than 4 warships within 500 km of <color=#caa809>TRIPOLI</color>, the landing force turned back.\n\n<i>The Eighth Army entered Tripoli on 23 January 1943.</i>"}

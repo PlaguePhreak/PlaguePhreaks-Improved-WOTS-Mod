@@ -1,0 +1,861 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using UnityEngine;
+using WorldMapStrategyKit;
+
+public static class ModRoutes
+{
+	private class Live
+	{
+		public MobileMapObject mmo;
+
+		public ConvoyRoute route;
+
+		public int startMerchants;
+
+		public bool awarded;
+
+		public int idle;
+	}
+
+	public static string Prefix = "Convoy ";
+
+	public static int MaxAtSea = 2;
+
+	public static float ArriveKm = 60f;
+
+	public static int ResendMinutes = 30;
+
+	public static List<ConvoyRoute> routes = new List<ConvoyRoute>();
+
+	private static readonly Dictionary<MobileMapObject, Live> live = new Dictionary<MobileMapObject, Live>();
+
+	private static readonly Dictionary<string, int> nextNumber = new Dictionary<string, int>();
+
+	private static readonly Dictionary<string, string[]> saved = new Dictionary<string, string[]>();
+
+	private static object owner;
+
+	private static string loadedFor;
+
+	private static DateTime lastDay = DateTime.MinValue;
+
+	private static void Sync()
+	{
+		CampaignManager instance = CampaignManager.instance;
+		if (owner != instance.landMapLocations)
+		{
+			owner = instance.landMapLocations;
+			ModRoutes.live.Clear();
+			nextNumber.Clear();
+			saved.Clear();
+			lastDay = DateTime.MinValue;
+			Load(instance.campaignData.campaignID);
+			Restore();
+		}
+		List<MobileMapObject> list = null;
+		foreach (KeyValuePair<MobileMapObject, Live> item in ModRoutes.live)
+		{
+			MobileMapObject key = item.Key;
+			if (key == null || key.gameObjectAnimator == null || (!instance.playerMobile.Contains(key.gameObjectAnimator) && !instance.otherMobile.Contains(key.gameObjectAnimator)))
+			{
+				if (list == null)
+				{
+					list = new List<MobileMapObject>();
+				}
+				list.Add(key);
+			}
+		}
+		if (list != null)
+		{
+			for (int i = 0; i < list.Count; i++)
+			{
+				Live live = ModRoutes.live[list[i]];
+				ModRoutes.live.Remove(list[i]);
+				if (!live.awarded)
+				{
+					Debug.Log("[CONVOYS] " + live.route.name + " convoy gone from the map before arrival");
+					Lost(live, null);
+				}
+			}
+		}
+		Adopt(instance.playerMobile);
+		Adopt(instance.otherMobile);
+	}
+
+	private static void Adopt(List<GameObjectAnimator> list)
+	{
+		if (list == null)
+		{
+			return;
+		}
+		for (int i = 0; i < list.Count; i++)
+		{
+			GameObjectAnimator gameObjectAnimator = list[i];
+			if (gameObjectAnimator == null || gameObjectAnimator.mobileMapObject == null || ModRoutes.live.ContainsKey(gameObjectAnimator.mobileMapObject))
+			{
+				continue;
+			}
+			string mobileName = gameObjectAnimator.mobileMapObject.mobileName;
+			if (string.IsNullOrEmpty(mobileName) || !mobileName.StartsWith(Prefix))
+			{
+				continue;
+			}
+			ConvoyRoute convoyRoute = RouteOf(mobileName);
+			if (convoyRoute != null)
+			{
+				Live live = new Live();
+				live.mmo = gameObjectAnimator.mobileMapObject;
+				live.route = convoyRoute;
+				live.startMerchants = Merchants(live.mmo);
+				if (saved.TryGetValue(mobileName, out var value) && value.Length >= 4)
+				{
+					live.awarded = value[2] == "1";
+					int.TryParse(value[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out live.startMerchants);
+				}
+				ModRoutes.live[live.mmo] = live;
+				Debug.Log("[CONVOYS] tracking " + mobileName + " (" + Merchants(live.mmo) + " merchants, " + ((gameObjectAnimator.mobileMapObject.currentFaction == 0) ? "ours" : "enemy") + ")");
+			}
+		}
+	}
+
+	private static ConvoyRoute RouteOf(string mobileName)
+	{
+		ConvoyRoute convoyRoute = null;
+		for (int i = 0; i < routes.Count; i++)
+		{
+			string value = Prefix + routes[i].name + "-";
+			if (mobileName.StartsWith(value) && (convoyRoute == null || routes[i].name.Length > convoyRoute.name.Length))
+			{
+				convoyRoute = routes[i];
+			}
+		}
+		return convoyRoute;
+	}
+
+	private static void Load(string campaignID)
+	{
+		loadedFor = campaignID;
+		routes.Clear();
+		string text = "campaign/" + campaignID + "/convoys.txt";
+		if (!Utilities.DoesGameFileExist(text))
+		{
+			return;
+		}
+		string[] array = AssetLoader.instance.ImportText(text);
+		if (array == null)
+		{
+			return;
+		}
+		for (int i = 0; i < array.Length; i++)
+		{
+			string text2 = array[i].Trim();
+			if (text2.Length == 0 || text2.StartsWith("//"))
+			{
+				continue;
+			}
+			try
+			{
+				ConvoyRoute convoyRoute = new ConvoyRoute();
+				JsonUtility.FromJsonOverwrite(text2, convoyRoute);
+				if (convoyRoute.via == null)
+				{
+					convoyRoute.via = new List<string>();
+				}
+				if (string.IsNullOrEmpty(convoyRoute.id))
+				{
+					convoyRoute.id = convoyRoute.name.ToLower();
+				}
+				if (convoyRoute.everyDays < 1)
+				{
+					convoyRoute.everyDays = 1;
+				}
+				routes.Add(convoyRoute);
+			}
+			catch (Exception ex)
+			{
+				Debug.Log("[CONVOYS] bad line " + (i + 1) + ": " + ex.Message);
+			}
+		}
+		Debug.Log("[CONVOYS] " + routes.Count + " convoy routes loaded for " + campaignID);
+	}
+
+	private static void Restore()
+	{
+		List<string> list = ModWorld.Saved();
+		if (list == null)
+		{
+			return;
+		}
+		int num = 0;
+		for (int i = 0; i < list.Count; i++)
+		{
+			string[] array = list[i].Split('|');
+			if (array.Length >= 3 && array[0] == "N")
+			{
+				if (int.TryParse(array[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var result))
+				{
+					nextNumber[array[1]] = result;
+				}
+			}
+			else if (array.Length >= 4 && array[0] == "L")
+			{
+				saved[array[1]] = array;
+				num++;
+			}
+		}
+		Debug.Log("[CONVOYS] state restored: " + nextNumber.Count + " route counters, " + num + " convoys at sea");
+	}
+
+	public static void Write(List<string> list)
+	{
+		if (owner == null || CampaignManager.instance == null || owner != CampaignManager.instance.landMapLocations)
+		{
+			return;
+		}
+		foreach (KeyValuePair<string, int> item in nextNumber)
+		{
+			list.Add("N|" + item.Key + "|" + item.Value.ToString(CultureInfo.InvariantCulture));
+		}
+		foreach (Live value in live.Values)
+		{
+			if (value.mmo != null)
+			{
+				list.Add("L|" + value.mmo.mobileName.Replace("|", "/") + "|" + (value.awarded ? "1" : "0") + "|" + value.startMerchants.ToString(CultureInfo.InvariantCulture));
+			}
+		}
+	}
+
+	public static void Daily()
+	{
+		if (!ModWorld.Ready())
+		{
+			return;
+		}
+		Sync();
+		if (routes.Count == 0)
+		{
+			return;
+		}
+		CampaignData campaignData = CampaignManager.instance.campaignData;
+		DateTime date = CampaignInterface.instance.dateTime.Date;
+		if (date == lastDay)
+		{
+			return;
+		}
+		lastDay = date;
+		int num = (int)(date - ModWorld.Start(campaignData)).TotalDays;
+		for (int i = 0; i < routes.Count; i++)
+		{
+			ConvoyRoute convoyRoute = routes[i];
+			if (num < convoyRoute.firstDay || (num - convoyRoute.firstDay) % convoyRoute.everyDays != 0)
+			{
+				continue;
+			}
+			int num2 = 0;
+			foreach (Live value in live.Values)
+			{
+				if (value.route == convoyRoute && !value.awarded)
+				{
+					num2++;
+				}
+			}
+			if (num2 >= MaxAtSea)
+			{
+				Debug.Log("[CONVOYS] " + convoyRoute.name + ": " + num2 + " already at sea, none sailed today");
+			}
+			else
+			{
+				try
+				{
+					Spawn(convoyRoute);
+				}
+				catch (Exception ex)
+				{
+					Debug.LogError("[CONVOYS] " + convoyRoute.name + " spawn failed: " + ex);
+				}
+			}
+		}
+	}
+
+	private static void Spawn(ConvoyRoute r)
+	{
+		CampaignManager instance = CampaignManager.instance;
+		MapLocation mapLocationObject = instance.GetMapLocationObject(r.from);
+		MapLocation mapLocationObject2 = instance.GetMapLocationObject(r.to);
+		if (mapLocationObject == null || mapLocationObject2 == null)
+		{
+			Debug.Log("[CONVOYS] " + r.name + ": port '" + ((mapLocationObject == null) ? r.from : r.to) + "' is not in this campaign");
+			return;
+		}
+		if (mapLocationObject.currentFaction != r.faction || mapLocationObject2.currentFaction != r.faction)
+		{
+			Debug.Log("[CONVOYS] " + r.name + " not sailing: " + ((mapLocationObject.currentFaction != r.faction) ? mapLocationObject.locationName : mapLocationObject2.locationName) + " is no longer held by its side");
+			return;
+		}
+		if (!nextNumber.TryGetValue(r.id, out var value))
+		{
+			value = r.firstNumber;
+		}
+		string text = Prefix + r.name + "-" + value;
+		GameObjectAnimator gameObjectAnimator = ((r.faction == 0) ? SpawnOurs(r, text, mapLocationObject, mapLocationObject2) : SpawnEnemy(r, text, mapLocationObject, mapLocationObject2));
+		if (!(gameObjectAnimator == null))
+		{
+			nextNumber[r.id] = value + 1;
+			Live live = new Live();
+			live.mmo = gameObjectAnimator.mobileMapObject;
+			live.route = r;
+			live.startMerchants = Merchants(live.mmo);
+			ModRoutes.live[live.mmo] = live;
+			Debug.Log("[CONVOYS] " + text + " sailed from " + mapLocationObject.locationName + " for " + mapLocationObject2.locationName + ": " + live.mmo.unitPrefabs.Count + " ships, " + live.startMerchants + " merchants (" + ((r.faction == 0) ? "ours" : "enemy") + ")");
+			if (r.faction == 0)
+			{
+				Notify("Convoys", text + " has sailed from " + mapLocationObject.locationName + " for " + mapLocationObject2.locationName + " with " + live.startMerchants + " merchant ships. It steers itself; escort it if you can.");
+			}
+		}
+	}
+
+	private static GameObjectAnimator SpawnOurs(ConvoyRoute r, string name, MapLocation from, MapLocation to)
+	{
+		List<string> list = Ships(UnitSubType.Merchant);
+		List<string> list2 = Ships(UnitSubType.Oiler);
+		List<string> list3 = Ships(UnitSubType.Destroyer);
+		if (list3.Count == 0)
+		{
+			list3 = Ships(UnitSubType.Destroyer_Escort);
+		}
+		if (list3.Count == 0)
+		{
+			list3 = Ships(UnitSubType.Light_Cruiser);
+		}
+		if (list.Count == 0 && list2.Count == 0)
+		{
+			Debug.Log("[CONVOYS] " + r.name + ": no merchant ship classes in service for our side");
+			return null;
+		}
+		List<string> list4 = new List<string>();
+		List<string> list5 = new List<string>();
+		int index = ((r.cargo == "fuel") ? 3 : ((!(r.cargo == "troops")) ? 1 : 0));
+		for (int i = 0; i < r.merchants; i++)
+		{
+			if (list.Count <= 0)
+			{
+				break;
+			}
+			string text = list[UnityEngine.Random.Range(0, list.Count)];
+			list4.Add(text);
+			list5.Add(CargoString(text, index));
+		}
+		for (int j = 0; j < r.oilers; j++)
+		{
+			if (list2.Count <= 0)
+			{
+				break;
+			}
+			string text2 = list2[UnityEngine.Random.Range(0, list2.Count)];
+			list4.Add(text2);
+			list5.Add(CargoString(text2, 3));
+		}
+		for (int k = 0; k < r.escorts; k++)
+		{
+			if (list3.Count <= 0)
+			{
+				break;
+			}
+			list4.Add(list3[UnityEngine.Random.Range(0, list3.Count)]);
+			list5.Add("0|0|0|0");
+		}
+		GameObjectAnimator gameObjectAnimator = Create(name, list4, list5, from);
+		if (gameObjectAnimator == null)
+		{
+			return null;
+		}
+		Paint(gameObjectAnimator);
+		ModAllied.SendTo(gameObjectAnimator, ModAllied.Sea(to));
+		return gameObjectAnimator;
+	}
+
+	private static string CargoString(string prefab, int index)
+	{
+		int[] array = new int[4];
+		try
+		{
+			List<int> cargo = EngagementManager.instance.unitDataDictionary[prefab].cargo;
+			if (cargo != null && cargo.Count == 4)
+			{
+				array[index] = cargo[index];
+				if (array[index] <= 0)
+				{
+					array[index] = index switch
+					{
+						3 => 50, 
+						0 => 500, 
+						_ => 1000, 
+					};
+				}
+			}
+		}
+		catch (Exception)
+		{
+		}
+		return array[0] + "|" + array[1] + "|" + array[2] + "|" + array[3];
+	}
+
+	private static List<string> Ships(UnitSubType type)
+	{
+		List<string> list = new List<string>();
+		List<string> nations = CampaignManager.instance.campaignData.nations0;
+		foreach (KeyValuePair<string, UnitListData> item in EngagementManager.instance.unitSeaDictionary)
+		{
+			if ((nations == null || nations.Contains(item.Value.nation)) && EngagementManager.instance.unitDataDictionary.TryGetValue(item.Key, out var value) && value.unitSubtype == type && InService(item.Key))
+			{
+				list.Add(item.Key);
+			}
+		}
+		return list;
+	}
+
+	private static bool InService(string prefab)
+	{
+		try
+		{
+			return UnitReference.instance == null || UnitReference.instance.IsShipClassAvailable(prefab) == string.Empty;
+		}
+		catch (Exception)
+		{
+			return true;
+		}
+	}
+
+	private static GameObjectAnimator Create(string name, List<string> prefabs, List<string> cargo, MapLocation at)
+	{
+		CampaignManager instance = CampaignManager.instance;
+		MobileMapObject newTaskForce = CampaignAI.instance.newTaskForce;
+		CampaignInterface.instance.ClearNewGroupData(newTaskForce);
+		newTaskForce.unitPrefabs = new List<string>();
+		for (int i = 0; i < prefabs.Count; i++)
+		{
+			string text = prefabs[i];
+			UnitData unitData = EngagementManager.instance.unitDataDictionary[text];
+			int num = FreeInstance(text, newTaskForce);
+			if (num >= 0)
+			{
+				newTaskForce.unitPrefabs.Add(text);
+				newTaskForce.unitInstances.Add(num);
+				newTaskForce.unitDisplayNames.Add((unitData.namesInClass != null && unitData.namesInClass.Count > num) ? unitData.namesInClass[num] : unitData.unitName);
+				newTaskForce.cellVariables.Add(string.Empty);
+				newTaskForce.ammunitionRemaining.Add(string.Empty);
+				newTaskForce.aircraftCooldown.Add(string.Empty);
+				newTaskForce.cargo.Add((i < cargo.Count) ? cargo[i] : "0|0|0|0");
+				newTaskForce.bombardments.Add(0);
+				newTaskForce.paint.Add(0);
+				newTaskForce.speedModifier.Add(1f);
+				newTaskForce.currentAircraft.Add((unitData.aircraftTotal != null && unitData.aircraftTotal.Count > 0) ? instance.SetIntListToString(unitData.aircraftTotal) : string.Empty);
+			}
+		}
+		if (newTaskForce.unitPrefabs.Count == 0)
+		{
+			Debug.Log("[CONVOYS] no free ship names left for " + name);
+			return null;
+		}
+		newTaskForce.formation = 2;
+		newTaskForce.formationSpacing = 0;
+		newTaskForce.mobileName = name;
+		newTaskForce.customName = true;
+		instance.SetMobileMapObjectSensors(newTaskForce);
+		newTaskForce.currentFaction = 0;
+		GameObjectAnimator currentMapObject = CampaignInterface.instance.currentMapObject;
+		GameObjectAnimator gameObjectAnimator = CampaignInterface.instance.CreateNewMobileObject(CampaignObjectType.Sea, newTaskForce, ModAllied.Sea(at), isLoading: false, null, string.Empty);
+		CampaignInterface.instance.currentMapObject = currentMapObject;
+		if (gameObjectAnimator == null)
+		{
+			return null;
+		}
+		gameObjectAnimator.mobileMapObject.mobileName = name;
+		gameObjectAnimator.mobileMapObject.customName = true;
+		return gameObjectAnimator;
+	}
+
+	private static int FreeInstance(string prefab, MobileMapObject building)
+	{
+		CampaignManager instance = CampaignManager.instance;
+		UnitData unitData = EngagementManager.instance.unitDataDictionary[prefab];
+		int num = ((unitData.namesInClass == null || unitData.namesInClass.Count <= 0) ? 1 : unitData.namesInClass.Count);
+		List<int> list = new List<int>();
+		for (int i = 0; i < num; i++)
+		{
+			list.Insert(UnityEngine.Random.Range(0, list.Count + 1), i);
+		}
+		for (int j = 0; j < list.Count; j++)
+		{
+			int num2 = list[j];
+			if (instance.IsPlayerShipInstanceAvailable(prefab, num2) != -1 || instance.GetGameObjectAnimatorContainingShip(instance.playerMobile, prefab, num2) != null)
+			{
+				continue;
+			}
+			bool flag = false;
+			for (int k = 0; k < building.unitPrefabs.Count; k++)
+			{
+				if (building.unitPrefabs[k] == prefab && building.unitInstances[k] == num2)
+				{
+					flag = true;
+				}
+			}
+			if (!flag)
+			{
+				return num2;
+			}
+		}
+		return -1;
+	}
+
+	private static GameObjectAnimator SpawnEnemy(ConvoyRoute r, string name, MapLocation from, MapLocation to)
+	{
+		CampaignAI instance = CampaignAI.instance;
+		CampaignManager instance2 = CampaignManager.instance;
+		if (instance == null || instance.seaMissions == null)
+		{
+			return null;
+		}
+		if (!instance2.seaNavigationIndexes.ContainsKey(r.from) || !instance2.seaNavigationIndexes.ContainsKey(r.to))
+		{
+			Debug.Log("[CONVOYS] " + r.name + ": no sea waypoint for " + r.from + " or " + r.to);
+			return null;
+		}
+		int missionByType = instance.GetMissionByType(MissionType.Convoy);
+		if (missionByType < 0)
+		{
+			Debug.Log("[CONVOYS] " + r.name + ": this campaign has no Convoy mission for the enemy AI to borrow");
+			return null;
+		}
+		MissionData missionData = instance.seaMissions[missionByType];
+		string spawnLocation = missionData.spawnLocation;
+		string firstWaypoint = missionData.firstWaypoint;
+		string lastWaypoint = missionData.lastWaypoint;
+		List<string> units = missionData.units;
+		List<string> mustUseWaypoints = missionData.mustUseWaypoints;
+		bool noCost = missionData.noCost;
+		bool aggressive = missionData.aggressive;
+		bool construction = missionData.construction;
+		bool troops = missionData.troops;
+		bool destIsLocation = missionData.destIsLocation;
+		int[] delayAIDays = missionData.delayAIDays;
+		int count = instance2.otherMobile.Count;
+		bool flag = false;
+		try
+		{
+			missionData.spawnLocation = r.from;
+			missionData.firstWaypoint = r.from;
+			missionData.lastWaypoint = r.to;
+			List<string> list = new List<string>();
+			for (int i = 0; i < r.escorts; i++)
+			{
+				list.Add((i == 0 && r.escorts >= 3) ? "Light_Cruiser" : "Destroyer");
+			}
+			for (int j = 0; j < r.oilers; j++)
+			{
+				list.Add("Oiler");
+			}
+			for (int k = 0; k < r.merchants; k++)
+			{
+				list.Add("Transport");
+			}
+			missionData.units = list;
+			missionData.mustUseWaypoints = new List<string>(r.via);
+			missionData.noCost = true;
+			missionData.aggressive = false;
+			missionData.construction = r.cargo != "troops";
+			missionData.troops = r.cargo == "troops";
+			missionData.destIsLocation = true;
+			missionData.delayAIDays = new int[4];
+			flag = instance.CreateAIMobileSea(missionByType, r.to);
+		}
+		finally
+		{
+			missionData.spawnLocation = spawnLocation;
+			missionData.firstWaypoint = firstWaypoint;
+			missionData.lastWaypoint = lastWaypoint;
+			missionData.units = units;
+			missionData.mustUseWaypoints = mustUseWaypoints;
+			missionData.noCost = noCost;
+			missionData.aggressive = aggressive;
+			missionData.construction = construction;
+			missionData.troops = troops;
+			missionData.destIsLocation = destIsLocation;
+			missionData.delayAIDays = delayAIDays;
+		}
+		if (!flag || instance2.otherMobile.Count <= count)
+		{
+			Debug.Log("[CONVOYS] " + r.name + ": the AI could not form the convoy (no merchant classes free?)");
+			return null;
+		}
+		GameObjectAnimator gameObjectAnimator = instance2.otherMobile[instance2.otherMobile.Count - 1];
+		if (gameObjectAnimator == null || gameObjectAnimator.mobileMapObject == null || gameObjectAnimator.mobileMapObject.currentFaction != 1)
+		{
+			return null;
+		}
+		gameObjectAnimator.mobileMapObject.mobileName = name;
+		gameObjectAnimator.mobileMapObject.customName = true;
+		return gameObjectAnimator;
+	}
+
+	public static void Tick()
+	{
+		if (!ModWorld.Ready())
+		{
+			return;
+		}
+		Sync();
+		if (ModRoutes.live.Count == 0)
+		{
+			return;
+		}
+		CampaignManager instance = CampaignManager.instance;
+		List<Live> list = new List<Live>(ModRoutes.live.Values);
+		for (int i = 0; i < list.Count; i++)
+		{
+			Live live = list[i];
+			MobileMapObject mmo = live.mmo;
+			if (mmo == null || mmo.gameObjectAnimator == null)
+			{
+				continue;
+			}
+			GameObjectAnimator gameObjectAnimator = mmo.gameObjectAnimator;
+			MapLocation mapLocationObject = instance.GetMapLocationObject(live.route.to);
+			if (live.awarded)
+			{
+				continue;
+			}
+			if (Merchants(mmo) == 0)
+			{
+				ModRoutes.live.Remove(mmo);
+				Lost(live, gameObjectAnimator);
+			}
+			else
+			{
+				if (mapLocationObject == null)
+				{
+					continue;
+				}
+				bool flag = ModAllied.Near(gameObjectAnimator, mapLocationObject.gameObjectAnimator.currentMap2DLocation, ArriveKm);
+				if (mmo.currentFaction == 0)
+				{
+					mmo.fuelUsedDays = 0f;
+					Paint(gameObjectAnimator);
+					if (mapLocationObject.currentFaction != 0)
+					{
+						MapLocation mapLocationObject2 = instance.GetMapLocationObject(live.route.from);
+						if (mapLocationObject2 != null && mapLocationObject2.currentFaction == 0 && !ModAllied.Near(gameObjectAnimator, mapLocationObject2.gameObjectAnimator.currentMap2DLocation, ArriveKm))
+						{
+							if (!gameObjectAnimator.isMoving && ++live.idle >= ResendMinutes)
+							{
+								live.idle = 0;
+								ModAllied.SendTo(gameObjectAnimator, ModAllied.Sea(mapLocationObject2));
+							}
+						}
+						else if (mapLocationObject2 != null && mapLocationObject2.currentFaction == 0)
+						{
+							ModRoutes.live.Remove(mmo);
+							Notify("Convoys", mmo.mobileName + " turned back to " + mapLocationObject2.locationName + ": " + mapLocationObject.locationName + " has fallen.");
+							CampaignInterface.instance.DestroyMapMobileObject(gameObjectAnimator);
+						}
+					}
+					else if (!flag || (gameObjectAnimator.isMoving && !ModAllied.Near(gameObjectAnimator, mapLocationObject.gameObjectAnimator.currentMap2DLocation, 15f)))
+					{
+						if (gameObjectAnimator.isMoving)
+						{
+							live.idle = 0;
+						}
+						else if (++live.idle >= ResendMinutes)
+						{
+							live.idle = 0;
+							Debug.Log("[CONVOYS] " + mmo.mobileName + " stopped short, sent on again");
+							ModAllied.SendTo(gameObjectAnimator, ModAllied.Sea(mapLocationObject));
+						}
+					}
+					else
+					{
+						Arrived(live, gameObjectAnimator, mapLocationObject);
+					}
+				}
+				else if (flag)
+				{
+					live.awarded = true;
+					int points = PointsFor(live);
+					ModScore.AddConvoy(1, points);
+					Debug.Log("[CONVOYS] enemy " + mmo.mobileName + " reached " + mapLocationObject.locationName + ": " + Merchants(mmo) + "/" + live.startMerchants + " merchants, " + points + " points to the enemy");
+					Notify("Convoys", "Intelligence: " + mmo.mobileName + " has reached " + mapLocationObject.locationName + " (" + Merchants(mmo) + " of " + live.startMerchants + " merchant ships). " + points + " points to the " + ModScore.SideName(1) + ".");
+				}
+			}
+		}
+	}
+
+	private static int PointsFor(Live l)
+	{
+		int num = Merchants(l.mmo);
+		if (l.startMerchants <= 0)
+		{
+			return l.route.points;
+		}
+		if (num * 2 < l.startMerchants)
+		{
+			return Mathf.Max(1, l.route.points / 2);
+		}
+		return l.route.points;
+	}
+
+	private static void Arrived(Live l, GameObjectAnimator goa, MapLocation to)
+	{
+		MobileMapObject mobileMapObject = goa.mobileMapObject;
+		int[] array = new int[4];
+		for (int i = 0; i < mobileMapObject.cargo.Count; i++)
+		{
+			string[] array2 = mobileMapObject.cargo[i].Split('|');
+			for (int j = 0; j < 4 && j < array2.Length; j++)
+			{
+				if (int.TryParse(array2[j], out var result))
+				{
+					array[j] += result;
+				}
+			}
+			mobileMapObject.cargo[i] = "0|0|0|0";
+		}
+		to.troops[0] += array[0];
+		to.supplies[0] += array[1];
+		to.engineering[0] += array[2];
+		to.fuel[0] += array[3];
+		int points = PointsFor(l);
+		l.awarded = true;
+		live.Remove(mobileMapObject);
+		ModScore.AddConvoy(0, points);
+		string text = mobileMapObject.mobileName + " has reached " + to.locationName + " with " + Merchants(mobileMapObject) + " of " + l.startMerchants + " merchant ships.\n\n<b>Delivered:</b> " + array[0] + " troops, " + array[1] + " supplies, " + array[2] + " engineering, " + array[3] + " fuel.\n<b>Victory points:</b> +" + points + " to the " + ModScore.SideName(0) + ".";
+		if (!string.IsNullOrEmpty(l.route.note))
+		{
+			text = text + "\n\n<i>" + l.route.note + "</i>";
+		}
+		Debug.Log("[CONVOYS] " + mobileMapObject.mobileName + " arrived at " + to.locationName + ": +" + points);
+		CampaignInterface.instance.DestroyMapMobileObject(goa);
+		Popup("wconvoy_arrived", "Convoy arrived", text);
+	}
+
+	private static void Lost(Live l, GameObjectAnimator goa)
+	{
+		int points = Mathf.Max(1, l.route.points);
+		string text = ((l.mmo != null) ? l.mmo.mobileName : (Prefix + l.route.name));
+		if (l.route.faction == 0)
+		{
+			ModScore.AddConvoy(1, points);
+			if (goa != null && goa.mobileMapObject != null)
+			{
+				goa.mobileMapObject.mobileName = "Escort of " + text;
+				goa.mobileMapObject.customName = true;
+			}
+			Debug.Log("[CONVOYS] " + text + " lost: " + points + " points to the enemy");
+			Popup("wconvoy_lost", "Convoy lost", "Every merchant ship of " + text + " has been sunk" + ((goa != null) ? "; the escorts are on their own." : ".") + "\n\n<b>Victory points:</b> +" + points + " to the " + ModScore.SideName(1) + ".");
+		}
+		else
+		{
+			ModScore.AddConvoy(0, points);
+			Debug.Log("[CONVOYS] enemy " + text + " destroyed: " + points + " points to us");
+			Popup("wconvoy_sunk", "Enemy convoy destroyed", "Every merchant ship of the enemy's " + text + " has been sunk before it could reach " + PortName(l.route.to) + ".\n\n<b>Victory points:</b> +" + points + " to the " + ModScore.SideName(0) + ".");
+		}
+	}
+
+	private static string PortName(string id)
+	{
+		MapLocation mapLocationObject = CampaignManager.instance.GetMapLocationObject(id);
+		return (mapLocationObject != null) ? mapLocationObject.locationName : id;
+	}
+
+	public static int Merchants(MobileMapObject m)
+	{
+		if (m == null || m.unitPrefabs == null)
+		{
+			return 0;
+		}
+		int num = 0;
+		for (int i = 0; i < m.unitPrefabs.Count; i++)
+		{
+			if (EngagementManager.instance.unitDataDictionary.TryGetValue(m.unitPrefabs[i], out var value) && (value.unitSubtype == UnitSubType.Merchant || value.unitSubtype == UnitSubType.Oiler))
+			{
+				num++;
+			}
+		}
+		return num;
+	}
+
+	private static void Paint(GameObjectAnimator goa)
+	{
+		SpriteRenderer componentInChildren = goa.GetComponentInChildren<SpriteRenderer>();
+		if (componentInChildren != null && !(componentInChildren.color == ModAllied.Yellow))
+		{
+			componentInChildren.color = ModAllied.Yellow;
+		}
+	}
+
+	public static int AtSea(int faction)
+	{
+		int num = 0;
+		foreach (Live value in live.Values)
+		{
+			if (value.mmo != null && value.mmo.currentFaction == faction && !value.awarded)
+			{
+				num++;
+			}
+		}
+		return num;
+	}
+
+	private static void Notify(string header, string text)
+	{
+		Debug.Log("[CONVOYS] " + text);
+		try
+		{
+			ModNotify.AddEvent("wconvoy", header, text);
+		}
+		catch (Exception)
+		{
+		}
+	}
+
+	public static void Popup(string eventName, string header, string text)
+	{
+		try
+		{
+			CampaignEvent instance = CampaignEvent.instance;
+			if (instance == null)
+			{
+				Notify(header, text);
+				return;
+			}
+			string filepath = "language/campaign/" + CampaignManager.instance.campaignData.campaignID + "/event/" + eventName + ".txt";
+			if (!Utilities.DoesGameFileExist(filepath))
+			{
+				Notify(header, text);
+				return;
+			}
+			instance.CreateEvent(eventName);
+			if (instance.headerText != null && !string.IsNullOrEmpty(header))
+			{
+				instance.headerText.text = header.ToUpper();
+			}
+			if (instance.contentText != null)
+			{
+				instance.contentText.text = text;
+			}
+			try
+			{
+				ModNotify.AddEvent(eventName, header, text);
+			}
+			catch (Exception)
+			{
+			}
+		}
+		catch (Exception ex2)
+		{
+			Debug.Log("[CONVOYS] popup failed: " + ex2.Message);
+			Notify(header, text);
+		}
+	}
+}

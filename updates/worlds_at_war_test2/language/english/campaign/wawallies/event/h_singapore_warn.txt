@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "SINGAPORE THREATENED", "imagePath": "", "content": "<size=18><b>15 February 1942</b></size>\nIntelligence expects an enemy move against <color=#caa809>SINGAPORE</color> around 15 February 1942. Have at least 6 warships within 500 km by then, or it may fall."}

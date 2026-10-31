@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "THE INDIAN OCEAN RAID TAKEN", "imagePath": "", "content": "<size=18><b>5 April 1942</b></size>\nCovered by our carriers, the landing force has taken <color=#caa809>COLOMBO</color>. <b>+100 command points.</b>\n\n<i>Nagumo's carriers struck Colombo on 5 April 1942 and Trincomalee on the 9th, sinking Hermes, Cornwall and Dorsetshire.</i>"}

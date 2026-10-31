@@ -1,0 +1,514 @@
+using System.Collections.Generic;
+using System.IO;
+using UnityEngine;
+
+public class CampaignData : MonoBehaviour
+{
+	public string campaignID;
+
+	public string gameVersion;
+
+	public string[] mapImagePaths;
+
+	public string mapWaterMask;
+
+	public bool customWaterMask;
+
+	public Vector2 mapZoomLevels;
+
+	public List<float> timeCompression;
+
+	public int[] startDate;
+
+	public List<int> currentDateTime;
+
+	public int daysToNextDecision;
+
+	public int[] mapOriginXY;
+
+	public int mapPixelWidth = 8192;
+
+	public float timer1Min;
+
+	public float timer5Min;
+
+	public float timerHour;
+
+	public float timerDay;
+
+	public float timerWeek;
+
+	public float intervalWeather;
+
+	public float timerWeather;
+
+	public float timerTroops;
+
+	public bool airOpsFirstHourPaused;
+
+	public float trackSeaForSeconds;
+
+	public float trackAirForSeconds;
+
+	public float postEngageSeaCooldown;
+
+	public float postEngageAirCooldown;
+
+	public float postEngageSubCooldown;
+
+	public List<string> nations0;
+
+	public List<string> nations1;
+
+	public int[] commandPoints;
+
+	public int[] commandBonusPoints;
+
+	public int[] commandPointSpent;
+
+	public int[] commandPointsPerWeek;
+
+	public int[] commandPointsPerLocation;
+
+	public int[] commandPointsPerPortRank;
+
+	public int[] commandPointsPerAirfieldRank;
+
+	public bool useSunkYieldPoints;
+
+	public bool refundPostRepair;
+
+	public float mapWidthMetres;
+
+	public float interactionDistanceMetres;
+
+	public float equatorYValue;
+
+	public List<float> taskForceSpeeds;
+
+	public List<string> unavailableShipClasses;
+
+	public List<string> unavailableShipInstanceNames;
+
+	public List<int> unavailableShipInstances;
+
+	public List<string> sunkShipClasses;
+
+	public List<int> sunkShipInstances;
+
+	public List<int> daySunk;
+
+	public List<int> monthSunk;
+
+	public List<int> yearSunk;
+
+	public List<int> factionSunk;
+
+	public int playerAircraftDowned;
+
+	public int otherAircraftDowned;
+
+	public List<string> playerOwnedShipClasses;
+
+	public List<int> playerOwnedShipInstances;
+
+	public List<int> playerOwnedRepairDays;
+
+	public List<string> enemyOwnedShipClasses;
+
+	public List<int> enemyOwnedShipInstances;
+
+	public List<int> enemyOwnedRepairDays;
+
+	public bool allowHomePortTakeOver;
+
+	public bool endIfNoPlayerHomePort;
+
+	public bool endIfNoEnemyHomePort;
+
+	public List<int> maxPort;
+
+	public List<int> maxAirfield;
+
+	public List<string> aircraft0;
+
+	public List<string> aircraft1;
+
+	public List<int> aircraft0Numbers;
+
+	public List<int> aircraft1Numbers;
+
+	public List<int> suppliesPerUpgrade0;
+
+	public List<int> suppliesPerUpgrade1;
+
+	public List<int> fuelPerUpgrade0;
+
+	public List<int> fuelPerUpgrade1;
+
+	public List<int> engineeringPerUpgrade0;
+
+	public List<int> engineeringPerUpgrade1;
+
+	public List<int> replenish0;
+
+	public List<int> replenish1;
+
+	public List<int> replenish0Max;
+
+	public List<int> replenish1Max;
+
+	public float groundBonusPerRank;
+
+	public float minCampaignDetectionRange;
+
+	public float maxCampaignDetectionRange;
+
+	public float campaignAirSpotBonus;
+
+	public float campaignLocationBaseSpotDist;
+
+	public float campaignLocationPortFactor;
+
+	public float campaignLocationAirfieldFactor;
+
+	public List<string> weatherCellData;
+
+	public List<bool> airOpHours;
+
+	public float bombardHEFactor;
+
+	public float bombardCalibreThreshold;
+
+	public float bombardSmallCalibreFactor;
+
+	public float releaseRefund;
+
+	public float enemySunkYield;
+
+	public int portLevelToDisband;
+
+	public int portLevelToRearm;
+
+	public List<int> baseRepairTime;
+
+	public List<int> repairPerComp;
+
+	public List<float> troopSupplies;
+
+	public float suppliesUsedPerDayFighting;
+
+	public float maxTroopLoss;
+
+	public List<float> troopLossRange;
+
+	public int troopTakeOverAt;
+
+	[Header("AI")]
+	public List<int> recreateMissions;
+
+	public int aiTotalTroops;
+
+	[Header("Win Conditions")]
+	public List<string> maxAirAt;
+
+	public List<string> maxPortAt;
+
+	public List<string> mustControl;
+
+	public bool campaignEnded;
+
+	[Header("Moving Map Object")]
+	public int currentlyInCombatIndex;
+
+	public int playerObjectEngaged;
+
+	public int otherObjectEngaged;
+
+	public int engagementWeatherIndex;
+
+	public bool canIgnore;
+
+	public bool canAutoResolve;
+
+	public int[] lastEncounterPixelCoords;
+
+	public bool subAmbush;
+
+	public bool supplyShipsAllowed;
+
+	public int maxSeaStateResupplyAtSea;
+
+	public List<bool> resupplyAtSeaHours;
+
+	public Color32[] factionColors;
+
+	public List<string> mapLocationSaveData;
+
+	public List<string> playerMobileObjectSaveData;
+
+	public List<string> enemyMobileObjectSaveData;
+
+	public List<string> neutralMobileObjectSaveData;
+
+	public List<string> mapMarkersSaveData;
+
+	[Header("New Variables")]
+	public float autoScoutThreshold;
+
+	public bool applyScoutDetectionModifier;
+
+	public float airGroupCruiseSpeed;
+
+	public float taskForceCruiseSpeed;
+
+	public float taskForceHomeSpeed;
+
+	public float taskForceRetreatCapitalDestroyed;
+
+	public float taskForceRetreatHighestDestroyed;
+
+	public float taskForceRetreatAverageDestroyed;
+
+	public int airfieldLevelToReplace;
+
+	public int winEnemyShipsSunk;
+
+	public float winEnemyShipSunkSupplyIncrease;
+
+	public bool campaignDominated;
+
+	public bool replenishLimitAircraft;
+
+	public int[] replenishDailyAircraft0;
+
+	public int[] replenishDailyAircraft1;
+
+	public bool carrierWingsRequireRelease;
+
+	public float[] campDifficultyPreset0;
+
+	public float[] campDifficultyPreset1;
+
+	public float[] campDifficultyPreset2;
+
+	public float[] campDifficultyPreset3;
+
+	public float[] campDifficultyPreset4;
+
+	public List<string> playerAirScoutData;
+
+	public bool removeAirOnTakeOver;
+
+	public float controlLocationAt;
+
+	public float[] repairHourPerIntegrity;
+
+	public float enemyAirfieldStrikeRange;
+
+	public float enemyCarrierStrikeRange;
+
+	public float enemyAirCoverRange;
+
+	public float[] attackOtherLocations;
+
+	public bool enemyWeeklyCPDeficitOnly;
+
+	public float stratMapMultpleSelectDist;
+
+	public bool enemyUsesSubs;
+
+	public bool enemyUsesCarriers;
+
+	public bool enableStrategicBombing;
+
+	public float strategicBombDamageModifer;
+
+	public float[] strategicBombCloudModifer;
+
+	public float[] strategicBombPrecipModifer;
+
+	public float[] strategicBombWindModifer;
+
+	public float[] strategicBombLosses;
+
+	public float[] strategicBombAttackerArmorModifier;
+
+	public float strategicBombDefenderRankBonus;
+
+	public float strategicBombCarrierBuffer;
+
+	public int strategicBombLatestHour;
+
+	public float[] strategicBombLaunchProb;
+
+	public float strategicBombMinWeatherModifier;
+
+	public float strategicBombCooldownMinNumberAttackers;
+
+	public float objectivePanelHeight;
+
+	public float rulesPanelHeight;
+
+	public float mapKeyPanelHeight;
+
+	public int maxShipsInTaskForce;
+
+	public int maxAircraftTypesToLaunch;
+
+	public bool usePortResourcesToResupplyAmmo;
+
+	public bool usePortResourcesToResupplyShipAircraft;
+
+	public bool usePortResourcesToResupplyAirfields;
+
+	public float[] bombardDamageRange;
+
+	public float bombardMaxAirCooldown;
+
+	public float bombardAirCooldownFactor;
+
+	public List<string> orderShipClasses;
+
+	public List<int> orderShipInstances;
+
+	public List<int> orderDaysRemaining;
+
+	public bool revealAllContacts;
+
+	public List<string> vetNames;
+
+	public List<int> vetBattles;
+
+	public List<string> orderPortNames;
+
+	public List<string> homePortClasses;
+
+	public List<int> homePortInstances;
+
+	public List<string> homePortNames;
+
+	public List<float> vetXP = new List<float>();
+
+	public List<int> vetCrew = new List<int>();
+
+	public List<string> modSurvivors = new List<string>();
+
+	public List<string> notifyLog;
+
+	public string modLocked = "";
+
+	public List<string> modAllied;
+
+	public string modShipPick;
+
+	public List<string> modWorld;
+
+	public CampaignData()
+	{
+		orderPortNames = new List<string>();
+		homePortClasses = new List<string>();
+		homePortInstances = new List<int>();
+		homePortNames = new List<string>();
+		vetNames = new List<string>();
+		vetBattles = new List<int>();
+		orderShipClasses = new List<string>();
+		orderShipInstances = new List<int>();
+		orderDaysRemaining = new List<int>();
+		recreateMissions = new List<int>();
+	}
+
+	public void InitialiseCampaignData(string filePath)
+	{
+		maxShipsInTaskForce = 10;
+		maxAircraftTypesToLaunch = 4;
+		maxSeaStateResupplyAtSea = 4;
+		resupplyAtSeaHours = new List<bool>
+		{
+			false, false, false, false, false, true, true, true, true, true,
+			true, true, true, true, true, true, true, true, false, false,
+			false, false, false, false
+		};
+		bombardDamageRange = new float[2] { 0.25f, 1f };
+		bombardMaxAirCooldown = 172800f;
+		bombardAirCooldownFactor = 400f;
+		airfieldLevelToReplace = 4;
+		commandPointsPerWeek = new int[2];
+		commandPointsPerLocation = new int[2];
+		commandPointsPerPortRank = new int[2];
+		commandPointsPerAirfieldRank = new int[2];
+		replenishDailyAircraft0 = new int[8];
+		replenishDailyAircraft1 = new int[8];
+		repairHourPerIntegrity = new float[2] { 0.1f, 0.1f };
+		enemyAirfieldStrikeRange = 450f;
+		enemyCarrierStrikeRange = 450f;
+		enemyAirCoverRange = 250f;
+		airGroupCruiseSpeed = 0.75f;
+		taskForceCruiseSpeed = 0.75f;
+		taskForceHomeSpeed = 0.9f;
+		taskForceRetreatCapitalDestroyed = 0.15f;
+		taskForceRetreatHighestDestroyed = 0.2f;
+		taskForceRetreatAverageDestroyed = 0.1f;
+		postEngageSeaCooldown = 1800f;
+		postEngageAirCooldown = 900f;
+		postEngageSubCooldown = 1440f;
+		enemyWeeklyCPDeficitOnly = true;
+		stratMapMultpleSelectDist = 0.01f;
+		attackOtherLocations = new float[2] { 0.1f, 0.1f };
+		strategicBombDamageModifer = 650f;
+		strategicBombCloudModifer = new float[4] { 1f, 0.8f, 0.6f, 0.4f };
+		strategicBombWindModifer = new float[9] { 1f, 1f, 1f, 0.9f, 0.8f, 0.6f, 0.4f, 0.2f, 0.1f };
+		strategicBombPrecipModifer = new float[3] { 0.8f, 0.7f, 0.5f };
+		strategicBombMinWeatherModifier = 0.7f;
+		strategicBombDefenderRankBonus = 0.02f;
+		strategicBombLosses = new float[3] { 0.25f, 0.35f, 0.45f };
+		strategicBombAttackerArmorModifier = new float[3] { 0f, 1f, 1f };
+		strategicBombCarrierBuffer = 600f;
+		strategicBombLatestHour = 16;
+		strategicBombLaunchProb = new float[2] { 0.05f, 0.3f };
+		strategicBombCooldownMinNumberAttackers = 8f;
+		JsonUtility.FromJsonOverwrite(AssetLoader.instance.ImportText("campaign/" + campaignID + "/setup.txt")[0], this);
+		if (filePath != string.Empty)
+		{
+			JsonUtility.FromJsonOverwrite(File.ReadAllLines(filePath)[0], this);
+		}
+		for (int i = 0; i < taskForceSpeeds.Count; i++)
+		{
+			taskForceSpeeds[i] *= 0.514444f;
+		}
+		CampaignInterface.instance.factionColours = factionColors;
+		EngagementManager.instance.unitSeaDictionary.Clear();
+		EngagementManager.instance.unitSeaOrderList.Clear();
+		EngagementManager.instance.unitSeaDisplayNameList.Clear();
+		EngagementManager.instance.unitAirDictionary.Clear();
+		EngagementManager.instance.unitAirOrderList.Clear();
+		EngagementManager.instance.unitAirDisplayNameList.Clear();
+		EngagementManager.instance.unitSeaDictionary = EngagementManager.instance.BuildUnitListDictionary("campaign/" + campaignID + "/seaUnits.txt", "sea", EngagementManager.instance.unitSeaDictionary);
+		EngagementManager.instance.unitAirDictionary = EngagementManager.instance.BuildUnitListDictionary("campaign/" + campaignID + "/airUnits.txt", "air", EngagementManager.instance.unitAirDictionary);
+		SetCampaignDifficulty();
+		ModEnemyAI.AfterInit(this, filePath);
+		ModShipPick.AfterInit(this, filePath);
+	}
+
+	public void SetCampaignDifficulty()
+	{
+		switch (LanguageManager.instance.campaignDifficultyDropdown.value)
+		{
+		case 0:
+			OptionsManager.instance.campaignDifficultyMultipliers = campDifficultyPreset0;
+			break;
+		case 1:
+			OptionsManager.instance.campaignDifficultyMultipliers = campDifficultyPreset1;
+			break;
+		case 2:
+			OptionsManager.instance.campaignDifficultyMultipliers = campDifficultyPreset2;
+			break;
+		case 3:
+			OptionsManager.instance.campaignDifficultyMultipliers = campDifficultyPreset3;
+			break;
+		case 4:
+			OptionsManager.instance.campaignDifficultyMultipliers = campDifficultyPreset4;
+			break;
+		}
+	}
+}

@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "SICILY TAKEN", "imagePath": "", "content": "<size=18><b>10 July 1943</b></size>\nCovered by our warships, the landing force has taken <color=#caa809>MESSINA</color>. <b>+200 command points.</b>\n\n<i>Operation Husky landed on Sicily on 10 July 1943; Messina fell on 17 August.</i>"}

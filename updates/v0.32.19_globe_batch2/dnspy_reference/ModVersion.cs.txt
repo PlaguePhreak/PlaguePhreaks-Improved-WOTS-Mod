@@ -1,0 +1,251 @@
+using System;
+using UnityEngine;
+using UnityEngine.Events;
+using UnityEngine.UI;
+
+public static class ModVersion
+{
+	public const string Current = "0.32.19";
+
+	private const string ChangelogTitle = "Change Log";
+
+	private const string ChangelogBody = "<color=#E0B030><b>0.32.19</b></color> globe test 19, Worlds at War batch 2:\n- Convoy routes with purpose: timetabled convoys on both sides (HX, SC, PQ, Malta, Libya, Japan oil and more; campaign convoys.txt). Yours sail yellow and steer themselves, the enemy's are run by the AI; getting through or sinking one scores victory points\n- Victory points and an end date (campaign score.txt): ships sunk, ports taken and convoys count; the war ends 2 September 1945 and the side with more points wins. Standings top right on the globe, warning pop-up a month before\n- Nation colouring on the globe: land tinted by the side holding the nearest port, redrawn when a port falls\n- Distance readout at the cursor while plotting a course or using the ruler on the globe: great-circle km and days at the force's speed\n- Search box at the top of the globe: type a port, task force or sea name and press Enter\n<color=#E0B030><b>0.32.18</b></color> 1 ship 1 model:\n- New Mod Options switch (Ships): one model per real ship for your side, e.g. Fletcher, Fletcher (1942) and Fletcher (1943) become one choice\n- Pick models... opens the Museum with a picker: look at each version in 3D, press Use this model\n- Picks are locked into each campaign when it starts; old saves and the enemy AI are not changed\n<color=#E0B030><b>0.32.17</b></color> globe test 17 (= 0.30 hotfix 3 + globe):\n- Both fixes of 0.30 Mega Patch 01 hotfix 3 are in: planes missing from a campaign's air list no longer stop battles or save loads; oil slicks draw under smoke and the compass tape\n<color=#E0B030><b>0.32.16</b></color> globe test 16:\n- New switch in Mod Options under Interface features: 3D world map on or off (off = no 3D button, no F10, no scroll-out; the round-Earth distances stay)\n<color=#E0B030><b>0.32.15</b></color> globe test 15:\n- FUEL overlay on the globe: the selected task force shows its one-day ring and its full-fuel ring, every task force label shows fuel and speed\n- Weekly news pop-up every Monday (Worlds at War campaigns); switch in Mod Options under World campaigns\n<color=#E0B030><b>0.32.14</b></color> globe test 14:\n- Historical events on their real dates (Worlds at War campaigns, history.txt): warnings a week ahead, bases change hands if you are not there\n- The flat map's sea and country names are drawn on the globe\n- SUN button or N key turns the night shadow on the globe on and off\n- Sharper world map (16384 pixels round)\n<color=#E0B030><b>0.32.13</b></color> globe test 13 (= 0.30 hotfix 2 + globe):\n- All 14 fixes of 0.30 Mega Patch 01 hotfix 2 are in\n- The globe cleans up when a campaign ends, so a second campaign in one sitting gets fresh icons\n- No yellow map-edge line on the globe when the campaign map goes right round the world\n- Main menu keeps its video\n<color=#E0B030><b>0.32.10</b></color> globe test 10:\n- Task force fuel now drains whether or not F9 is on (the 0.30 fuel hotfix)\n<color=#E0B030><b>0.32.9</b></color> globe, phase 6 (test build 9):\n- The grey battle-zone disc on the tactical map now matches the 110 km zone\n<color=#E0B030><b>0.32.8</b></color> globe, phase 6 (test build 8):\n- Forces up to 110 km away join a battle at their true position (was 50 km) and can steam in\n- The battle zone is 110 km from the centre before a unit is parked (was 50 km)\n- The battle minimap shows the campaign map's own picture of the battle square\n<color=#E0B030><b>0.32.7</b></color> globe, phase 5 (test build 7):\n- Base range rings on the globe, same size and visibility as the flat map\n- Weather cells and sea states on the globe\n- Map notes on the globe; the ruler and map-note keys work on the globe\n<color=#E0B030><b>0.32.6</b></color> globe, phase 4 (test build 6):\n- Clicks on the globe work like the flat map: click an icon to select it, hover for its tooltip\n- Plot Course on the globe: click waypoints on the Earth, right-click to finish; the ruler works too\n- The game's route lines are drawn on the globe\n<color=#E0B030><b>0.32.5</b></color> globe, phase 3 (test build 5):\n- Mouse wheel direction fixed: scrolling out on the flat map opens the globe, zooming in on the globe lands at a middle zoom (not fully out)\n- Short cooldown so a fast wheel cannot bounce between the two views\n<color=#E0B030><b>0.32.4</b></color> globe, phase 3 (test build 4):\n- The flat map's own icons and names drawn on the globe, sized with the zoom\n- On the flat map, scrolling out past the farthest zoom opens the globe at that spot\n<color=#E0B030><b>0.32.3</b></color> globe, phase 2 (test build 3):\n- Fixed: the far side of the globe showed through above a line\n- GLOBE button (top left) or F10: the campaign map as a spinning Earth\n- Day and night from the campaign clock, the theatre outlined in gold\n- Dots for bases, your task forces and spotted enemy forces\n- Drag to spin, wheel to zoom, arrows to turn; zoom right in to drop back onto the map\n<color=#E0B030><b>0.32.1</b></color> globe, phase 1 (test build):\n- Distances on the campaign map are measured on a round Earth\n- East-west ranges, travel times and fuel are right away from the equator\n- Battles place far forces at their real distance\n- Base spotting circles stay round in real distance\n<color=#E0B030><b>0.31.15</b></color> ship fires:\n- Fires stay fixed on the burning part of the ship\n- Fire size follows the ship and how many compartments burn\n<color=#E0B030><b>0.31.14</b></color> ships break up and sink for real:\n- Every ship now has torn, burnt break pieces when it is blown apart\n- Wrecks sink on real physics: water floods in, they list, roll or stand on end\n- Broken destroyer halves flood through the break and slide under\n<color=#E0B030><b>0.31.13</b></color> ship fires:\n- Flames are a real fire simulation, animated, from the side and from above\n<color=#E0B030><b>0.31.12</b></color> ship fires:\n- Fires look right from above too: round, ragged blazes on the deck\n<color=#E0B030><b>0.31.10</b></color> allied AI:\n- The RAN force you start the Allied campaign with now sails under RAN command (yellow)\n<color=#E0B030><b>0.31.9</b></color> ship fires:\n- One burning compartment is a small fire; more grow it into a roaring blaze\n- Big fires glow, light up the ship and sea, and send up a black smoke column\n<color=#E0B030><b>0.31.6</b></color> enemy scouts:\n- Enemy scouting is done by flying boats and floatplanes only\n- Every enemy airfield gets floatplane scouts (saved campaigns too)\n<color=#E0B030><b>0.31.5</b></color> fixes:\n- The battle message log starts empty in every new battle\n<color=#E0B030><b>0.31.4</b></color> ships handle like the real thing:\n- Every ship turns on a real WW2 turning circle; big ships swing slowly\n- The rudder and the swing take time to build; hard turns cost speed\n- Ships carry way: cut the engines and she coasts on for minutes\n<color=#E0B030><b>0.31.3</b></color> 3D fire and hit blasts:\n- Burning ships show real 3D flames and a thick plume of smoke\n- Shell and bomb hits on ships burst in 3D fire, smoke, chunks and sparks\n<color=#E0B030><b>0.31.2</b></color> a smarter enemy, scaled by difficulty:\n- Enemy scouts fan out from every airfield, many single planes\n- Strike groups gather at a rally point, then attack together\n- Strikes and fighter cover sized to the ships involved\n- A magazine blast can tear any ship apart, even a battleship\n- Enemy airfields fly scout patrols; a pop-up names the force they spot\n- Enemy groups hunt you on the map; Elite fights like a real commander\n- Enemy ships press home in battle, spread fire, finish cripples\n- More aircraft types at every enemy airfield (new campaigns)\n- Switches in Mod Options (Enemy AI section)\n<color=#E0B030><b>0.29.9</b></color> ships go down like the real thing, planes break up:\n- Torpedo hits throw up a huge splash (the game's own, made bigger)\n- A broken back sets off both magazines: two huge blasts, then it splits\n- Blasts start small, burst into a fireball, then smoke; sized by shells\n- Big magazine blasts sink the ship, often blowing off bow or stern\n- Ships capsize, plunge by the bow or stern, or settle, by their flooding\n- Real floating wreckage and wide, spreading oil slicks where ships sink\n- Shot planes shed real wings, tails, engines; crews bail out by parachute\n- Your ships answer your controls again; fewer planes explode\n- Mod models now live in StreamingAssets/override/ModAssets\n- Air auto resolve window restyled to match the game\n- Plus the 0.28 air combat update (0.28.18 and hotfix)";
+
+	private const float Margin = 30f;
+
+	private static GameObject root;
+
+	private static GameObject panel;
+
+	private static RectTransform contentRect;
+
+	private static readonly Color gold = new Color(0.72f, 0.58f, 0.3f, 1f);
+
+	private static readonly Color dark = new Color(0.07f, 0.12f, 0.19f, 0.97f);
+
+	private static readonly Color buttonBack = new Color(0.1f, 0.17f, 0.26f, 1f);
+
+	private static readonly Color bodyColour = new Color(0.9f, 0.92f, 0.95f, 1f);
+
+	public static void Build()
+	{
+		try
+		{
+			MenuSystem instance = MenuSystem.instance;
+			if (instance == null || instance.mainInterface == null)
+			{
+				return;
+			}
+			if (root != null)
+			{
+				UnityEngine.Object.Destroy(root);
+			}
+			root = null;
+			panel = null;
+			Canvas componentInParent = instance.mainInterface.GetComponentInParent<Canvas>();
+			if (componentInParent == null)
+			{
+				Debug.LogError("[VERSION] no canvas found");
+				return;
+			}
+			componentInParent = componentInParent.rootCanvas;
+			Font font = null;
+			Text componentInChildren = instance.mainInterface.GetComponentInChildren<Text>(includeInactive: true);
+			if (componentInChildren != null)
+			{
+				font = componentInChildren.font;
+			}
+			if (font == null)
+			{
+				font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+			}
+			Font font2 = font;
+			int fontSize = 16;
+			if (TooltipManager.instance != null && TooltipManager.instance.toolTipText != null && TooltipManager.instance.toolTipText.font != null)
+			{
+				font2 = TooltipManager.instance.toolTipText.font;
+				fontSize = TooltipManager.instance.toolTipText.fontSize;
+			}
+			Vector3[] array = new Vector3[4];
+			((RectTransform)componentInParent.transform).GetWorldCorners(array);
+			float x = componentInParent.transform.lossyScale.x;
+			GameObject gameObject = new GameObject("ModVersion", typeof(RectTransform));
+			gameObject.transform.SetParent(instance.mainInterface.transform, worldPositionStays: false);
+			gameObject.transform.SetAsLastSibling();
+			root = gameObject;
+			RectTransform rectTransform = NewRect("ChangeLogButton", gameObject.transform, new Vector2(1f, 1f));
+			rectTransform.sizeDelta = new Vector2(190f, 44f);
+			rectTransform.position = new Vector3(array[2].x - 30f * x, array[2].y - 20f * x, array[2].z);
+			MakeButton(rectTransform, font, 22, "Change Log".ToUpper(), Open);
+			RectTransform rectTransform2 = NewRect("Version", gameObject.transform, new Vector2(0f, 0f));
+			rectTransform2.sizeDelta = new Vector2(500f, 60f);
+			rectTransform2.position = new Vector3(array[0].x + 30f * x, array[0].y + 20f * x, array[0].z);
+			NewText(rectTransform2, font, 20, TextAnchor.LowerLeft, bodyColour).text = "Plague's Better WOTS mod\n<color=#E0B030>Version 0.32.19 globe test 19</color>";
+			BuildPanel(gameObject.transform, array, font2, fontSize);
+			gameObject.transform.SetAsLastSibling();
+		}
+		catch (Exception ex)
+		{
+			Debug.LogError("[VERSION] build failed: " + ex.ToString());
+		}
+	}
+
+	private static RectTransform NewRect(string name, Transform parent, Vector2 pivot)
+	{
+		GameObject gameObject = new GameObject(name, typeof(RectTransform));
+		gameObject.transform.SetParent(parent, worldPositionStays: false);
+		RectTransform component = gameObject.GetComponent<RectTransform>();
+		component.anchorMin = pivot;
+		component.anchorMax = pivot;
+		component.pivot = pivot;
+		return component;
+	}
+
+	private static Text NewText(RectTransform rt, Font font, int size, TextAnchor anchor, Color colour)
+	{
+		Text text = rt.gameObject.AddComponent<Text>();
+		text.font = font;
+		text.fontSize = size;
+		text.alignment = anchor;
+		text.color = colour;
+		text.supportRichText = true;
+		text.horizontalOverflow = HorizontalWrapMode.Wrap;
+		text.verticalOverflow = VerticalWrapMode.Overflow;
+		text.raycastTarget = false;
+		return text;
+	}
+
+	private static void Open()
+	{
+		if (!(panel == null))
+		{
+			panel.transform.SetAsLastSibling();
+			panel.SetActive(value: true);
+			if (contentRect != null)
+			{
+				contentRect.anchoredPosition = Vector2.zero;
+			}
+		}
+	}
+
+	private static void Close()
+	{
+		if (panel != null)
+		{
+			panel.SetActive(value: false);
+		}
+	}
+
+	private static void BuildPanel(Transform parent, Vector3[] corners, Font font, int fontSize)
+	{
+		RectTransform rectTransform = NewRect("ChangeLogWindow", parent, new Vector2(0.5f, 0.5f));
+		float num = parent.lossyScale.x;
+		if (num <= 0f)
+		{
+			num = 1f;
+		}
+		rectTransform.position = (corners[0] + corners[2]) * 0.5f;
+		rectTransform.sizeDelta = new Vector2((corners[2].x - corners[0].x) / num, (corners[2].y - corners[0].y) / num);
+		rectTransform.gameObject.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0.35f);
+		panel = rectTransform.gameObject;
+		RectTransform rectTransform2 = NewRect("Window", rectTransform, new Vector2(0.5f, 0.5f));
+		rectTransform2.anchorMin = new Vector2(0.25f, 0.12f);
+		rectTransform2.anchorMax = new Vector2(0.75f, 0.88f);
+		rectTransform2.offsetMin = Vector2.zero;
+		rectTransform2.offsetMax = Vector2.zero;
+		rectTransform2.gameObject.AddComponent<Image>().color = gold;
+		RectTransform rectTransform3 = NewRect("Back", rectTransform2, new Vector2(0.5f, 0.5f));
+		Stretch(rectTransform3, 2f, 2f, 2f, 2f);
+		Image image2 = rectTransform3.gameObject.AddComponent<Image>();
+		image2.color = dark;
+		image2.raycastTarget = false;
+		RectTransform rectTransform4 = NewRect("Title", rectTransform2, new Vector2(0.5f, 1f));
+		rectTransform4.anchorMin = new Vector2(0f, 1f);
+		rectTransform4.anchorMax = new Vector2(1f, 1f);
+		rectTransform4.anchoredPosition = new Vector2(0f, -14f);
+		rectTransform4.sizeDelta = new Vector2(-40f, 40f);
+		NewText(rectTransform4, font, fontSize + 10, TextAnchor.MiddleCenter, Color.white).text = "Change Log".ToUpper();
+		RectTransform rectTransform5 = NewRect("Line", rectTransform2, new Vector2(0.5f, 1f));
+		rectTransform5.anchorMin = new Vector2(0f, 1f);
+		rectTransform5.anchorMax = new Vector2(1f, 1f);
+		rectTransform5.anchoredPosition = new Vector2(0f, -58f);
+		rectTransform5.sizeDelta = new Vector2(-50f, 2f);
+		Image image3 = rectTransform5.gameObject.AddComponent<Image>();
+		image3.color = gold;
+		image3.raycastTarget = false;
+		RectTransform rectTransform6 = NewRect("Scroll", rectTransform2, new Vector2(0.5f, 0.5f));
+		Stretch(rectTransform6, 30f, 80f, 30f, 72f);
+		ScrollRect scrollRect = rectTransform6.gameObject.AddComponent<ScrollRect>();
+		RectTransform rectTransform7 = NewRect("Viewport", rectTransform6, new Vector2(0.5f, 0.5f));
+		Stretch(rectTransform7, 0f, 0f, 22f, 0f);
+		rectTransform7.gameObject.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0f);
+		rectTransform7.gameObject.AddComponent<RectMask2D>();
+		contentRect = NewRect("Content", rectTransform7, new Vector2(0.5f, 1f));
+		contentRect.anchorMin = new Vector2(0f, 1f);
+		contentRect.anchorMax = new Vector2(1f, 1f);
+		contentRect.anchoredPosition = Vector2.zero;
+		contentRect.sizeDelta = Vector2.zero;
+		Text text = NewText(contentRect, font, fontSize + 1, TextAnchor.UpperLeft, bodyColour);
+		text.lineSpacing = 1.1f;
+		text.text = "\n<color=#E0B030><b>0.30 Mega Patch 01</b></color>\n<color=#E0B030>New</color>\n- Allied AI: RAN task forces (yellow) patrol, fight, escort your merchants and supply your ports\n- Your starting RAN force in the Allied campaign sails under RAN command\n- Sea auto resolve for battles your allies fight\n- Enemy AI rework, scaled by difficulty from Very Easy to Elite (switches in Mod Options)\n- Enemy floatplanes and flying boats scout from every airfield; a pop-up names the force they spot\n- Enemy strikes gather and attack together, sized to the ships they go for\n- The enemy hunts you harder on the map; in battle it presses home and finishes cripples\n- More aircraft types at every enemy airfield (new campaigns)\n- Downed airmen show on the map; flying boats, floatplanes and ships pick them up\n- Auto rescue button on the campaign map\n- Real 3D animated ship fires that grow with every burning compartment and light up the sea\n- Fires stay fixed on the burning part of the ship and are sized to the ship\n- Shell and bomb hits burst in 3D fire, smoke and sparks\n- Every surface ship has torn, burnt break pieces\n- Wrecks and broken halves sink on real physics: they flood, list, roll over or stand on end\n- Real turning circles, rudder lag and momentum for every ship\n- CHANGE LOG button in the main menu\n<color=#E0B030>Changes</color>\n- A magazine blast can tear any ship apart, even a battleship\n- Torpedo break-back stays for destroyers and escorts\n- The Pacific War campaign is in as \"Experimental. WIP might not work\"\n- Nebraska (1944) removed from the ship lists\n<color=#E0B030>Fixes</color>\n- The supply convoy sat still; it now sails to your port and unloads\n- The battle message log carried over from the last battle\n\n<color=#E0B030><b>0.29</b></color>\n- Ships capsize, plunge by the bow or stern, or settle, by their flooding\n- Torpedoes can break a destroyer's back: two magazine blasts, then she splits\n- Magazine blasts sized by what is in them, in a new HMS Barham style\n- Torpedo hits throw up a huge splash (the game's own, made bigger)\n- Floating wreckage and spreading oil slicks where ships sink\n- Shot planes shed real wings, tails, engines; crews bail out by parachute\n- Air auto resolve window restyled to match the game\n- Mod models now live in StreamingAssets/override/ModAssets\n- Your ships answer your controls again; fewer planes explode\n- Plus the 0.28 air combat update (0.28.18 and hotfix)";
+		contentRect.gameObject.AddComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+		RectTransform rectTransform8 = NewRect("Scrollbar", rectTransform6, new Vector2(1f, 1f));
+		rectTransform8.anchorMin = new Vector2(1f, 0f);
+		rectTransform8.anchorMax = new Vector2(1f, 1f);
+		rectTransform8.anchoredPosition = Vector2.zero;
+		rectTransform8.sizeDelta = new Vector2(12f, 0f);
+		rectTransform8.gameObject.AddComponent<Image>().color = new Color(0.03f, 0.06f, 0.1f, 1f);
+		RectTransform rectTransform9 = NewRect("Sliding Area", rectTransform8, new Vector2(0.5f, 0.5f));
+		Stretch(rectTransform9, 0f, 0f, 0f, 0f);
+		RectTransform rectTransform10 = NewRect("Handle", rectTransform9, new Vector2(0.5f, 0.5f));
+		rectTransform10.anchorMin = Vector2.zero;
+		rectTransform10.anchorMax = Vector2.one;
+		rectTransform10.sizeDelta = Vector2.zero;
+		Image image4 = rectTransform10.gameObject.AddComponent<Image>();
+		image4.color = gold;
+		Scrollbar scrollbar = rectTransform8.gameObject.AddComponent<Scrollbar>();
+		scrollbar.direction = Scrollbar.Direction.BottomToTop;
+		scrollbar.handleRect = rectTransform10;
+		scrollbar.targetGraphic = image4;
+		scrollRect.content = contentRect;
+		scrollRect.viewport = rectTransform7;
+		scrollRect.horizontal = false;
+		scrollRect.vertical = true;
+		scrollRect.movementType = ScrollRect.MovementType.Clamped;
+		scrollRect.scrollSensitivity = 30f;
+		scrollRect.verticalScrollbar = scrollbar;
+		scrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
+		RectTransform rectTransform11 = NewRect("Btn Close", rectTransform2, new Vector2(0.5f, 0f));
+		rectTransform11.anchorMin = new Vector2(0.5f, 0f);
+		rectTransform11.anchorMax = new Vector2(0.5f, 0f);
+		rectTransform11.anchoredPosition = new Vector2(0f, 18f);
+		rectTransform11.sizeDelta = new Vector2(150f, 40f);
+		MakeButton(rectTransform11, font, fontSize + 2, "Close", Close);
+		panel.SetActive(value: false);
+	}
+
+	private static void MakeButton(RectTransform rt, Font font, int size, string label, UnityAction action)
+	{
+		Image image2 = rt.gameObject.AddComponent<Image>();
+		image2.color = gold;
+		Button button = rt.gameObject.AddComponent<Button>();
+		button.targetGraphic = image2;
+		button.onClick.AddListener(action);
+		RectTransform rectTransform = NewRect("Back", rt, new Vector2(0.5f, 0.5f));
+		Stretch(rectTransform, 2f, 2f, 2f, 2f);
+		Image image3 = rectTransform.gameObject.AddComponent<Image>();
+		image3.color = buttonBack;
+		image3.raycastTarget = false;
+		RectTransform rt2 = NewRect("Text", rt, new Vector2(0.5f, 0.5f));
+		Stretch(rt2, 0f, 0f, 0f, 0f);
+		NewText(rt2, font, size, TextAnchor.MiddleCenter, Color.white).text = label;
+	}
+
+	private static void Stretch(RectTransform rt, float left, float bottom, float right, float top)
+	{
+		rt.anchorMin = Vector2.zero;
+		rt.anchorMax = Vector2.one;
+		rt.offsetMin = new Vector2(left, bottom);
+		rt.offsetMax = new Vector2(0f - right, 0f - top);
+	}
+}

@@ -1,0 +1,358 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using UnityEngine;
+
+public static class ModScore
+{
+	[Serializable]
+	private class LocStart
+	{
+		public string locationID = "";
+
+		public int currentFaction;
+	}
+
+	public static ScoreRules rules;
+
+	private static object owner;
+
+	private static int convoy0;
+
+	private static int convoy1;
+
+	private static bool warned;
+
+	private static bool ended;
+
+	private static readonly Dictionary<string, int> startOwner = new Dictionary<string, int>();
+
+	private static int cacheSig = int.MinValue;
+
+	private static int cache0;
+
+	private static int cache1;
+
+	public static bool Active
+	{
+		get
+		{
+			Sync();
+			return rules != null;
+		}
+	}
+
+	private static void Sync()
+	{
+		CampaignManager instance = CampaignManager.instance;
+		if (instance == null || instance.campaignData == null || instance.landMapLocations == null || owner == instance.landMapLocations)
+		{
+			return;
+		}
+		owner = instance.landMapLocations;
+		rules = null;
+		convoy0 = (convoy1 = 0);
+		warned = (ended = false);
+		startOwner.Clear();
+		cacheSig = int.MinValue;
+		string campaignID = instance.campaignData.campaignID;
+		string text = "campaign/" + campaignID + "/score.txt";
+		if (Utilities.DoesGameFileExist(text))
+		{
+			try
+			{
+				string[] array = AssetLoader.instance.ImportText(text);
+				int num = 0;
+				while (array != null && num < array.Length)
+				{
+					string text2 = array[num].Trim();
+					if (text2.Length != 0 && !text2.StartsWith("//"))
+					{
+						ScoreRules objectToOverwrite = new ScoreRules();
+						JsonUtility.FromJsonOverwrite(text2, objectToOverwrite);
+						rules = objectToOverwrite;
+						break;
+					}
+					num++;
+				}
+			}
+			catch (Exception ex)
+			{
+				Debug.Log("[SCORE] score.txt: " + ex.Message);
+			}
+		}
+		if (rules == null)
+		{
+			return;
+		}
+		try
+		{
+			string[] array2 = AssetLoader.instance.ImportText("campaign/" + campaignID + "/mapLandLocations.txt");
+			int num2 = 0;
+			while (array2 != null && num2 < array2.Length)
+			{
+				string text3 = array2[num2].Trim();
+				if (text3.Length != 0 && text3[0] == '{')
+				{
+					LocStart locStart = new LocStart();
+					JsonUtility.FromJsonOverwrite(text3, locStart);
+					if (!string.IsNullOrEmpty(locStart.locationID))
+					{
+						startOwner[locStart.locationID] = locStart.currentFaction;
+					}
+				}
+				num2++;
+			}
+		}
+		catch (Exception ex2)
+		{
+			Debug.Log("[SCORE] mapLandLocations: " + ex2.Message);
+		}
+		Restore();
+		Debug.Log("[SCORE] scoring on for " + campaignID + ": ends " + EndDate().ToString("d MMM yyyy", CultureInfo.InvariantCulture) + ", " + startOwner.Count + " ports");
+	}
+
+	private static void Restore()
+	{
+		List<string> list = ModWorld.Saved();
+		if (list == null)
+		{
+			return;
+		}
+		for (int i = 0; i < list.Count; i++)
+		{
+			string[] array = list[i].Split('|');
+			if (array.Length >= 5 && array[0] == "S")
+			{
+				int.TryParse(array[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out convoy0);
+				int.TryParse(array[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out convoy1);
+				warned = array[3] == "1";
+				ended = array[4] == "1";
+			}
+		}
+	}
+
+	public static void Write(List<string> list)
+	{
+		if (owner != null && !(CampaignManager.instance == null) && owner == CampaignManager.instance.landMapLocations)
+		{
+			list.Add("S|" + convoy0.ToString(CultureInfo.InvariantCulture) + "|" + convoy1.ToString(CultureInfo.InvariantCulture) + "|" + (warned ? "1" : "0") + "|" + (ended ? "1" : "0"));
+		}
+	}
+
+	public static void AddConvoy(int faction, int points)
+	{
+		Sync();
+		if (faction == 0)
+		{
+			convoy0 += points;
+		}
+		else
+		{
+			convoy1 += points;
+		}
+		cacheSig = int.MinValue;
+	}
+
+	public static string SideName(int faction)
+	{
+		Sync();
+		if (rules != null)
+		{
+			return (faction == 0) ? rules.side0 : rules.side1;
+		}
+		return (faction == 0) ? "player" : "enemy";
+	}
+
+	public static DateTime EndDate()
+	{
+		try
+		{
+			return new DateTime(rules.endYear, rules.endMonth, rules.endDay);
+		}
+		catch (Exception)
+		{
+			return new DateTime(1945, 9, 2);
+		}
+	}
+
+	private static int Weight(string prefab)
+	{
+		if (!EngagementManager.instance.unitDataDictionary.TryGetValue(prefab, out var value))
+		{
+			return 2;
+		}
+		return value.unitSubtype switch
+		{
+			UnitSubType.Submarine => rules.submarine, 
+			UnitSubType.Destroyer_Escort => rules.destroyerEscort, 
+			UnitSubType.Destroyer => rules.destroyer, 
+			UnitSubType.Light_Cruiser => rules.lightCruiser, 
+			UnitSubType.Heavy_Cruiser => rules.heavyCruiser, 
+			UnitSubType.Battlecruiser => rules.battlecruiser, 
+			UnitSubType.Battleship => rules.battleship, 
+			UnitSubType.Light_Carrier => rules.lightCarrier, 
+			UnitSubType.Aircraft_Carrier => rules.carrier, 
+			UnitSubType.Oiler => rules.oiler, 
+			UnitSubType.Merchant => rules.merchant, 
+			_ => 0, 
+		};
+	}
+
+	public static void Totals(out int player, out int enemy)
+	{
+		player = (enemy = 0);
+		if (!Active)
+		{
+			return;
+		}
+		CampaignManager instance = CampaignManager.instance;
+		CampaignData campaignData = instance.campaignData;
+		int num = ((campaignData.sunkShipClasses != null) ? campaignData.sunkShipClasses.Count : 0) * 7919 + convoy0 * 31 + convoy1;
+		for (int i = 0; i < instance.landMapLocations.Count; i++)
+		{
+			if (instance.landMapLocations[i] != null)
+			{
+				num = num * 31 + instance.landMapLocations[i].currentFaction;
+			}
+		}
+		if (num == cacheSig)
+		{
+			player = cache0;
+			enemy = cache1;
+			return;
+		}
+		int num2 = convoy0;
+		int num3 = convoy1;
+		if (campaignData.sunkShipClasses != null && campaignData.factionSunk != null)
+		{
+			for (int j = 0; j < campaignData.sunkShipClasses.Count && j < campaignData.factionSunk.Count; j++)
+			{
+				int num4 = Weight(campaignData.sunkShipClasses[j]);
+				if (campaignData.factionSunk[j] == 1)
+				{
+					num2 += num4;
+				}
+				else if (campaignData.factionSunk[j] == 0)
+				{
+					num3 += num4;
+				}
+			}
+		}
+		for (int k = 0; k < instance.landMapLocations.Count; k++)
+		{
+			MapLocation mapLocation = instance.landMapLocations[k];
+			if (!(mapLocation == null) && startOwner.TryGetValue(mapLocation.locationID, out var value) && value != mapLocation.currentFaction)
+			{
+				if (mapLocation.currentFaction == 0)
+				{
+					num2 += rules.portPoints;
+				}
+				else if (mapLocation.currentFaction == 1)
+				{
+					num3 += rules.portPoints;
+				}
+			}
+		}
+		cacheSig = num;
+		cache0 = num2;
+		cache1 = num3;
+		player = num2;
+		enemy = num3;
+	}
+
+	public static string Breakdown()
+	{
+		if (!Active)
+		{
+			return "";
+		}
+		CampaignManager instance = CampaignManager.instance;
+		CampaignData campaignData = instance.campaignData;
+		int num = 0;
+		int num2 = 0;
+		int num3 = 0;
+		int num4 = 0;
+		if (campaignData.sunkShipClasses != null && campaignData.factionSunk != null)
+		{
+			for (int i = 0; i < campaignData.sunkShipClasses.Count && i < campaignData.factionSunk.Count; i++)
+			{
+				int num5 = Weight(campaignData.sunkShipClasses[i]);
+				if (campaignData.factionSunk[i] == 1)
+				{
+					num += num5;
+				}
+				else if (campaignData.factionSunk[i] == 0)
+				{
+					num2 += num5;
+				}
+			}
+		}
+		for (int j = 0; j < instance.landMapLocations.Count; j++)
+		{
+			MapLocation mapLocation = instance.landMapLocations[j];
+			if (!(mapLocation == null) && startOwner.TryGetValue(mapLocation.locationID, out var value) && value != mapLocation.currentFaction)
+			{
+				if (mapLocation.currentFaction == 0)
+				{
+					num3 += rules.portPoints;
+				}
+				else if (mapLocation.currentFaction == 1)
+				{
+					num4 += rules.portPoints;
+				}
+			}
+		}
+		return rules.side0 + ": " + (num + num3 + convoy0) + " (ships sunk " + num + ", ports " + num3 + ", convoys " + convoy0 + ")\n" + rules.side1 + ": " + (num2 + num4 + convoy1) + " (ships sunk " + num2 + ", ports " + num4 + ", convoys " + convoy1 + ")";
+	}
+
+	public static string Summary()
+	{
+		if (!Active)
+		{
+			return "";
+		}
+		Totals(out var player, out var enemy);
+		DateTime dateTime = EndDate();
+		int num = (int)(dateTime - CampaignInterface.instance.dateTime.Date).TotalDays;
+		string text = ((num > 0) ? (dateTime.ToString("d MMM yyyy", CultureInfo.InvariantCulture) + ", " + num.ToString("N0", CultureInfo.InvariantCulture) + " days to go") : "the war is over");
+		return rules.side0.ToUpper() + " " + player + "   " + rules.side1.ToUpper() + " " + enemy + "\nThe war ends " + text;
+	}
+
+	public static void Daily()
+	{
+		if (!ModWorld.Ready() || !Active)
+		{
+			return;
+		}
+		CampaignData campaignData = CampaignManager.instance.campaignData;
+		if (campaignData.campaignEnded || ended)
+		{
+			return;
+		}
+		DateTime date = CampaignInterface.instance.dateTime.Date;
+		DateTime dateTime = EndDate();
+		int player;
+		int enemy;
+		if (!warned && rules.warnDays > 0 && date >= dateTime.AddDays(-rules.warnDays) && date < dateTime)
+		{
+			warned = true;
+			Totals(out player, out enemy);
+			ModRoutes.Popup("wscore_warn", "The end is in sight", "The war ends on " + dateTime.ToString("d MMMM yyyy", CultureInfo.InvariantCulture) + ", in " + (int)(dateTime - date).TotalDays + " days. The side with more victory points wins.\n\n<b>Standings</b>\n" + Breakdown());
+		}
+		if (date >= dateTime)
+		{
+			ended = true;
+			Totals(out player, out enemy);
+			string text = "\n\n<b>Final score, " + dateTime.ToString("d MMMM yyyy", CultureInfo.InvariantCulture) + "</b>\n" + Breakdown();
+			Debug.Log("[SCORE] campaign over: " + player + " to " + enemy);
+			campaignData.campaignEnded = true;
+			CampaignEvent instance = CampaignEvent.instance;
+			instance.CreateEvent((player > enemy) ? "victory" : "defeat");
+			if (instance.contentText != null)
+			{
+				instance.contentText.text = ((player > enemy) ? ("The war is over and the " + rules.side0 + " have the better of it at sea.") : ((player == enemy) ? "The war is over. Neither side could claim the upper hand at sea." : ("The war is over and the " + rules.side1 + " had the better of it at sea."))) + text;
+			}
+		}
+	}
+}

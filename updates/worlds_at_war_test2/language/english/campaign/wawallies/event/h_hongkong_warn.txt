@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "HONG KONG THREATENED", "imagePath": "", "content": "<size=18><b>25 December 1941</b></size>\nIntelligence expects an enemy move against <color=#caa809>HONG KONG</color> around 25 December 1941. Have at least 3 warships within 300 km by then, or it may fall."}

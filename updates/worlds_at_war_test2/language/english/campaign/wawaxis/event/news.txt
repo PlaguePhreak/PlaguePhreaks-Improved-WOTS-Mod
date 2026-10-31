@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "The week's news", "imagePath": "", "content": ""}

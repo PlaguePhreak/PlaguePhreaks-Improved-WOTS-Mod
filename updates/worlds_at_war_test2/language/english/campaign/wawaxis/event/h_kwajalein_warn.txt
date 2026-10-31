@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "KWAJALEIN THREATENED", "imagePath": "", "content": "<size=18><b>31 January 1944</b></size>\nIntelligence expects an enemy move against <color=#caa809>KWAJALEIN</color> around 31 January 1944. Have at least 6 warships within 500 km by then, or it may fall."}

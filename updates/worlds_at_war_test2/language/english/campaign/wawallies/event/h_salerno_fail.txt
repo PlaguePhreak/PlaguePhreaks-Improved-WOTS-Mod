@@ -1,0 +1,1 @@
+{"nextAction": "", "header": "NAPLES: LANDING CALLED OFF", "imagePath": "", "content": "<size=18><b>9 September 1943</b></size>\nWith fewer than 6 warships within 500 km of <color=#caa809>NAPLES</color>, the landing force turned back.\n\n<i>The Fifth Army landed at Salerno on 9 September 1943, the day Italy's surrender was announced, and took Naples on 1 October.</i>"}
