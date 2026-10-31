@@ -10,6 +10,54 @@ The mod is in alpha, so every version is 0.x. Version numbers group the work in 
 Numbering: a major change gets a whole number (v0.25 = new map locations); the minor changes under it are v0.25.1, v0.25.2 and so on. What used to be called v0.24.3 to v0.24.6 is now v0.25 to v0.25.3.
 NOTE: the in-game logbook (ModGuide class, What's New page) still uses the old numbers and must be updated to match.
 
+v0.28.5 - Formation yields, player controls win, chasers catch up (pending test)
+-----------------------------------------------------------
+* A follower in a formation no longer breaks out when a flight mate is on a collision course: it shifts its slot 50 m sideways and 20 m up or down for 2.5 s and comes back. Two other friends no longer both break at once: one gives way. Only a real collision course still breaks both. Enemies are avoided as before.
+* Player controls override the AI: moving a turn, height or speed slider (or the keys) on your own plane or ship takes it off its route, formation, attack, evasion or break. A plane flown by hand is not steered by the collision avoidance, and a ship you steer is not taken over by the AA evasion for 30 s after your last slider move.
+* Chase power: a fighter chasing a target farther than 300 m that it is not gaining on (less than 12% faster) runs emergency power: about +10% top speed for up to 240 s per sortie, rested at 0.15 s per second, 1.8 times the fuel burn. The 1v1 log had the chaser 3 km behind an equally fast target for 7 minutes.
+* New log lines: [PLAYER], [CHASE], "gives way to flight mate" in [FORMATION]; the [BATTLE] line gains chase boosts, flights yielded and taken by the player.
+* Install: v0.28.5_update folder (new class ModPlayerOverride, 5 edited classes, 4 one-line hooks in CombatInterface and ModAAEvade).
+
+v0.28.4 - Fuel lasts (pending test)
+-----------------------------------------------------------
+* Fuel was burned about 8 times too fast at high time compression (a full tank gone in 3.5 minutes in the 1v1 test at x8). Fuel, fuel leaks and the break-up chance now run on battle clock seconds, so a fighter has about 26 minutes of full-power fuel at any time compression (about 87 minutes at cruise).
+* Install: Edit Class ModAirDamage only.
+
+v0.28.3 - Chasing fighters catch up (pending test)
+-----------------------------------------------------------
+* A turn fighter (Zero, Sam and others) used to match its target's speed in a gun run, so it trailed a little behind and never closed. It now flies flat out until 300 m behind the target, then 15% faster than it.
+* Install: Edit Class ModDogfight only (steps in v0.28.1_step_by_step/README_START_HERE.md).
+
+v0.28.2 - Out-of-fuel planes ditch, slower fuel leaks (pending test)
+-----------------------------------------------------------
+* A plane with an empty tank (engine quit) now glides down and is lost when it reaches the sea. Before, it hung at the same height in the fight for minutes (seen in the third test log). Credit for the fuel system idea: Kiko.
+* Fuel leaks drain about 2.5 times slower, so a leaking plane that decides to leave the battle can get away.
+* Install: Edit Class ModDogfight and ModAirDamage only. Steps: v0.28.1_step_by_step/README_START_HERE.md.
+
+v0.28.1 - Fixes from the first 0.28 test log (pending test)
+-----------------------------------------------------------
+* Friendly planes no longer crash into each other head-on: they always see each other coming and only die in a head-on above 200 m/s. Avoidance looks 2 s ahead.
+* Fighters defend sooner: an enemy on the tail inside 250 m counts as a threat, a close threat is noticed twice as fast, and a new defence can start 4 s after the last. No more extending in a straight line with an enemy behind.
+* Parts falling off pick real wing and tail pieces (not the rear flap or the wing root fitting). Credit: Avaricles.
+* The flight readout is on F8 now (F10 is the game's hide-UI key). One last [FLIGHT] log line per destroyed plane.
+* Install: paste the new ALL_IN_ONE file into ModFlight (Edit Class). No new hooks. Steps: Docs/flight_0.28.md.
+
+v0.28 - Air combat update: the rest of the 0.26 roadmap (pending test)
+-----------------------------------------------------------
+* Credits: fuel fires are Kiko's idea, parts falling off a damaged plane is Avaricles' idea.
+* All 135 aircraft have a flight row, toughness, gun damage, armour and gunner values. The stock Hellcat, Corsair, Dauntless and Helldiver follow the new rows.
+* Fighters carrying bombs fly worse and drop them when an enemy fighter is near, when attacked, or when leaving (waits while a friendly ship is below). Log [BOMBS].
+* Aircraft collide: scrape, bad hit or head-on loss. Pilots see it coming and break away. Log [COLLIDE].
+* New manoeuvres: Immelmann, pitchback, high-g barrel roll, barrel roll attack, scissors, decoy, recover, combat spread. Wired into the sandwich and defensive split.
+* Formation flying: followers keep a slot off the leader, the leader slows for the slowest follower, escorts fly 400 m above bombers.
+* Damage affects flight: engine, wing, fuel leak and fire, tail. Planes leave the battle when out of ammo, at bingo fuel or when too damaged. Altitude performance curves. F8 in battle shows a flight readout.
+* Per-aircraft flight file: unit/air/<key>/<key>_flight.txt overrides that aircraft's flight row.
+* The hard speed limit is gone. Planes that stay far above their structural speed lose their wings and parts fall off.
+* Air auto resolve: an air meeting can be auto resolved from a window that shows the percent chance of victory.
+* Fixes from the last log: Wildcats regain energy (recover move), bomber chasing capped, [BATTLE] energy now shows the last 60 s and the whole battle separately.
+* ModFlightLog Interval is back to 10 seconds.
+* dnSpy: add 5 classes (ModAirDamage, ModAirCollide, ModAirFormation, ModAirResolve, ModAirReadoutUI), edit 5 (ModAirFlight, ModAirStats, ModFlight, ModDogfight, ModFlightLog), plus 3 one-line hooks. Steps: Docs/flight_0.28.md. Compiled but not run in the game.
+
 v0.24.2 - New aircraft from RamZ's catalogue and TTE (pending test)
 -----------------------------------------------------------
 * 22 more aircraft from the TTE mod, used with credit to the TTE team (P-39D, P-38E, J2F, PBY, PBM, A-20G, B-24D, B-25J, Kittyhawk, Beaufighter, Beaufort, Sunderland, A5M4, A6M2-N, Ki-43, Ki-45, Ki-49, J1N1, E14Y, H6K, H8K2, G3M2). 115 new aircraft in total.
