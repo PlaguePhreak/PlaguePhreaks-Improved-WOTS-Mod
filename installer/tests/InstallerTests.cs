@@ -2,6 +2,7 @@ using System; using System.IO; using System.Linq; using System.Collections.Gener
 class Ui : IUi { public Queue<bool> answers = new Queue<bool>(); public List<string> asked = new List<string>();
   public void Log(string l){ Console.WriteLine("   | "+l); }
   public bool Ask(string t,string q){ asked.Add(t); var a = answers.Count>0 ? answers.Dequeue() : true; Console.WriteLine("   ? ASK ["+t+"] -> "+(a?"Yes":"No")); return a; }
+  public bool AskRisky(string t,string q){ return Ask(t,q); }
   public void Tell(string t,string x){ Console.WriteLine("   ! TELL ["+t+"] "+x.Split('\n')[0]); } }
 class P {
   static string R="/home/claude/inst/ref", M="/home/claude/inst/managed", G="/tmp/wt/War on the Sea", MF="/tmp/wt/Mod Files";
@@ -53,6 +54,12 @@ class P {
     File.Copy(R+"/stock.dll", Dll, true); st=I.Inspect(G); Expect(st.ManifestButChanged, "detected change: "+st.Describe);
     ui.asked.Clear(); Expect(I.Install(st), "install ok"); Expect(ui.asked.Contains("Game DLL changed"), "asked about the change"); Expect(StockFp.FileMd5(Dll)==hf3, "new base is original -> DLL == hotfix 3");
     st=I.Inspect(G); Expect(I.Restore(st), "restore ok"); Expect(StockFp.FileMd5(Dll)==StockFp.FileMd5(R+"/stock.dll"), "back to the new original");
+    // 6
+    Console.WriteLine("== 6. game has newer build 0.32.19, installer has 0.31.15 (hotfix 3)");
+    Fresh(R+"/g19.dll"); ui=new Ui(); ui.answers.Enqueue(false); I=new Installer(MF, ui); st=I.Inspect(G); Console.WriteLine("  state: "+st.Describe);
+    Expect(!I.Install(st), "install stopped"); Expect(ui.asked.Contains("Your game has a NEWER build"), "newer-build warning asked");
+    Expect(StockFp.FileMd5(Dll)==StockFp.FileMd5(R+"/g19.dll"), "0.32.19 untouched"); Expect(!Directory.Exists(G+"/WOTS Mod Backup"), "no backup folder made");
+    Expect(Installer.CompareVersions("0.32.19","0.31.15")>0 && Installer.CompareVersions("0.32.9","0.32.19")<0 && Installer.CompareVersions("0.32.19","0.32.19")==0, "version compare");
     Console.WriteLine(fails==0 ? "ALL PASS" : fails+" FAILED");
   }
 }

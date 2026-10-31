@@ -1,0 +1,40 @@
+Aaron: how to push an update to players (no coding needed)
+===========================================================
+Players' installers look at your GitHub Releases page and download the newest release.
+The .exe never needs to change.
+
+FIRST TIME (the big one, with all the art)
+1. In the game folder go to WarOnTheSea_Data\StreamingAssets\
+2. Right-click the "override" folder > Send to > Compressed (zipped) folder.
+   Rename the zip to exactly:  override.zip
+3. Go to https://github.com/PlaguePhreak/PlaguePhreaks-Improved-WOTS-Mod/releases
+   and click "Draft a new release" (or "Create a new release").
+4. "Choose a tag": type the version with a v in front, e.g.  v0.32.19  and click "Create new tag".
+5. Release title: the version players should see, e.g.  0.32.19
+6. Description: paste the change log (players can read it on the page).
+7. Drag these files into the box at the bottom ("Attach binaries"):
+   - Assembly-CSharp.dll        (the mod DLL)
+   - override.zip               (from step 2)
+   - WOTS Mod Installer.exe     (so new players can download the installer here)
+   Wait until every file shows as uploaded (override.zip takes a few minutes).
+8. Click "Publish release". Done: every player's installer now offers this version.
+
+SMALL UPDATES (DLL only, or a few text/campaign files)
+Same steps 3 to 8, with a new tag (e.g. v0.32.20), but attach only:
+   - Assembly-CSharp.dll
+   - override_update.zip  (optional) = a zip holding ONLY the override files that changed,
+     in their folders, e.g. campaign\wawallies\score.txt
+Players keep the big override.zip they already downloaded and get the update on top.
+
+WHEN THE ART CHANGES A LOT
+Upload a fresh full override.zip again (step 1-2). Older update zips are then ignored.
+
+RULES
+- The file names must be exactly: Assembly-CSharp.dll, override.zip, override_update.zip
+  (GitHub may show "WOTS.Mod.Installer.exe" for the installer, that's fine.)
+- A release without Assembly-CSharp.dll is ignored by the installer.
+- Don't delete old releases that hold the last full override.zip.
+- "Set as a pre-release" is fine for tester builds; players still get it.
+
+Your own PC: the "Mod Files" folder next to the exe lets you install a build without
+uploading it ("Install from Mod Files" button). Players don't need that folder.

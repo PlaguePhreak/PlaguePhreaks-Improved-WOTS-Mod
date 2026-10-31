@@ -19,3 +19,10 @@ Build: `dotnet build app/WotsInstaller.csproj -c Release` (works on Linux; needs
 Tests run 31 Oct 2026: original+hotfix 3 and original+0.32.19 merges are member-for-member identical to the real builds
 (ilverify error lists identical); a synthetic second mod survives the merge and the shared method is reported;
 5 install/update/restore scenarios pass (`tests/InstallerTests.cs`); the exe runs under Mono WinForms and gives the same merge.
+
+## Online updates (added 31 Oct 2026)
+`app/Updater.cs` reads https://api.github.com/repos/PlaguePhreak/PlaguePhreaks-Improved-WOTS-Mod/releases.
+Newest non-draft release with an `Assembly-CSharp.dll` asset wins. Override files = newest `override.zip` at or before it,
+plus every later `override_update.zip`, oldest first. Downloads are cached in `%LOCALAPPDATA%\WOTS Mod Installer`.
+`update_source.txt` next to the exe (`repo=` / `api=`) points it elsewhere for tests.
+Version guard: `ModVersion.Current` of the game DLL vs the new DLL; an older build over a newer one needs an explicit Yes (default No).

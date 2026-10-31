@@ -12,6 +12,7 @@ namespace WotsInstaller
     {
         void Log(string line);
         bool Ask(string title, string question);   // Yes / No
+        bool AskRisky(string title, string question); // Yes / No, No is the default button
         void Tell(string title, string text);
     }
 
@@ -21,6 +22,7 @@ namespace WotsInstaller
         public bool Installed;            // installed by this installer and DLL unchanged since
         public bool ManifestButChanged;   // installed by this installer, DLL changed since (game update?)
         public string InstalledVersion = "";
+        public string GameModVersion = "";   // ModVersion.Current found in the game DLL
         public string Describe = "";
     }
 
@@ -29,14 +31,21 @@ namespace WotsInstaller
         public const string BackupFolderName = "WOTS Mod Backup";
         public const string MarkerType = "ModVersion"; // class that only PlaguePhreak's mod has
 
-        readonly string modDir; // "Mod Files" next to the exe
+        string modDir; // "Mod Files" next to the exe, or a downloaded release
         readonly IUi ui;
         public string ModName = "PlaguePhreak's Improved WOTS Mod";
         public string ModVersion = "";
 
         public Installer(string modDir, IUi ui)
         {
-            this.modDir = modDir; this.ui = ui;
+            this.ui = ui;
+            SetSource(modDir);
+        }
+
+        public void SetSource(string dir)
+        {
+            modDir = dir;
+            ModVersion = "";
             var info = Path.Combine(modDir, "mod_info.txt");
             if (File.Exists(info))
                 foreach (var l in File.ReadAllLines(info))
@@ -109,7 +118,40 @@ namespace WotsInstaller
                 else if (HasMarker(s.DllPath)) s.Describe = "A copy of this mod was put in by hand (not with this installer).";
                 else s.Describe = "Game DLL is modded by something else (another DLL mod?). The mod will be merged into it.";
             }
+            var gv = DllVersion(s.DllPath);
+            s.GameModVersion = gv ?? "";
+            if (!string.IsNullOrEmpty(gv)) s.Describe += " Mod build in the game: " + gv + ".";
             return s;
+        }
+
+        // ModVersion.Current of a mod DLL (e.g. "0.32.19"), or null
+        public static string DllVersion(string dll)
+        {
+            try
+            {
+                using (var m = ModuleDefinition.ReadModule(new MemoryStream(File.ReadAllBytes(dll))))
+                {
+                    var t = m.GetType(MarkerType);
+                    if (t == null) return null;
+                    foreach (var f in t.Fields) if (f.Name == "Current" && f.HasConstant) return f.Constant as string;
+                    return "";
+                }
+            }
+            catch { return null; }
+        }
+
+        // compares "0.32.19" style numbers; >0 when a is newer
+        public static int CompareVersions(string a, string b)
+        {
+            var pa = (a ?? "").Split('.', ' ', '-'); var pb = (b ?? "").Split('.', ' ', '-');
+            for (int i = 0; i < Math.Max(pa.Length, pb.Length); i++)
+            {
+                int x, y;
+                bool nx = int.TryParse(i < pa.Length ? pa[i] : "0", out x), ny = int.TryParse(i < pb.Length ? pb[i] : "0", out y);
+                if (!nx || !ny) { int c = string.CompareOrdinal(i < pa.Length ? pa[i] : "", i < pb.Length ? pb[i] : ""); if (c != 0) return c; continue; }
+                if (x != y) return x.CompareTo(y);
+            }
+            return 0;
         }
 
         static bool HasMarker(string dll)
@@ -151,6 +193,21 @@ namespace WotsInstaller
             if (!File.Exists(ModDll)) { ui.Tell("Missing file", "Mod Files\\Assembly-CSharp.dll is missing next to the installer."); return false; }
             var stock = LoadStock();
             if (stock == null) { ui.Tell("Missing file", "The original-game fingerprint (stock.fp) is missing."); return false; }
+
+            // never put an older build over a newer one without a clear warning
+            var gameVer = DllVersion(s.DllPath);
+            var newVer = DllVersion(ModDll);
+            ui.Log("Mod build in your game: " + (string.IsNullOrEmpty(gameVer) ? "none" : gameVer) + ". Mod build in this installer: " + (string.IsNullOrEmpty(newVer) ? "?" : newVer) + ".");
+            if (!string.IsNullOrEmpty(gameVer) && !string.IsNullOrEmpty(newVer))
+            {
+                int c = CompareVersions(gameVer, newVer);
+                if (c > 0 && !ui.AskRisky("Your game has a NEWER build",
+                        "Your game has mod build " + gameVer + ".\nThis installer has build " + newVer + ", which is OLDER.\n\n" +
+                        "Yes = put the older build " + newVer + " in anyway (" + gameVer + " is kept in the backup and comes back with Restore).\n" +
+                        "No = stop, nothing is changed."))
+                { ui.Log("Stopped: the game already has a newer build."); return false; }
+                if (c == 0) ui.Log("Same build as in your game: reinstalling it.");
+            }
 
             Directory.CreateDirectory(s.BackupDir);
             var man = Manifest.Load(s.BackupDir);

@@ -4,18 +4,21 @@ For War on the Sea version 1.09a (Steam).
 
 INSTALL
 1. Close War on the Sea.
-2. Unzip this whole folder anywhere (Desktop is fine). Keep "Mod Files" next to the .exe.
-3. Double-click "WOTS Mod Installer.exe".
-   It finds the game by itself. If it doesn't, click Browse and pick the
-   "War on the Sea" folder (the one with WarOnTheSea.exe in it).
-4. Click "Install mod". Done. Start a new campaign.
+2. Download "WOTS.Mod.Installer.exe" from the newest release on
+   https://github.com/PlaguePhreak/PlaguePhreaks-Improved-WOTS-Mod/releases
+   and put it anywhere (Desktop is fine).
+3. Double-click it. It finds the game by itself. If it doesn't, click Browse and pick
+   the "War on the Sea" folder (the one with WarOnTheSea.exe in it).
+4. Click "Install from internet". It downloads the newest version and installs it.
+   The first time takes a while (the art files are big). Start a new campaign.
 
 If Windows says "Windows protected your PC", click "More info" then "Run anyway"
 (the installer isn't signed). If it asks for administrator rights, say yes: your
 game is in a protected folder such as Program Files.
 
-UPDATE TO A NEWER VERSION OF THE MOD
-Unzip the new installer and click "Update / reinstall mod". No need to restore first.
+UPDATES
+Open the installer again. The window shows the newest version online. Click
+"Update from internet". It only downloads what changed.
 
 UNINSTALL
 Run the installer and click "Restore original files". Everything goes back to how
@@ -28,5 +31,5 @@ If both mods changed the same part of the game, the installer lists it and asks 
 If you install another DLL mod AFTER this one, run this installer again afterwards.
 
 The backup lives in "War on the Sea\WOTS Mod Backup". Don't delete it while the mod is
-installed. Do NOT use Steam's "Verify integrity of game files" unless you want to remove
-the mod (if you do, just run the installer again).
+installed. Steam's "Verify integrity of game files" removes the mod; just run the
+installer again afterwards.

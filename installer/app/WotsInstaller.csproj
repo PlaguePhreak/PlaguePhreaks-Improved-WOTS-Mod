@@ -15,7 +15,7 @@
   <ItemGroup>
     <Compile Include="../core/*.cs" />
     <Reference Include="System.Windows.Forms" />
-    <Reference Include="System.Drawing" />
+    <Reference Include="System.Drawing" /><Reference Include="System.Web.Extensions" /><Reference Include="System.IO.Compression" /><Reference Include="System.IO.Compression.FileSystem" />
     <PackageReference Include="Mono.Cecil" Version="0.11.6" PrivateAssets="all" />
     <EmbeddedResource Include="stock.fp" LogicalName="stock.fp" />
   </ItemGroup>
