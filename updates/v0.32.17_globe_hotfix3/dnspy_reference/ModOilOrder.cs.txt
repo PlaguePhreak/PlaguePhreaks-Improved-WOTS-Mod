@@ -1,0 +1,40 @@
+using System;
+using Ceto;
+using UnityEngine;
+
+public static class ModOilOrder
+{
+	public static int Fallback = 2990;
+
+	private static int q = -1;
+
+	public static int Queue()
+	{
+		if (q > 0)
+		{
+			return q;
+		}
+		int num = Fallback;
+		try
+		{
+			ProjectedGrid projectedGrid = UnityEngine.Object.FindObjectOfType<ProjectedGrid>();
+			if ((object)projectedGrid != null && (object)projectedGrid.oceanTopSideMat != null)
+			{
+				int renderQueue = projectedGrid.oceanTopSideMat.renderQueue;
+				if (renderQueue >= num)
+				{
+					num = renderQueue + 1;
+				}
+				q = num;
+				Debug.Log("[SINK] oil slick draw order " + num + " (ocean " + renderQueue + ", smoke and UI 3000)");
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.Log("[SINK] oil draw order check failed, using " + num + ": " + ex.Message);
+			q = num;
+		}
+		return num;
+	}
+}
+Latest version is '11.2.0.10050' (yours is '8.2.0.7535-95108c96')

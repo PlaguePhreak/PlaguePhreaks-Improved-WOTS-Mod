@@ -1,0 +1,79 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+public static class ModAirListFix
+{
+	private static Dictionary<string, UnitListData> all;
+
+	private static List<string> warned = new List<string>();
+
+	public static UnitListData Get(Dictionary<string, UnitListData> d, string k)
+	{
+		if (d != null && k != null && d.TryGetValue(k, out var value))
+		{
+			return value;
+		}
+		return Missing(d, k);
+	}
+
+	private static UnitListData Missing(Dictionary<string, UnitListData> d, string k)
+	{
+		EngagementManager instance = EngagementManager.instance;
+		UnitListData value = null;
+		if (k != null && (object)instance != null && d == instance.unitAirDictionary)
+		{
+			if (all == null)
+			{
+				all = BuildAll(instance);
+			}
+			if (all.TryGetValue(k, out value))
+			{
+				if (!warned.Contains(k))
+				{
+					warned.Add(k);
+					Debug.Log("[AIRLIST] plane '" + k + "' is used in this campaign but is not in its airUnits.txt: using its entry from unit/air/allUnitsList.txt (add it to the campaign's airUnits.txt to silence this)");
+				}
+				return value;
+			}
+		}
+		if (k != null && !warned.Contains("?" + k))
+		{
+			warned.Add("?" + k);
+			Debug.Log("[AIRLIST] unit '" + k + "' is in no unit list at all (check its language/unit file and allUnitsList.txt)");
+		}
+		return d[k];
+	}
+
+	private static Dictionary<string, UnitListData> BuildAll(EngagementManager em)
+	{
+		int count = em.unitAirOrderList.Count;
+		int count2 = em.unitAirDisplayNameList.Count;
+		Dictionary<string, UnitListData> dictionary;
+		try
+		{
+			dictionary = em.BuildUnitListDictionary("unit/air/allUnitsList.txt", "air", new Dictionary<string, UnitListData>());
+		}
+		catch (Exception ex)
+		{
+			Debug.Log("[AIRLIST] could not read unit/air/allUnitsList.txt: " + ex.Message);
+			dictionary = new Dictionary<string, UnitListData>();
+		}
+		if (em.unitAirOrderList.Count > count)
+		{
+			em.unitAirOrderList.RemoveRange(count, em.unitAirOrderList.Count - count);
+		}
+		if (em.unitAirDisplayNameList.Count > count2)
+		{
+			em.unitAirDisplayNameList.RemoveRange(count2, em.unitAirDisplayNameList.Count - count2);
+		}
+		Debug.Log("[AIRLIST] main air list read for missing campaign planes: " + dictionary.Count + " planes");
+		return dictionary;
+	}
+
+	public static void Reset()
+	{
+		all = null;
+	}
+}
+Latest version is '11.2.0.10050' (yours is '8.2.0.7535-95108c96')

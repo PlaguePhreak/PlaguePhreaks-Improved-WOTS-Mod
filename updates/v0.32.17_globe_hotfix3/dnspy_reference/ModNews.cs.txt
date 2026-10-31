@@ -1,0 +1,146 @@
+using System;
+using System.Collections.Generic;
+using System.Text;
+using UnityEngine;
+
+public static class ModNews
+{
+	public class NewsItem
+	{
+		public int day;
+
+		public int month;
+
+		public int year;
+
+		public string text = string.Empty;
+	}
+
+	public static string EventFile = "news";
+
+	public static DayOfWeek PaperDay = DayOfWeek.Monday;
+
+	private static string loadedFor;
+
+	private static List<NewsItem> items = new List<NewsItem>();
+
+	private static DateTime lastDay = DateTime.MinValue;
+
+	public static void Daily()
+	{
+		try
+		{
+			CampaignManager instance = CampaignManager.instance;
+			if (instance == null || instance.campaignData == null || CampaignInterface.instance == null)
+			{
+				return;
+			}
+			string campaignID = instance.campaignData.campaignID;
+			if (loadedFor != campaignID)
+			{
+				Load(campaignID);
+				lastDay = DateTime.MinValue;
+			}
+			if (items.Count == 0)
+			{
+				return;
+			}
+			DateTime date = CampaignInterface.instance.dateTime.Date;
+			if (lastDay == DateTime.MinValue || date <= lastDay || (date - lastDay).TotalDays > 7.0)
+			{
+				lastDay = date.AddDays(-1.0);
+			}
+			bool flag = false;
+			DateTime dateTime = lastDay.AddDays(1.0);
+			while (dateTime <= date)
+			{
+				if (dateTime.DayOfWeek == PaperDay)
+				{
+					flag = true;
+				}
+				dateTime = dateTime.AddDays(1.0);
+			}
+			lastDay = date;
+			if (!flag || !ModOptions.News)
+			{
+				return;
+			}
+			DateTime dateTime2 = date.AddDays(-7.0);
+			List<NewsItem> list = new List<NewsItem>();
+			for (int i = 0; i < items.Count; i++)
+			{
+				DateTime dateTime3 = new DateTime(items[i].year, items[i].month, items[i].day);
+				if (dateTime3 > dateTime2 && dateTime3 <= date)
+				{
+					list.Add(items[i]);
+				}
+			}
+			if (list.Count != 0)
+			{
+				Show(date, list);
+			}
+		}
+		catch (Exception ex)
+		{
+			Debug.Log("[NEWS] error " + ex.Message + " " + ex.StackTrace);
+		}
+	}
+
+	private static void Load(string id)
+	{
+		loadedFor = id;
+		items.Clear();
+		string text = "campaign/" + id + "/news.txt";
+		if (!Utilities.DoesGameFileExist(text))
+		{
+			return;
+		}
+		string[] array = AssetLoader.instance.ImportText(text);
+		if (array == null)
+		{
+			return;
+		}
+		for (int i = 0; i < array.Length; i++)
+		{
+			string text2 = array[i].Trim();
+			if (text2.Length != 0 && !text2.StartsWith("//"))
+			{
+				NewsItem newsItem = new NewsItem();
+				JsonUtility.FromJsonOverwrite(text2, newsItem);
+				if (newsItem.year > 0 && !string.IsNullOrEmpty(newsItem.text))
+				{
+					items.Add(newsItem);
+				}
+			}
+		}
+		items.Sort((NewsItem a, NewsItem b) => new DateTime(a.year, a.month, a.day).CompareTo(new DateTime(b.year, b.month, b.day)));
+		Debug.Log("[NEWS] " + items.Count + " news items loaded for " + id);
+	}
+
+	private static void Show(DateTime today, List<NewsItem> week)
+	{
+		CampaignEvent instance = CampaignEvent.instance;
+		if (instance == null)
+		{
+			return;
+		}
+		if (instance.gameObject.activeSelf)
+		{
+			Debug.Log("[NEWS] another pop-up is open, this week's paper is skipped");
+			return;
+		}
+		instance.CreateEvent(EventFile);
+		StringBuilder stringBuilder = new StringBuilder();
+		stringBuilder.Append("<size=18><b>WEEK ENDING ").Append(today.ToString("d MMMM yyyy").ToUpper()).Append("</b></size>\n");
+		for (int i = 0; i < week.Count; i++)
+		{
+			NewsItem newsItem = week[i];
+			stringBuilder.Append("\n<color=#caa809>").Append(new DateTime(newsItem.year, newsItem.month, newsItem.day).ToString("d MMM")).Append("</color>  ")
+				.Append(newsItem.text);
+		}
+		stringBuilder.Append("\n\n<size=12><i>The weekly news can be turned off in Mod Options.</i></size>");
+		instance.contentText.text = stringBuilder.ToString();
+		Debug.Log("[NEWS] " + week.Count + " items for the week ending " + today.ToString("yyyy-MM-dd"));
+	}
+}
+Latest version is '11.2.0.10050' (yours is '8.2.0.7535-95108c96')
