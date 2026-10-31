@@ -1,0 +1,16 @@
+Aaron: how to make a new installer release (no coding needed)
+==============================================================
+The installer .exe never needs to change. Only the "Mod Files" folder does.
+
+1. Put the new Assembly-CSharp.dll in "Mod Files" (replace the old one).
+2. Copy your override folder into "Mod Files", so you get "Mod Files\override\..."
+   (inside it: campaign, language, maps, ModAssets, mod_debris, mod_wreck, unit ...,
+   exactly like StreamingAssets\override in the game). Leave it out to ship the DLL only.
+3. Open "Mod Files\mod_info.txt" in Notepad and change the version line,
+   e.g.  version=0.30 Mega Patch 01 hotfix 4
+4. Delete "installer_last_game_folder.txt" if it is in the folder (it holds YOUR game path).
+5. Zip the whole "WOTS Mod Installer" folder and send it to testers.
+
+Do not delete this file's neighbour "README - how to install.txt": that one is for players.
+
+The .exe only needs rebuilding (by Claude) if the game itself gets an update past 1.09a.
