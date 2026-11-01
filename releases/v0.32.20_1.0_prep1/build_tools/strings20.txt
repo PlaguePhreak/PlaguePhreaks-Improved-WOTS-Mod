@@ -1,0 +1,15 @@
+ModVersion
+0.32.19
+---
+0.32.20
+===
+~ModVersion
+Version 0.32.19 globe test 19
+---
+Version 0.32.20 (1.0 prep 1)
+===
+~ModVersion
+<color=#E0B030><b>0.32.19</b></color> globe test 19, Worlds at War batch 2:
+---
+<color=#E0B030><b>0.32.20</b></color> 1.0 prep 1:\n- Historical start fleets: The Pacific War and both Worlds at War campaigns start you with the task forces that were at sea or in port on 8 December 1941 (campaign startfleets.txt)\n- A merchant or oiler no longer leads a task force away when the merchants turn and run: the first warship takes the lead first, and a sunk leader is never replaced by a merchant while a warship is left\n- Air auto resolve: bombers that are beaten (a quarter of the group lost in a lost fight, or half the group in any fight) break off the strike and fly home, on both sides\n- The three new campaigns are marked (WIP) in the campaign list\n<color=#E0B030><b>0.32.19</b></color> globe test 19, Worlds at War batch 2:
+===

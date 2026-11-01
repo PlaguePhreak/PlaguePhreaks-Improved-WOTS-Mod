@@ -1,0 +1,15 @@
+// Historical start fleets, 8 December 1941 (read by ModStartFleets in 0.32.20+, new campaigns only).
+// One task force per line: name (empty = named after its ship), at (waypoint), to (waypoint, optional), formation, ships (class:ship).
+// If a ship name is not found in its class, the first free ship of that class is used instead (see the [STARTFLEET] log lines).
+{"name": "Enterprise Carrier Force", "at": "G58_17", "to": "", "formation": 12, "ships": ["yorktown:enterprise", "northampton:northampton", "northampton:chester", "pensacola:salt lake city", "porter:balch", "gridley:maury", "gridley:craven", "benham:benham", "benham:ellet", "mahan:dunlap"]}
+{"name": "Lexington Carrier Force", "at": "G57_17", "to": "", "formation": 12, "ships": ["lexington:lexington", "northampton:chicago", "portland:portland", "new_orleans:astoria", "porter:porter", "mahan:drayton", "mahan:flusser", "mahan:lamson", "mahan:mahan"]}
+{"name": "Saratoga Carrier Force", "at": "sandiego", "to": "", "formation": 12, "ships": ["lexington:saratoga", "farragut:dewey", "farragut:macdonough", "farragut:worden"]}
+{"name": "Pearl Harbor Cruiser Force", "at": "Oahu", "to": "", "formation": 17, "ships": ["new_orleans:minneapolis", "brooklyn:phoenix", "brooklyn:st. louis", "omaha:detroit", "farragut:aylwin", "farragut:dale", "farragut:monaghan", "porter:phelps"]}
+{"name": "Asiatic Fleet", "at": "G43_15", "to": "", "formation": 13, "ships": ["northampton:houston", "omaha:marblehead", "clemson:paul jones", "clemson:john d. ford", "clemson:pope", "clemson:peary"]}
+{"name": "", "at": "Wake2", "to": "", "formation": 0, "ships": ["tambor:tambor"]}
+{"name": "", "at": "Wake2", "to": "", "formation": 0, "ships": ["tambor:triton"]}
+{"name": "Iceland Battle Force", "at": "reykjavik", "to": "", "formation": 17, "ships": ["new_mexico:new mexico", "new_mexico:mississippi", "new_mexico:idaho", "wichita:wichita", "new_orleans:tuscaloosa", "gleaves:gleaves", "gleaves:niblack", "benson:benson", "benson:mayo"]}
+{"name": "Yorktown Carrier Force", "at": "norfolk", "to": "", "formation": 12, "ships": ["yorktown:yorktown", "ranger42:ranger", "sims:sims", "sims:hammann", "sims:anderson", "sims:russell"]}
+{"name": "Wasp Carrier Force", "at": "bermuda", "to": "", "formation": 12, "ships": ["wasp:wasp", "gleaves:livermore", "gleaves:kearny"]}
+{"name": "North Carolina Battle Force", "at": "norfolk", "to": "", "formation": 17, "ships": ["north_carolina:north carolina", "north_carolina:washington", "brooklyn:savannah", "benson:madison", "benson:lansdale"]}
+{"name": "Australian Squadron", "at": "sydney", "to": "", "formation": 9, "ships": ["kent:australia", "kent:canberra", "amphion:perth", "amphion:hobart"]}

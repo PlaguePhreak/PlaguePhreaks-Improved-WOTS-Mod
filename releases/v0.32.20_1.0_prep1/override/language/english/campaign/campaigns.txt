@@ -1,0 +1,20 @@
+﻿campaign001=Counterattack on the Australian Front=7,8,1942=Control the Allies to counterattack Japanese aggression: expel Japan from the South Pacific, take her home port at Rabaul and build an airfield on Guadalcanal while protecting Australia.=forceSettings=2,2,2,2,2,2,2,2,2,2
+campaign002=Defending Japan's Southwest Pacific Interests=7,8,1942=As Imperial Japan, hold your current objectives and push back the American offensive. Take Cooktown and the New Hebrides to build a foothold on Australia and complete the airfield on Guadalcanal.=forceSettings=2,2,2,2,2,2,2,2,2,2
+pacificwar=The Pacific War (WIP)=8,12,1941=December 1941. Recover from Pearl Harbor, hold Hawaii, Midway and the West Coast, and carry the war across the Central Pacific to Truk.=forceSettings=2,2,2,2,2,2,2,2,2,2
+wawallies=Worlds at War: Allies (WIP)=8,12,1941=December 1941. The war is now truly a world war. Hold the sea lanes in every ocean, break the Axis fleets and carry the war to Truk, Taranto and Wilhelmshaven.=forceSettings=2,2,2,2,2,2,2,2,2,2
+wawaxis=Worlds at War: Axis (WIP)=8,12,1941=December 1941. Japan has struck Pearl Harbor and the Axis fleets hold Europe's coasts. Cut the Allied sea lanes in every ocean and take their great bases before their shipyards outbuild you.=forceSettings=2,2,2,2,2,2,2,2,2,2
+//
+//forceSettings=2,2,2,2,2,2,2,2,2,2
+//Use this to force a campaign setting to FALSE (0) or TRUE (1) or USER CHOICE (2)
+//
+//10 Values must be listed and correspond to following settings
+//0-Enemy Uses Submarines
+//1-Enemy Uses Aircraft Carriers
+//2-Refund Command Points Post Rest & Repair
+//3-New Carrier Aircraft Require Release
+//4-Use Port Resources To Resupply Ship Ammo
+//5-Use Port Resources To Resupply Ship Aircraft
+//6-Use Port Resources To Replenish Airfields
+//7-Limit Airfield Aircraft Replenished
+//8-Allow Merchants/Oilers to Resupply At Sea
+//9-Enable Strategic Bombing
