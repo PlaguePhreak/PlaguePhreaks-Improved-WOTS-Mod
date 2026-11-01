@@ -1,3 +1,7 @@
+01/10/26 i had no intentions of sharing the mod publically
+15/10/26 i shared some images of the mod and shared it with people who wanted to see it
+01/11/26 i dont have any intention to make the mod public, but people who ask to play it are more than welcome
+
 Everything here is a WIP and still in testing.
 This is for game version 1.09a (the newest version of the game).
 Current mod version: v0.24.2 (see the change log for everything that's in it)
